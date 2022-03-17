@@ -17,10 +17,10 @@ char parse_cmd_args(int argc, char** argv) {
         "              .     ╒══════╕                     .    \n"
         "   .. ........;;.   |      |  .. ................;;.  \n"
         "    ..::stdin:;;;;. |choose|   ..::chosen output:;;;;.\n"
-        "  . . ::::::::;;:'  |  ↑↓  | . . ::::::::::::::::;;:' \n"
+        "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
         "examples:\n"
-        "\techo \"choose between these words\" | choose\n"
+        "\techo -n \"choose between these words\" | choose\n"
         "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | choose -n | bash ; }\n"
         "controls:\n"
         "\tArrow/page up/down, mouse scroll, or jk to scroll.\n"
@@ -195,7 +195,11 @@ on_resize:
       scroll_position = 0;
     } else if (ch == KEY_END) {
       selection_position = inputs.size() - 1;
-      scroll_position = inputs.size() - num_rows;
+      if ((int)inputs.size() > num_rows) {
+        scroll_position = inputs.size() - num_rows;
+      } else {
+        scroll_position = 0;
+      }
     } else if (ch == KEY_PPAGE) {
       selection_position -= num_rows;
       if (selection_position < scroll_border) {
