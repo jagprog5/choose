@@ -7,4 +7,4 @@ target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -O1)
 
 target_link_libraries(choose PRIVATE ncurses)
 
-install(TARGETS choose)
+install(TARGETS choose DESTINATION /usr/bin)

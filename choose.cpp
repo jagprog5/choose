@@ -21,7 +21,7 @@ char parse_cmd_args(int argc, char** argv) {
         "              :'    ╘══════╛                     :'   \n\n"
         "examples:\n"
         "\techo \"choose between these words\" | choose\n"
-        "\thist() { history | grep \"$1\" | uniq | awk '{$1= ""; print $0}' | tac | choose -n | bash ; }\n"
+        "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | choose -n | tee >(bash) ; }\n"
         "controls:\n"
         "\tArrow/page up/down, mouse scroll, or jk to scroll.\n"
         "\tEnter or middle mouse button or d or f for a single selection\n"
@@ -89,7 +89,6 @@ int main(int argc, char** argv) {
 
   int num_rows, num_columns;
   init_tui();
-  // getmaxyx(stdscr, num_rows, num_columns);
 
   int scroll_position = 0;
   int selection_position = 0;
@@ -149,8 +148,10 @@ on_resize:
         continue;
       if (e.bstate & BUTTON4_PRESSED) {
         --selection_position;
+      #ifdef BUTTON5_PRESSED
       } else if (e.bstate & BUTTON5_PRESSED) {
         ++selection_position;
+      #endif
       } else if (e.bstate & BUTTON1_PRESSED) {
         goto user_selection;
       } else if (e.bstate & BUTTON2_RELEASED) {

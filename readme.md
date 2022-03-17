@@ -7,7 +7,7 @@ Provides a text-based ui for selecting a section of a stream.
 Install with:
 
 ```bash
-cmake .. && make install
+mkdir build && cd build && cmake .. && sudo cmake --build . --target install --config Release
 ```
 
 See doc:
