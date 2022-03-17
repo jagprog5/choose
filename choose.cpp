@@ -21,7 +21,7 @@ char parse_cmd_args(int argc, char** argv) {
         "              :'    ╘══════╛                     :'   \n\n"
         "examples:\n"
         "\techo \"choose between these words\" | choose\n"
-        "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | choose -n | tee >(bash) ; }\n"
+        "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | choose -n | bash ; }\n"
         "controls:\n"
         "\tArrow/page up/down, mouse scroll, or jk to scroll.\n"
         "\tEnter or middle mouse button or d or f for a single selection\n"
