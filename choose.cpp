@@ -58,6 +58,10 @@ std::vector<std::vector<char>> parse_stdin(char delimiter) {
     }
   }
 
+  for (auto& i : inputs) {
+    i.push_back('\0');
+  }
+
   return inputs;
 }
 
@@ -127,6 +131,8 @@ on_resize:
             attron(COLOR_PAIR(PAIR_SELECTED));
           }
         }
+
+        // print
 
         mvprintw(y, 2, &*inputs[y + scroll_position].begin());
 
