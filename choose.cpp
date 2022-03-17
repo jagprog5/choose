@@ -110,12 +110,8 @@ on_resize:
   }
 
   while (true) {
+    erase();
     for (int y = 0; y < num_rows; ++y) {
-      for (int x = 0; x < num_columns; ++x) {
-        // clear the entire terminal
-        mvprintw(y, x, " ");
-      }
-
       // draw the text
       int current_row = y + scroll_position;
       if (current_row >= 0 && current_row < (int)inputs.size()) {
@@ -125,7 +121,7 @@ on_resize:
         if (row_highlighted || row_selected) {
           attron(A_BOLD);
           if (row_highlighted) {
-            mvprintw(y, 0, ">");
+            mvaddch(y, 0, '>');
           }
           if (row_selected) {
             attron(COLOR_PAIR(PAIR_SELECTED));
@@ -133,8 +129,21 @@ on_resize:
         }
 
         // print
-
-        mvprintw(y, 2, &*inputs[y + scroll_position].begin());
+        int x = 2;
+        auto pos = inputs[y + scroll_position].cbegin();
+        auto end = inputs[y + scroll_position].cend() - 1; // ignore null char 
+        while (pos != end) {
+          char c = *pos++;
+          if (c == '\n') {
+            // draw newline chars differently
+            attron(A_DIM);
+            mvaddch(y, x++, '\\');
+            mvaddch(y, x++, 'n');
+            attroff(A_DIM);
+          } else {
+            mvaddch(y, x++, c);
+          }
+        }
 
         if (row_highlighted || row_selected) {
           attroff(A_BOLD);
