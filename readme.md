@@ -1,6 +1,6 @@
 # choose
 
-Provides a text-based ui for selecting a section of a stream.
+Splits an input into tokens based on a regex delimiter, and provides a text based ui for selecting which token are sent to the output.
 
 ![screenshot](./screenshot.png)
 

@@ -1,73 +1,108 @@
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <algorithm>
 #include <cmath>
+#include <regex>
 #include <vector>
 
-char parse_cmd_args(int argc, char** argv) {
-  // returns the delimiter arg or exits
-  char delimiter = ' ';
+static constexpr int PAIR_SELECTED = 1;
 
-  if (argc == 2 &&
-      (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
+int main(int argc, char** argv) {
+
+  // ============================= args ===================================
+
+  if (argc > 2) {
+    fprintf(stderr, "At most 1 arg!\n");
+    return 1;
+  } else if (argc == 2 &&
+             (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
     puts(
         "              .     ╒══════╕                     .    \n"
         "   .. ........;;.   |      |  .. ................;;.  \n"
         "    ..::stdin:;;;;. |choose|   ..::chosen output:;;;;.\n"
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
+        "usage:\n"
+        "\tchoose (-h|--help)\n"
+        "\tchoose [<regex delimiter, default newline>]\n"
+        "description:\n"
+        "\tSplits an input into tokens based on a regex delimiter,\n"
+        "\tand provides a text based ui for selecting which token are sent to "
+        "the output.\n"
         "examples:\n"
-        "\techo -n \"choose between these words\" | choose\n"
-        "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | choose -n | bash ; }\n"
+        "\techo -n \"this 1 is 2 a 3 test\" | ./choose \" [0-9] \"\n"
+        "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | "
+        "choose | bash ; }\n"
         "controls:\n"
-        "\tArrow/page up/down, mouse scroll, or jk to scroll.\n"
+        "\tArrow/page up/down,"
+#ifdef BUTTON5_PRESSED
+        " mouse scroll,"
+#endif
+        " or jk to scroll.\n"
         "\tEnter or middle mouse button or d or f for a single selection\n"
-        "\tSpace or left click for multiple selections.\n"
-        "delimiter:\n"
-        "\tDefaults to space. Alternatively:\n"
-        "\t\t-d <delimiter character>\n"
-        "\tOr for a newline delimiter:\n"
-        "\t\t-n\n\n");
+        "\tSpace or left click for multiple selections.\n");
     exit(0);
   }
 
-  if (argc == 3 && strcmp("-d", argv[1]) == 0) {
-    delimiter = argv[2][0];
-  } else if (argc == 2 && strcmp("-n", argv[1]) == 0) {
-    delimiter = '\n';
-  }
-  return delimiter;
-}
+  // ============================= stdin ===================================
 
-std::vector<std::vector<char>> parse_stdin(char delimiter) {
-  std::vector<std::vector<char>> inputs;
-  bool next_available = false;
-  char ch;
-  while (read(STDIN_FILENO, &ch, 1) > 0) {
-    if (ch == delimiter) {
-      next_available = false;
-    } else {
-      if (!next_available) {
-        inputs.emplace_back();
-        next_available = true;
+  std::vector<std::vector<char>> tokens;
+  {
+    // read input
+    std::vector<char> raw_input;
+    char ch;
+    while (read(STDIN_FILENO, &ch, 1) > 0) {
+      raw_input.push_back(ch);
+    }
+
+    // parse input
+    std::regex re(argc == 1 ? "\n" : argv[argc - 1]);
+    std::cmatch match;
+
+    const char* pos = &*raw_input.cbegin();
+    while (std::regex_search(pos, match, re)) {
+      const char* match_begin = match.cbegin()->first;
+      auto length = match.cbegin()->length();
+
+      bool has_length = pos != match_begin;
+      if (has_length) {
+        tokens.emplace_back();
       }
-      inputs.rbegin()->push_back(ch);
+
+      while (pos != match_begin) {
+        tokens.rbegin()->push_back(*pos++);
+      }
+
+      if (has_length) {
+        tokens.rbegin()->push_back('\0');
+      }
+
+      pos += length;
+    }
+
+    // last token
+
+    bool has_length = pos != &*raw_input.cend();
+
+    if (has_length) {
+      tokens.emplace_back();
+    }
+
+    while (pos != &*raw_input.cend()) {
+      tokens.rbegin()->push_back(*pos++);
+    }
+
+    if (has_length) {
+      tokens.rbegin()->push_back('\0');
     }
   }
 
-  for (auto& i : inputs) {
-    i.push_back('\0');
-  }
+  // ============================= init tui ===================================
 
-  return inputs;
-}
-
-static const int PAIR_SELECTED = 1;
-
-void init_tui() {
+  int num_rows, num_columns;
+  
   // https://stackoverflow.com/a/44884859/15534181
   // required for ncurses to work after using stdin
   FILE* f = fopen("/dev/tty", "r+");
@@ -85,14 +120,6 @@ void init_tui() {
 
   start_color();
   init_pair(PAIR_SELECTED, COLOR_GREEN, COLOR_BLACK);
-}
-
-int main(int argc, char** argv) {
-  char delimiter = parse_cmd_args(argc, argv);
-  std::vector<std::vector<char>> inputs = parse_stdin(delimiter);
-
-  int num_rows, num_columns;
-  init_tui();
 
   int scroll_position = 0;
   int selection_position = 0;
@@ -110,11 +137,14 @@ on_resize:
   }
 
   while (true) {
+
+    // ============================= draw tui ===================================
+
     erase();
     for (int y = 0; y < num_rows; ++y) {
-      // draw the text
+      // draw the tokens
       int current_row = y + scroll_position;
-      if (current_row >= 0 && current_row < (int)inputs.size()) {
+      if (current_row >= 0 && current_row < (int)tokens.size()) {
         bool row_highlighted = current_row == selection_position;
         bool row_selected = std::find(selections.cbegin(), selections.cend(),
                                       current_row) != selections.cend();
@@ -128,10 +158,9 @@ on_resize:
           }
         }
 
-        // print
         int x = 2;
-        auto pos = inputs[y + scroll_position].cbegin();
-        auto end = inputs[y + scroll_position].cend() - 1; // ignore null char 
+        auto pos = tokens[y + scroll_position].cbegin();
+        auto end = tokens[y + scroll_position].cend() - 1;  // ignore null char
         while (pos != end) {
           char c = *pos++;
           if (c == '\n') {
@@ -154,6 +183,8 @@ on_resize:
       }
     }
 
+    // ============================= handle input ===================================
+
     // handle input
     int ch = getch();
 
@@ -161,14 +192,14 @@ on_resize:
     if (ch == KEY_MOUSE) {
       if (getmouse(&e) != OK)
         continue;
-      if (e.bstate & BUTTON4_PRESSED) {
+      if (e.bstate & BUTTON1_PRESSED) {
+        goto user_selection;
+#ifdef BUTTON5_PRESSED
+      } else if (e.bstate & BUTTON4_PRESSED) {
         --selection_position;
-      #ifdef BUTTON5_PRESSED
       } else if (e.bstate & BUTTON5_PRESSED) {
         ++selection_position;
-      #endif
-      } else if (e.bstate & BUTTON1_PRESSED) {
-        goto user_selection;
+#endif
       } else if (e.bstate & BUTTON2_RELEASED) {
         goto user_finished;
       }
@@ -195,9 +226,9 @@ on_resize:
       bool first_output = true;
       for (const auto& s : selections) {
         if (!first_output) {
-          fputc(delimiter, stdout);
+          putchar('\n');  // output delimiter
         }
-        fprintf(stdout, "%s", &*inputs[s].cbegin());
+        printf("%s", &*tokens[s].cbegin());
         first_output = false;
       }
       exit(0);
@@ -209,9 +240,9 @@ on_resize:
       selection_position = 0;
       scroll_position = 0;
     } else if (ch == KEY_END) {
-      selection_position = inputs.size() - 1;
-      if ((int)inputs.size() > num_rows) {
-        scroll_position = inputs.size() - num_rows;
+      selection_position = tokens.size() - 1;
+      if ((int)tokens.size() > num_rows) {
+        scroll_position = tokens.size() - num_rows;
       } else {
         scroll_position = 0;
       }
@@ -222,15 +253,15 @@ on_resize:
       }
     } else if (ch == KEY_NPAGE) {
       selection_position += num_rows;
-      if (selection_position >= (int)inputs.size() - scroll_border) {
-        scroll_position = inputs.size() - num_rows;
+      if (selection_position >= (int)tokens.size() - scroll_border) {
+        scroll_position = tokens.size() - num_rows;
       }
     }
 
     if (selection_position < 0) {
       selection_position = 0;
-    } else if (selection_position >= (int)inputs.size()) {
-      selection_position = inputs.size() - 1;
+    } else if (selection_position >= (int)tokens.size()) {
+      selection_position = tokens.size() - 1;
     }
 
     // scroll to keep the selection in view
@@ -240,7 +271,7 @@ on_resize:
       }
     }
 
-    if (selection_position < (int)inputs.size() - scroll_border) {
+    if (selection_position < (int)tokens.size() - scroll_border) {
       if (selection_position + scroll_border - scroll_position >=
           num_rows - 1) {
         scroll_position = selection_position + scroll_border - num_rows + 1;
