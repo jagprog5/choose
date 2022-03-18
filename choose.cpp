@@ -26,11 +26,14 @@ int main(int argc, char** argv) {
         "              :'    ╘══════╛                     :'   \n\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose [<regex delimiter, default newline>]\n"
+        "\tchoose <short options> [<regex delimiter, default newline>]\n"
         "description:\n"
         "\tSplits an input into tokens based on a regex delimiter,\n"
         "\tand provides a text based ui for selecting which token are sent to "
         "the output.\n"
+        "optionsTODO:\n"
+        "\t-s sort the output based on selection order instead of input order\n"
+        "\t-i make regex case insensitive\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | ./choose \" [0-9] \"\n"
         "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | "
@@ -43,7 +46,7 @@ int main(int argc, char** argv) {
         " or jk to scroll.\n"
         "\tEnter or middle mouse button or d or f for a single selection\n"
         "\tSpace or left click for multiple selections.\n");
-    exit(0);
+    return 0;
   }
 
   // ============================= stdin ===================================
@@ -56,6 +59,8 @@ int main(int argc, char** argv) {
     while (read(STDIN_FILENO, &ch, 1) > 0) {
       raw_input.push_back(ch);
     }
+
+    if (raw_input.size() == 0) return 0;
 
     // parse input
     std::regex re(argc == 1 ? "\n" : argv[argc - 1]);
@@ -205,7 +210,7 @@ on_resize:
       }
     } else if (ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
       endwin();
-      exit(0);
+      return 0;
     } else if (ch == KEY_RESIZE) {
       goto on_resize;
     } else if (ch == ' ') {
@@ -231,7 +236,7 @@ on_resize:
         printf("%s", &*tokens[s].cbegin());
         first_output = false;
       }
-      exit(0);
+      return 0;
     } else if (ch == KEY_UP || ch == 'k') {
       --selection_position;
     } else if (ch == KEY_DOWN || ch == 'j') {
