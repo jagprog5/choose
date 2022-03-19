@@ -1,9 +1,7 @@
 #include <ncurses.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <algorithm>
-#include <cmath>
 #include <regex>
 #include <vector>
 
@@ -20,33 +18,42 @@ int main(int argc, char** argv) {
         "    ..::stdin:;;;;. |choose|   ..::chosen output:;;;;.\n"
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
-        "usage:\n"
-        "\tchoose (-h|--help)\n"
-        "\tchoose <options> [<regex delimiter, default newline>]\n"
         "description:\n"
         "\tSplits an input into tokens based on a regex delimiter,\n"
         "\tand provides a text based ui for selecting which token are sent to "
         "the output.\n"
+        "usage:\n"
+        "\tchoose (-h|--help)\n"
+        "\tchoose <options> [<regex delimiter, default newline>]\n"
         "options:\n"
         "\t-s sort the output based on selection order instead of input order\n"
         "\t-i make the delimiter case insensitive\n"
+        "\t-t tenacious; don't exit after confirming a selection\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
-        "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | "
-        "choose | bash ; }\n"
+        "\thist() { history | grep \"$1\" | sed 's/^\\s*[0-9]*\\s//' | tac | "
+        "awk "
+        "'!a[$0]++' | choose | bash ; }\n"
         "controls:\n"
-        "\tArrow/page up/down,"
+        "\tscrolling:\n"
+        "\t\t- arrow up/down\n"
+        "\t\t- page up/down\n"
+        "\t\t- home/end\n"
 #ifdef BUTTON5_PRESSED
-        " mouse scroll,"
+        "\t\t- mouse scroll\n"
 #endif
-        " or jk to scroll.\n"
-        "\tEnter or middle mouse button or d or f for a single selection\n"
-        "\tSpace or left click for multiple selections.\n");
+        "\t\t- j/k\n"
+        "\tconfirm selection:\n"
+        "\t\t- enter\n"
+        "\t\t- d or f\n"
+        "\tmultiple selections:\n"
+        "\t\t- space\n");
     return 0;
   }
 
   bool selection_order = false;
   std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
+  bool tenacious = false;
 
   int regex_delimiter_position = -1;
 
@@ -60,6 +67,8 @@ int main(int argc, char** argv) {
         } else if (ch == 'i') {
           // std::regex_constants::match_flag_type
           flags |= std::regex_constants::icase;
+        } else if (ch == 't') {
+          tenacious = true;
         }
       }
     } else {
@@ -136,14 +145,25 @@ int main(int argc, char** argv) {
   SCREEN* screen = newterm(NULL, f, f);
   set_term(screen);
 
-  keypad(stdscr, TRUE);    // enable arrow keys
+  keypad(stdscr, true);    // enable arrow keys
   cbreak();                // pass keys directly from input without buffering
   noecho();                // disable echo back of keys entered
   nodelay(stdscr, false);  // make getch block
   curs_set(0);             // invisible cursor
 
   mouseinterval(0);  // get mouse events right away
-  mousemask(ALL_MOUSE_EVENTS, NULL);
+
+  // the doc says that the mousemask must be set to enable mouse control,
+  // however, it seems to work even without calling the function
+
+  // calling the function makes the left mouse button captured, which prevents a
+  // user from selecting and copying text
+
+  // so with no benefit and a small downside, I leave this commented out
+
+  // #ifdef BUTTON5_PRESSED
+  //   mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
+  // #endif
 
   start_color();
   init_pair(PAIR_SELECTED, COLOR_GREEN, COLOR_BLACK);
@@ -215,27 +235,26 @@ on_resize:
     int ch = getch();
 
     MEVENT e;
+#ifdef BUTTON5_PRESSED
     if (ch == KEY_MOUSE) {
       if (getmouse(&e) != OK)
         continue;
-      if (e.bstate & BUTTON1_PRESSED) {
-        goto user_selection;
-#ifdef BUTTON5_PRESSED
-      } else if (e.bstate & BUTTON4_PRESSED) {
+      if (e.bstate & BUTTON4_PRESSED) {
         --selection_position;
       } else if (e.bstate & BUTTON5_PRESSED) {
         ++selection_position;
-#endif
-      } else if (e.bstate & BUTTON2_RELEASED) {
-        goto user_finished;
       }
-    } else if (ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
+    } else
+#endif
+        if (ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
       endwin();
+    cleanup_exit:
+      delscreen(screen);
+      fclose(f);
       return 0;
     } else if (ch == KEY_RESIZE) {
       goto on_resize;
     } else if (ch == ' ') {
-    user_selection:
       auto pos =
           std::find(selections.cbegin(), selections.cend(), selection_position);
       if ((pos == selections.cend())) {
@@ -244,7 +263,6 @@ on_resize:
         selections.erase(pos);
       }
     } else if (ch == '\n' || ch == 'd' || ch == 'f') {
-    user_finished:
       if (selections.size() == 0) {
         selections.push_back(selection_position);
       }
@@ -252,15 +270,20 @@ on_resize:
         std::sort(selections.begin(), selections.end());
       }
       endwin();
-      bool first_output = true;
+      static bool first_output = true;
       for (const auto& s : selections) {
         if (!first_output) {
-          putchar('\n');  // output delimiter
+          fputc('\n', stdout);  // output delimiter
         }
-        printf("%s", &*tokens[s].cbegin());
+        fprintf(stdout, "%s", &*tokens[s].cbegin());
         first_output = false;
       }
-      return 0;
+      if (tenacious) {
+        selections.clear();
+        fflush(stdout);
+      } else {
+        goto cleanup_exit;
+      }
     } else if (ch == KEY_UP || ch == 'k') {
       --selection_position;
     } else if (ch == KEY_DOWN || ch == 'j') {
