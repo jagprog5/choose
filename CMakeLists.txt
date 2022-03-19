@@ -5,6 +5,6 @@ project(choose)
 add_executable(choose choose.cpp)
 target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -O1)
 
-target_link_libraries(choose PRIVATE ncurses)
+target_link_libraries(choose PRIVATE -lncurses)
 
 install(TARGETS choose DESTINATION /usr/bin)
