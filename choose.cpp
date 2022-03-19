@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <algorithm>
+#include <limits>
 #include <regex>
 #include <vector>
 
@@ -24,11 +25,12 @@ int main(int argc, char** argv) {
         "the output.\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose <options> [<regex delimiter, default newline>]\n"
+        "\tchoose <options> [<regex delimiter, default \\n>] [-o <output "
+        "delimiter, default \\n>]\n"
         "options:\n"
         "\t-s sort the output based on selection order instead of input order\n"
         "\t-i make the delimiter case insensitive\n"
-        "\t-t tenacious; don't exit after confirming a selection\n"
+        "\t-t tenacious; don't exit after a selection is confirmed\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
         "\thist() { history | grep \"$1\" | sed 's/^\\s*[0-9]*\\s//' | tac | "
@@ -55,7 +57,8 @@ int main(int argc, char** argv) {
   std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
   bool tenacious = false;
 
-  int regex_delimiter_position = -1;
+  int in_delimiter_index = std::numeric_limits<int>::min();
+  int out_delimiter_index = std::numeric_limits<int>::min();
 
   for (int i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
@@ -65,17 +68,30 @@ int main(int argc, char** argv) {
         if (ch == 's') {
           selection_order = true;
         } else if (ch == 'i') {
-          // std::regex_constants::match_flag_type
           flags |= std::regex_constants::icase;
         } else if (ch == 't') {
           tenacious = true;
+        } else if (ch == 'o') {
+          if (i == argc - 1) {
+            fprintf(stderr, "-o must be followed by an arg\n");
+            return 1;
+          }
+          out_delimiter_index = i + 1;
+        } else {
+          fprintf(stderr, "unknown option: '%c'\n", ch);
+          return 1;
         }
       }
-    } else {
+    } else if (i != out_delimiter_index) {
       // the last non option argument is the delimiter
-      regex_delimiter_position = i;
+      in_delimiter_index = i;
     }
   }
+
+  const char* out_delimiter =
+      out_delimiter_index == std::numeric_limits<int>::min()
+          ? "\n"
+          : argv[out_delimiter_index];
 
   // ============================= stdin ===================================
 
@@ -92,9 +108,10 @@ int main(int argc, char** argv) {
       return 0;
 
     // parse input
-    std::regex re(
-        regex_delimiter_position == -1 ? "\n" : argv[regex_delimiter_position],
-        flags);
+    std::regex re(in_delimiter_index == std::numeric_limits<int>::min()
+                      ? "\n"
+                      : argv[in_delimiter_index],
+                  flags);
     std::cmatch match;
 
     const char* pos = &*raw_input.cbegin();
@@ -234,7 +251,7 @@ on_resize:
     // handle input
     int ch = getch();
 
-    MEVENT e;
+    [[maybe_unused]] MEVENT e;
 #ifdef BUTTON5_PRESSED
     if (ch == KEY_MOUSE) {
       if (getmouse(&e) != OK)
@@ -273,7 +290,7 @@ on_resize:
       static bool first_output = true;
       for (const auto& s : selections) {
         if (!first_output) {
-          fputc('\n', stdout);  // output delimiter
+          fprintf(stdout, "%s", out_delimiter);
         }
         fprintf(stdout, "%s", &*tokens[s].cbegin());
         first_output = false;

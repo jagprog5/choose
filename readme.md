@@ -7,7 +7,7 @@ Splits an input into tokens based on a regex delimiter, and provides a text base
 Install with:
 
 ```bash
-sudo apt-get install -y libncurses-dev
+sudo apt-get install -y libncurses5-dev
 mkdir build && cd build && cmake .. && sudo cmake --build . --target install --config Release
 ```
 
