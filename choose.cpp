@@ -10,14 +10,10 @@
 static constexpr int PAIR_SELECTED = 1;
 
 int main(int argc, char** argv) {
-
   // ============================= args ===================================
 
-  if (argc > 2) {
-    fprintf(stderr, "At most 1 arg!\n");
-    return 1;
-  } else if (argc == 2 &&
-             (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
+  if (argc == 2 &&
+      (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
     puts(
         "              .     ╒══════╕                     .    \n"
         "   .. ........;;.   |      |  .. ................;;.  \n"
@@ -26,16 +22,16 @@ int main(int argc, char** argv) {
         "              :'    ╘══════╛                     :'   \n\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose <short options> [<regex delimiter, default newline>]\n"
+        "\tchoose <options> [<regex delimiter, default newline>]\n"
         "description:\n"
         "\tSplits an input into tokens based on a regex delimiter,\n"
         "\tand provides a text based ui for selecting which token are sent to "
         "the output.\n"
-        "optionsTODO:\n"
+        "options:\n"
         "\t-s sort the output based on selection order instead of input order\n"
-        "\t-i make regex case insensitive\n"
+        "\t-i make the delimiter case insensitive\n"
         "examples:\n"
-        "\techo -n \"this 1 is 2 a 3 test\" | ./choose \" [0-9] \"\n"
+        "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
         "\thist() { history | grep \"$1\" | uniq | sed 's/^ *[0-9]*//' | tac | "
         "choose | bash ; }\n"
         "controls:\n"
@@ -49,6 +45,29 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  bool selection_order = false;
+  std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
+
+  int regex_delimiter_position = -1;
+
+  for (int i = 1; i < argc; ++i) {
+    if (argv[i][0] == '-') {
+      char* pos = argv[i] + 1;
+      char ch;
+      while ((ch = *pos++)) {
+        if (ch == 's') {
+          selection_order = true;
+        } else if (ch == 'i') {
+          // std::regex_constants::match_flag_type
+          flags |= std::regex_constants::icase;
+        }
+      }
+    } else {
+      // the last non option argument is the delimiter
+      regex_delimiter_position = i;
+    }
+  }
+
   // ============================= stdin ===================================
 
   std::vector<std::vector<char>> tokens;
@@ -60,10 +79,13 @@ int main(int argc, char** argv) {
       raw_input.push_back(ch);
     }
 
-    if (raw_input.size() == 0) return 0;
+    if (raw_input.size() == 0)
+      return 0;
 
     // parse input
-    std::regex re(argc == 1 ? "\n" : argv[argc - 1]);
+    std::regex re(
+        regex_delimiter_position == -1 ? "\n" : argv[regex_delimiter_position],
+        flags);
     std::cmatch match;
 
     const char* pos = &*raw_input.cbegin();
@@ -107,7 +129,7 @@ int main(int argc, char** argv) {
   // ============================= init tui ===================================
 
   int num_rows, num_columns;
-  
+
   // https://stackoverflow.com/a/44884859/15534181
   // required for ncurses to work after using stdin
   FILE* f = fopen("/dev/tty", "r+");
@@ -142,8 +164,7 @@ on_resize:
   }
 
   while (true) {
-
-    // ============================= draw tui ===================================
+    // ============================= draw tui =================================
 
     erase();
     for (int y = 0; y < num_rows; ++y) {
@@ -188,7 +209,7 @@ on_resize:
       }
     }
 
-    // ============================= handle input ===================================
+    // ========================== handle input ================================
 
     // handle input
     int ch = getch();
@@ -226,6 +247,9 @@ on_resize:
     user_finished:
       if (selections.size() == 0) {
         selections.push_back(selection_position);
+      }
+      if (!selection_order) {
+        std::sort(selections.begin(), selections.end());
       }
       endwin();
       bool first_output = true;
