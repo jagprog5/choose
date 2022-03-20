@@ -30,7 +30,8 @@ int main(int argc, char** argv) {
         "options:\n"
         "\t-s sort the output based on selection order instead of input order\n"
         "\t-i make the delimiter case insensitive\n"
-        "\t-t tenacious; don't exit after a selection is confirmed\n"
+        "\t-t tenacious; don't exit on confirmed selection. for "
+        "non-tty output, each selection is flushed\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
         "\thist() { history | grep \"$1\" | sed 's/^\\s*[0-9]*\\s//' | tac | "
@@ -160,7 +161,7 @@ int main(int argc, char** argv) {
   problem: re-entering ncurses mode clears the last line printed to the
   tty
 
-  solution: queue up the output (is isn't needed until after the user
+  solution: queue up the output (it isn't needed until after the user
   exits the ui anyway), and send it at the end.
   */
   std::vector<char> queued_output;
@@ -201,6 +202,8 @@ int main(int argc, char** argv) {
   int scroll_position = 0;
   int selection_position = 0;
 
+  int tenacious_single_select_indicator = 0;
+
   std::vector<int> selections;
 
 on_resize:
@@ -227,7 +230,7 @@ on_resize:
         if (row_highlighted || row_selected) {
           attron(A_BOLD);
           if (row_highlighted) {
-            mvaddch(y, 0, '>');
+            mvaddch(y, 0, tenacious_single_select_indicator & 0b1 ? '}' : '>');
           }
           if (row_selected) {
             attron(COLOR_PAIR(PAIR_SELECTED));
@@ -270,9 +273,9 @@ on_resize:
       if (getmouse(&e) != OK)
         continue;
       if (e.bstate & BUTTON4_PRESSED) {
-        --selection_position;
+        goto scroll_up;
       } else if (e.bstate & BUTTON5_PRESSED) {
-        ++selection_position;
+        goto scroll_down;
       }
     } else
 #endif
@@ -296,6 +299,7 @@ on_resize:
       }
     } else if (ch == '\n' || ch == 'd' || ch == 'f') {
       if (selections.size() == 0) {
+        ++tenacious_single_select_indicator;
         selections.push_back(selection_position);
       }
       if (!selection_order) {
@@ -338,9 +342,11 @@ on_resize:
         goto cleanup_exit;
       }
     } else if (ch == KEY_UP || ch == 'k') {
-      --selection_position;
+      [[maybe_unused]] scroll_up : --selection_position;
+      tenacious_single_select_indicator = 0;
     } else if (ch == KEY_DOWN || ch == 'j') {
-      ++selection_position;
+      [[maybe_unused]] scroll_down : ++selection_position;
+      tenacious_single_select_indicator = 0;
     } else if (ch == KEY_HOME) {
       selection_position = 0;
       scroll_position = 0;
