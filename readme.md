@@ -8,7 +8,7 @@ Install with:
 
 ```bash
 sudo apt-get install -y libncurses5-dev
-mkdir build && cd build && cmake .. && sudo cmake --build . --target install --config Release
+mkdir build && cd build && cmake .. && sudo cmake --build . --target install 
 ```
 
 See doc:

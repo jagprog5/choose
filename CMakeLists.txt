@@ -1,10 +1,22 @@
 cmake_minimum_required(VERSION 3.7)
-set(CMAKE_CXX_STANDARD 17)
+if (NOT CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+endif()
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
 project(choose)
-
 add_executable(choose choose.cpp)
-target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -O1)
 
-target_link_libraries(choose PRIVATE -lncurses)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -O1)
+endif()
+
+set(CURSES_NEED_NCURSES TRUE)
+find_package(Curses REQUIRED)
+
+target_include_directories(choose PRIVATE ${CURSES_INCLUDE_DIRS})
+target_link_libraries(choose PRIVATE ${CURSES_LIBRARIES})
 
 install(TARGETS choose DESTINATION /usr/bin)

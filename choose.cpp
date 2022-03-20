@@ -154,6 +154,17 @@ int main(int argc, char** argv) {
 
   // ============================= init tui ===================================
 
+  int is_tty = isatty(fileno(stdout));
+
+  /*
+  problem: re-entering ncurses mode clears the last line printed to the
+  tty
+
+  solution: queue up the output (is isn't needed until after the user
+  exits the ui anyway), and send it at the end.
+  */
+  std::vector<char> queued_output;
+
   int num_rows, num_columns;
 
   // https://stackoverflow.com/a/44884859/15534181
@@ -170,13 +181,15 @@ int main(int argc, char** argv) {
 
   mouseinterval(0);  // get mouse events right away
 
-  // the doc says that the mousemask must be set to enable mouse control,
-  // however, it seems to work even without calling the function
+  /*
+  the doc says that the mousemask must be set to enable mouse control,
+  however, it seems to work even without calling the function
 
-  // calling the function makes the left mouse button captured, which prevents a
-  // user from selecting and copying text
+  calling the function makes the left mouse button captured, which prevents a
+  user from selecting and copying text
 
-  // so with no benefit and a small downside, I leave this commented out
+  so with no benefit and a small downside, I leave this commented out
+  */
 
   // #ifdef BUTTON5_PRESSED
   //   mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
@@ -264,8 +277,10 @@ on_resize:
     } else
 #endif
         if (ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
-      endwin();
     cleanup_exit:
+      endwin();
+      queued_output.push_back('\0');
+      fprintf(stdout, "%s", &*queued_output.cbegin());
       delscreen(screen);
       fclose(f);
       return 0;
@@ -286,18 +301,39 @@ on_resize:
       if (!selection_order) {
         std::sort(selections.begin(), selections.end());
       }
-      endwin();
+      bool immediate_output = tenacious && !is_tty;
+      if (immediate_output) {
+        endwin();
+      }
       static bool first_output = true;
       for (const auto& s : selections) {
         if (!first_output) {
-          fprintf(stdout, "%s", out_delimiter);
+          if (immediate_output) {
+            fprintf(stdout, "%s", out_delimiter);
+          } else {
+            char c;
+            const char* delim_iter = out_delimiter;
+            while ((c = *delim_iter++)) {
+              queued_output.push_back(c);
+            }
+          }
         }
-        fprintf(stdout, "%s", &*tokens[s].cbegin());
+        if (immediate_output) {
+          fprintf(stdout, "%s", &*tokens[s].cbegin());
+        } else {
+          char c;
+          const char* token_iter = &*tokens[s].cbegin();
+          while ((c = *token_iter++)) {
+            queued_output.push_back(c);
+          }
+        }
         first_output = false;
+      }
+      if (immediate_output) {
+        fflush(stdout);
       }
       if (tenacious) {
         selections.clear();
-        fflush(stdout);
       } else {
         goto cleanup_exit;
       }
