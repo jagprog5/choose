@@ -16,26 +16,27 @@ int main(int argc, char** argv) {
     puts(
         "              .     ╒══════╕                     .    \n"
         "   .. ........;;.   |      |  .. ................;;.  \n"
-        "    ..::stdin:;;;;. |choose|   ..::chosen output:;;;;.\n"
+        "    ..::stdin:;;;;. |choose|   ..::chosen stdout:;;;;.\n"
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
         "description:\n"
-        "\tSplits an input into tokens based on a regex delimiter,\n"
+        "\tSplits an input into tokens based on a regex separator,\n"
         "\tand provides a text based ui for selecting which token are sent to "
         "the output.\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose <options> [<regex delimiter, default \\n>] [-o <output "
-        "delimiter, default \\n>]\n"
+        "\tchoose <options> [<input regex separator, default \\n>] [-o <output "
+        "separator, default \\n>]\n"
         "options:\n"
         "\t-s sort the output based on selection order instead of input order\n"
-        "\t-i make the delimiter case insensitive\n"
+        "\t-i make the input separator case insensitive\n"
         "\t-t tenacious; don't exit on confirmed selection. for "
         "non-tty output, each selection is flushed\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
-        "\thist() { history | grep \"$1\" | sed 's/^\\s*[0-9]*\\s//' | tac | "
-        "choose | bash ; }\n"
+        "\thist() { SELECTED=`history | grep \"$1\" | sed "
+        "'s/^\\s*[0-9*]*\\s*//' | tac | choose` && history -s "
+        "\"$SELECTED\" && eval \"$SELECTED\" ; }\n"
         "controls:\n"
         "\tscrolling:\n"
         "\t\t- arrow up/down\n"
@@ -49,7 +50,11 @@ int main(int argc, char** argv) {
         "\t\t- enter\n"
         "\t\t- d or f\n"
         "\tmultiple selections:\n"
-        "\t\t- space\n");
+        "\t\t- space\n"
+        "\texit:\n"
+        "\t\t- q\n"
+        "\t\t- backspace\n"
+        "\t\t- escape\n");
     return 0;
   }
 
@@ -57,8 +62,8 @@ int main(int argc, char** argv) {
   std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
   bool tenacious = false;
 
-  int in_delimiter_index = std::numeric_limits<int>::min();
-  int out_delimiter_index = std::numeric_limits<int>::min();
+  int in_separator_index = std::numeric_limits<int>::min();
+  int out_separator_index = std::numeric_limits<int>::min();
 
   for (int i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
@@ -76,22 +81,22 @@ int main(int argc, char** argv) {
             fprintf(stderr, "-o must be followed by an arg\n");
             return 1;
           }
-          out_delimiter_index = i + 1;
+          out_separator_index = i + 1;
         } else {
           fprintf(stderr, "unknown option: '%c'\n", ch);
           return 1;
         }
       }
-    } else if (i != out_delimiter_index) {
-      // the last non option argument is the delimiter
-      in_delimiter_index = i;
+    } else if (i != out_separator_index) {
+      // the last non option argument is the separator
+      in_separator_index = i;
     }
   }
 
-  const char* out_delimiter =
-      out_delimiter_index == std::numeric_limits<int>::min()
+  const char* out_separator =
+      out_separator_index == std::numeric_limits<int>::min()
           ? "\n"
-          : argv[out_delimiter_index];
+          : argv[out_separator_index];
 
   // ============================= stdin ===================================
 
@@ -108,9 +113,9 @@ int main(int argc, char** argv) {
       return 0;
 
     // parse input
-    std::regex re(in_delimiter_index == std::numeric_limits<int>::min()
+    std::regex re(in_separator_index == std::numeric_limits<int>::min()
                       ? "\n"
-                      : argv[in_delimiter_index],
+                      : argv[in_separator_index],
                   flags);
     std::cmatch match;
 
@@ -312,10 +317,10 @@ on_resize:
       for (const auto& s : selections) {
         if (!first_output) {
           if (immediate_output) {
-            fprintf(stdout, "%s", out_delimiter);
+            fprintf(stdout, "%s", out_separator);
           } else {
             char c;
-            const char* delim_iter = out_delimiter;
+            const char* delim_iter = out_separator;
             while ((c = *delim_iter++)) {
               queued_output.push_back(c);
             }
