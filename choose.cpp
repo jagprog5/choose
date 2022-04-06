@@ -1,4 +1,5 @@
 #include <ncurses.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <algorithm>
@@ -8,7 +9,14 @@
 
 static constexpr int PAIR_SELECTED = 1;
 
+static volatile sig_atomic_t sigint_occured = 0;
+
+static void sig_handler([[maybe_unused]] int sig) {
+  sigint_occured = 1;
+}
+
 int main(int argc, char** argv) {
+  signal(SIGINT, sig_handler);
   // ============================= args ===================================
 
   if (argc == 2 &&
@@ -169,7 +177,7 @@ int main(int argc, char** argv) {
   exits the ui anyway), and send it at the end.
   */
   std::vector<char> queued_output;
-
+  
   int num_rows, num_columns;
 
   // https://stackoverflow.com/a/44884859/15534181
@@ -181,8 +189,11 @@ int main(int argc, char** argv) {
   keypad(stdscr, true);    // enable arrow keys
   cbreak();                // pass keys directly from input without buffering
   noecho();                // disable echo back of keys entered
-  nodelay(stdscr, false);  // make getch block
   curs_set(0);             // invisible cursor
+
+  // as opposed to: nodelay(stdscr, false) // make getch block
+  // a very large timeout still allows sigint to be effective immediately
+  wtimeout(stdscr, std::numeric_limits<int>::max());
 
   mouseinterval(0);  // get mouse events right away
 
@@ -271,9 +282,18 @@ on_resize:
     // handle input
     int ch = getch();
 
-    [[maybe_unused]] MEVENT e;
+    if (sigint_occured || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
+    cleanup_exit:
+      endwin();
+      queued_output.push_back('\0');
+      fprintf(stdout, "%s", &*queued_output.cbegin());
+      delscreen(screen);
+      fclose(f);
+      return 0;
+    } else
 #ifdef BUTTON5_PRESSED
-    if (ch == KEY_MOUSE) {
+      if (ch == KEY_MOUSE) {
+      MEVENT e;
       if (getmouse(&e) != OK)
         continue;
       if (e.bstate & BUTTON4_PRESSED) {
@@ -283,15 +303,7 @@ on_resize:
       }
     } else
 #endif
-        if (ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
-    cleanup_exit:
-      endwin();
-      queued_output.push_back('\0');
-      fprintf(stdout, "%s", &*queued_output.cbegin());
-      delscreen(screen);
-      fclose(f);
-      return 0;
-    } else if (ch == KEY_RESIZE) {
+    if (ch == KEY_RESIZE) {
       goto on_resize;
     } else if (ch == ' ') {
       auto pos =
