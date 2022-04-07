@@ -78,21 +78,27 @@ int main(int argc, char** argv) {
       char* pos = argv[i] + 1;
       char ch;
       while ((ch = *pos++)) {
-        if (ch == 's') {
-          selection_order = true;
-        } else if (ch == 'i') {
-          flags |= std::regex_constants::icase;
-        } else if (ch == 't') {
-          tenacious = true;
-        } else if (ch == 'o') {
-          if (i == argc - 1) {
-            fprintf(stderr, "-o must be followed by an arg\n");
+        switch (ch) {
+          case 's':
+            selection_order = true;
+            break;
+          case 'i':
+            flags |= std::regex_constants::icase;
+            break;
+          case 't':
+            tenacious = true;
+            break;
+          case 'o':
+            if (i == argc - 1) {
+              fprintf(stderr, "-o must be followed by an arg\n");
+              return 1;
+            }
+            out_separator_index = i + 1;
+            break;
+          default:
+            fprintf(stderr, "unknown option: '%c'\n", ch);
             return 1;
-          }
-          out_separator_index = i + 1;
-        } else {
-          fprintf(stderr, "unknown option: '%c'\n", ch);
-          return 1;
+            break;
         }
       }
     } else if (i != out_separator_index) {
@@ -113,12 +119,13 @@ int main(int argc, char** argv) {
     // read input
     std::vector<char> raw_input;
     char ch;
-    while (read(STDIN_FILENO, &ch, 1) > 0) {
+    while (read(STDIN_FILENO, &ch, sizeof(char)) > 0) {
       raw_input.push_back(ch);
     }
 
-    if (raw_input.size() == 0)
+    if (raw_input.size() == 0) {
       return 0;
+    }
 
     // parse input
     std::regex re(in_separator_index == std::numeric_limits<int>::min()
@@ -165,6 +172,10 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (tokens.size() == 0) {
+    return 0;
+  }
+
   // ============================= init tui ===================================
 
   int is_tty = isatty(fileno(stdout));
@@ -177,7 +188,7 @@ int main(int argc, char** argv) {
   exits the ui anyway), and send it at the end.
   */
   std::vector<char> queued_output;
-  
+
   int num_rows, num_columns;
 
   // https://stackoverflow.com/a/44884859/15534181
@@ -186,10 +197,10 @@ int main(int argc, char** argv) {
   SCREEN* screen = newterm(NULL, f, f);
   set_term(screen);
 
-  keypad(stdscr, true);    // enable arrow keys
-  cbreak();                // pass keys directly from input without buffering
-  noecho();                // disable echo back of keys entered
-  curs_set(0);             // invisible cursor
+  keypad(stdscr, true);  // enable arrow keys
+  cbreak();              // pass keys directly from input without buffering
+  noecho();              // disable echo back of keys entered
+  curs_set(0);           // invisible cursor
 
   // as opposed to: nodelay(stdscr, false) // make getch block
   // a very large timeout still allows sigint to be effective immediately
@@ -257,14 +268,45 @@ on_resize:
         auto end = tokens[y + scroll_position].cend() - 1;  // ignore null char
         while (pos != end) {
           char c = *pos++;
-          if (c == '\n') {
-            // draw newline chars differently
+          // draw some characters differently
+          char special_char;
+          switch (c) {
+            case '\a':
+              special_char = 'a';
+              break;
+            case '\b':
+              special_char = 'b';
+              break;
+            case (char)27:
+              special_char = 'e';
+              break;
+            case '\f':
+              special_char = 'f';
+              break;
+            case '\n':
+              special_char = 'n';
+              break;
+            case '\r':
+              special_char = 'r';
+              break;
+            case '\t':
+              special_char = 't';
+              break;
+            case '\v':
+              special_char = 'v';
+              break;
+            default:
+              special_char = '\0';
+              break;
+          }
+
+          if (special_char == '\0') {
+            mvaddch(y, x++, c);
+          } else {
             attron(A_DIM);
             mvaddch(y, x++, '\\');
-            mvaddch(y, x++, 'n');
+            mvaddch(y, x++, special_char);
             attroff(A_DIM);
-          } else {
-            mvaddch(y, x++, c);
           }
         }
 
@@ -292,7 +334,7 @@ on_resize:
       return 0;
     } else
 #ifdef BUTTON5_PRESSED
-      if (ch == KEY_MOUSE) {
+        if (ch == KEY_MOUSE) {
       MEVENT e;
       if (getmouse(&e) != OK)
         continue;
@@ -303,7 +345,7 @@ on_resize:
       }
     } else
 #endif
-    if (ch == KEY_RESIZE) {
+        if (ch == KEY_RESIZE) {
       goto on_resize;
     } else if (ch == ' ') {
       auto pos =
