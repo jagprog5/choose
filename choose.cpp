@@ -59,6 +59,10 @@ int main(int argc, char** argv) {
         "\t\t- d or f\n"
         "\tmultiple selections:\n"
         "\t\t- space\n"
+        "\tinvert selections:\n"
+        "\t\t- t\n"
+        "\tclear selections:\n"
+        "\t\t- c\n"
         "\texit:\n"
         "\t\t- q\n"
         "\t\t- backspace\n"
@@ -347,6 +351,22 @@ on_resize:
 #endif
         if (ch == KEY_RESIZE) {
       goto on_resize;
+    } else if (ch == 'i') {
+      std::sort(selections.begin(), selections.end());
+      auto selections_position = selections.cbegin();
+      decltype(selections) replacement;
+      replacement.resize(tokens.size() - selections.size());
+      auto replacement_insertion = replacement.begin();
+
+      for (int i = 0; i < (int)tokens.size(); ++i) {
+        selections_position = std::lower_bound(selections_position, selections.cend(), i);
+        if (selections_position == selections.cend() || *selections_position != i) {
+          *replacement_insertion++ = i;
+        }
+      }
+      selections = std::move(replacement);
+    } else if (ch == 'c') {
+      selections.clear();
     } else if (ch == ' ') {
       auto pos =
           std::find(selections.cbegin(), selections.cend(), selection_position);

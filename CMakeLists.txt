@@ -18,5 +18,6 @@ find_package(Curses REQUIRED)
 
 target_include_directories(choose PRIVATE ${CURSES_INCLUDE_DIRS})
 target_link_libraries(choose PRIVATE ${CURSES_LIBRARIES})
+target_compile_options(choose PRIVATE ${CURSES_CFLAGS})
 
 install(TARGETS choose DESTINATION /usr/bin)
