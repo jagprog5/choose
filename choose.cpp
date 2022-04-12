@@ -1,8 +1,8 @@
 #include <ncurses.h>
-#include <signal.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <algorithm>
+#include <csignal>
+#include <cstdlib>
 #include <limits>
 #include <regex>
 #include <vector>
@@ -19,7 +19,7 @@ static volatile sig_atomic_t sigint_occured = 0;
 static volatile sig_atomic_t read_done = 0;
 
 static void sig_handler([[maybe_unused]] int sig) {
-  if (!read_done) {
+  if (read_done == 0) {
     exit(0);
   }
   sigint_occured = 1;
@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
 
     read_done = 1;
 
-    if (raw_input.size() == 0) {
+    if (raw_input.empty()) {
       return 0;
     }
 
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (tokens.size() == 0) {
+  if (tokens.empty()) {
     return 0;
   }
 
@@ -204,8 +204,6 @@ int main(int argc, char** argv) {
   exits the ui anyway), and send it at the end.
   */
   std::vector<char> queued_output;
-
-  int num_rows, num_columns;
 
   // https://stackoverflow.com/a/44884859/15534181
   // required for ncurses to work after using stdin
@@ -248,6 +246,7 @@ int main(int argc, char** argv) {
 
   std::vector<int> selections;
 
+  int num_rows, num_columns;
 on_resize:
   getmaxyx(stdscr, num_rows, num_columns);
 
@@ -340,7 +339,7 @@ on_resize:
     // handle input
     int ch = getch();
 
-    if (sigint_occured || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
+    if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
       endwin();
       queued_output.push_back('\0');
@@ -441,9 +440,9 @@ on_resize:
       selection_position = 0;
       scroll_position = 0;
     } else if (ch == KEY_END) {
-      selection_position = tokens.size() - 1;
+      selection_position = (int)tokens.size() - 1;
       if ((int)tokens.size() > num_rows) {
-        scroll_position = tokens.size() - num_rows;
+        scroll_position = (int)tokens.size() - num_rows;
       } else {
         scroll_position = 0;
       }
@@ -455,14 +454,14 @@ on_resize:
     } else if (ch == KEY_NPAGE) {
       selection_position += num_rows;
       if (selection_position >= (int)tokens.size() - scroll_border) {
-        scroll_position = tokens.size() - num_rows;
+        scroll_position = (int)tokens.size() - num_rows;
       }
     }
 
     if (selection_position < 0) {
       selection_position = 0;
     } else if (selection_position >= (int)tokens.size()) {
-      selection_position = tokens.size() - 1;
+      selection_position = (int)tokens.size() - 1;
     }
 
     // scroll to keep the selection in view
