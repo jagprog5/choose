@@ -11,7 +11,17 @@ static constexpr int PAIR_SELECTED = 1;
 
 static volatile sig_atomic_t sigint_occured = 0;
 
+// the intent of sigint_occured is to write the buffered output to stdout upon ctrl-c
+// however, sigint_occured is only evaluated in the tui loop
+// the "read" function blocks until there is input
+// meaning, if ctrl-c is pressed with no input to the program, it will hang
+// read_done allows exit on ctrl-c with no input
+static volatile sig_atomic_t read_done = 0;
+
 static void sig_handler([[maybe_unused]] int sig) {
+  if (!read_done) {
+    exit(0);
+  }
   sigint_occured = 1;
 }
 
@@ -126,6 +136,8 @@ int main(int argc, char** argv) {
     while (read(STDIN_FILENO, &ch, sizeof(char)) > 0) {
       raw_input.push_back(ch);
     }
+
+    read_done = 1;
 
     if (raw_input.size() == 0) {
       return 0;
