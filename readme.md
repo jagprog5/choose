@@ -19,7 +19,8 @@ choose --help
 
 # hist
 
-`hist` is a shell function which uses `choose`. It's defined in choose's doc, and copy pasted here for convenience:
+`hist` is a shell function which uses `choose`.  
+It's defined in choose's doc, and copy pasted here for convenience:
 
 ```bash
 hist() { SELECTED=`history | grep "\`echo "$@"\`" | sed 's/^\s*[0-9*]*\s*//' | head -n -1 | tac \
@@ -27,4 +28,5 @@ hist() { SELECTED=`history | grep "\`echo "$@"\`" | sed 's/^\s*[0-9*]*\s*//' | h
 ```
 
 
-`hist` should be added to `~/.bashrc`. It allows a previous command to be re-run, a better combination of `reverse-i-search` and `history | grep "$whatever"`.
+`hist` should be added to `~/.bashrc`. It allows a previous command to be re-run,  
+like a better combination of `reverse-i-search` and `history | grep "$whatever"`.

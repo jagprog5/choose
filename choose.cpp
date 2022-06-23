@@ -5,16 +5,17 @@
 #include <cstdlib>
 #include <limits>
 #include <regex>
+#include <string>
 #include <vector>
 
 static constexpr int PAIR_SELECTED = 1;
 
 static volatile sig_atomic_t sigint_occured = 0;
 
-// the intent of sigint_occured is to write the buffered output to stdout upon ctrl-c
-// however, sigint_occured is only evaluated in the tui loop
-// the "read" function blocks until there is input
-// meaning, if ctrl-c is pressed with no input to the program, it will hang
+// sigint_occured writes the buffered output to stdout upon ctrl-c, however
+// sigint_occured is only evaluated in the tui loop
+// the "read" function blocks until there is input, meaning, if ctrl-c is
+// pressed with no input to the program, it will hang
 // read_done allows exit on ctrl-c with no input
 static volatile sig_atomic_t read_done = 0;
 
@@ -43,15 +44,16 @@ int main(int argc, char** argv) {
         "the output.\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose <options> [<input regex separator, default \\n>] [-o <output "
+        "\tchoose <options> [<input separator, default \\n>] [-o <output "
         "separator, default \\n>]\n"
         "options:\n"
+        "\t-r use regex (ECMAScript) in the input separator\n"
         "\t-s sort the output based on selection order instead of input order\n"
         "\t-i make the input separator case insensitive\n"
         "\t-t tenacious; don't exit on confirmed selection. for "
         "non-tty output, each selection is flushed\n"
         "examples:\n"
-        "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
+        "\techo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
         "\thist() { SELECTED=`history | grep \"\\`echo \"$@\"\\`\" | sed "
         "'s/^\\s*[0-9*]*\\s*//' | head -n -1 | tac \\\n            | choose` "
         "&& history -s \"$SELECTED\" && eval \"$SELECTED\" ; }\n"
@@ -80,6 +82,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  bool regex = false;
   bool selection_order = false;
   std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
   bool tenacious = false;
@@ -93,6 +96,9 @@ int main(int argc, char** argv) {
       char ch;
       while ((ch = *pos++)) {
         switch (ch) {
+          case 'r':
+            regex = true;
+            break;
           case 's':
             selection_order = true;
             break;
@@ -136,7 +142,6 @@ int main(int argc, char** argv) {
     while (read(STDIN_FILENO, &ch, sizeof(char)) > 0) {
       raw_input.push_back(ch);
     }
-
     read_done = 1;
 
     if (raw_input.empty()) {
@@ -144,48 +149,45 @@ int main(int argc, char** argv) {
     }
 
     // parse input
-    std::regex re(in_separator_index == std::numeric_limits<int>::min()
-                      ? "\n"
-                      : argv[in_separator_index],
-                  flags);
-    std::cmatch match;
-
     const char* pos = &*raw_input.cbegin();
-    while (std::regex_search(pos, match, re)) {
-      const char* match_begin = match.cbegin()->first;
-      auto length = match.cbegin()->length();
 
-      bool has_length = pos != match_begin;
-      if (has_length) {
-        tokens.emplace_back();
+    auto insert_token = [&tokens](const char*& begin, const char* end) {
+      // insert the token
+      // begin is modified and points to the end
+      if (begin == end)
+        return;
+      tokens.emplace_back();
+      while (begin != end) {
+        tokens.rbegin()->push_back(*begin++);
       }
+      tokens.rbegin()->push_back('\0');
+    };
 
-      while (pos != match_begin) {
-        tokens.rbegin()->push_back(*pos++);
+    const char* input_separator =
+        in_separator_index == std::numeric_limits<int>::min()
+            ? "\n"
+            : argv[in_separator_index];
+
+    if (regex) {
+      std::regex re(input_separator, flags);
+      std::cmatch match;
+      while (std::regex_search(pos, match, re)) {
+        const char* match_begin = match.cbegin()->first;
+        auto length = match.cbegin()->length();
+        insert_token(pos, match_begin);
+        pos += length;
       }
-
-      if (has_length) {
-        tokens.rbegin()->push_back('\0');
+    } else {
+      // non-regex match
+      unsigned int length = strlen(input_separator);
+      while (const char* match_begin = std::strstr(pos, input_separator)) {
+        insert_token(pos, match_begin);
+        pos += length;
       }
-
-      pos += length;
     }
 
     // last token
-
-    bool has_length = pos != &*raw_input.cend();
-
-    if (has_length) {
-      tokens.emplace_back();
-    }
-
-    while (pos != &*raw_input.cend()) {
-      tokens.rbegin()->push_back(*pos++);
-    }
-
-    if (has_length) {
-      tokens.rbegin()->push_back('\0');
-    }
+    insert_token(pos, &*raw_input.cend());
   }
 
   if (tokens.empty()) {
@@ -278,9 +280,12 @@ on_resize:
           }
         }
 
-        int x = 2;
+        static constexpr int INITIAL_X = 2;
+        int x = INITIAL_X;
         auto pos = tokens[y + scroll_position].cbegin();
         auto end = tokens[y + scroll_position].cend() - 1;  // ignore null char
+        bool only_spaces =
+            true;  // if the line only contains spaces, draw it differently
         while (pos != end) {
           char c = *pos++;
           // draw some characters differently
@@ -315,6 +320,10 @@ on_resize:
               break;
           }
 
+          if (c != ' ') {
+            only_spaces = false;
+          }
+
           if (special_char == '\0') {
             mvaddch(y, x++, c);
           } else {
@@ -326,6 +335,16 @@ on_resize:
         }
 
         if (row_highlighted || row_selected) {
+          if (only_spaces) {
+            for (unsigned int i = INITIAL_X;
+                 i < INITIAL_X + (tokens[y + scroll_position].size() - 1 * 2);
+                 i += 2) {
+              attron(A_DIM);
+              mvaddch(y, i, '\\');
+              mvaddch(y, i + 1, 's');
+              attroff(A_DIM);
+            }
+          }
           attroff(A_BOLD);
           if (row_selected) {
             attroff(COLOR_PAIR(PAIR_SELECTED));
