@@ -52,9 +52,9 @@ int main(int argc, char** argv) {
         "non-tty output, each selection is flushed\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
-        "\thist() { SELECTED=`history | grep \"$1\" | sed "
-        "'s/^\\s*[0-9*]*\\s*//' | head -n -1 | tac | choose` && history -s "
-        "\"$SELECTED\" && eval \"$SELECTED\" ; }\n"
+        "\thist() { SELECTED=`history | grep \"\\`echo \"$@\"\\`\" | sed "
+        "'s/^\\s*[0-9*]*\\s*//' | head -n -1 | tac \\\n            | choose` "
+        "&& history -s \"$SELECTED\" && eval \"$SELECTED\" ; }\n"
         "controls:\n"
         "\tscrolling:\n"
         "\t\t- arrow up/down\n"
@@ -370,8 +370,10 @@ on_resize:
       auto replacement_insertion = replacement.begin();
 
       for (int i = 0; i < (int)tokens.size(); ++i) {
-        selections_position = std::lower_bound(selections_position, selections.cend(), i);
-        if (selections_position == selections.cend() || *selections_position != i) {
+        selections_position =
+            std::lower_bound(selections_position, selections.cend(), i);
+        if (selections_position == selections.cend() ||
+            *selections_position != i) {
           *replacement_insertion++ = i;
         }
       }
