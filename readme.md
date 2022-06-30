@@ -7,7 +7,7 @@ Splits an input into tokens based on a regex separator, and provides a text base
 ## Installation
 
 ```bash
-sudo apt-get install -y libncurses-dev
+sudo apt-get install -y libncurses-dev libpcre2-dev
 cmake . && sudo cmake --build . --target install 
 ```
 
@@ -19,14 +19,17 @@ choose --help
 
 # hist
 
-`hist` is a shell function which uses `choose`.  
-It's defined in choose's doc, and copy pasted here for convenience:
+`hist` is a bash function which uses `choose`. It should be added to `~/.bashrc`
 
 ```bash
-hist() { SELECTED=`history | grep "\`echo "$@"\`" | sed 's/^\s*[0-9*]*\s*//' | head -n -1 | tac \
-    | choose` && history -s "$SELECTED" && eval "$SELECTED" ; }
+hist() {
+    HISTTIMEFORMATSAVE="$HISTTIMEFORMAT"
+    trap 'HISTTIMEFORMAT="$HISTTIMEFORMATSAVE"' err
+    unset HISTTIMEFORMAT
+    SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -r` && \
+    history -s "$SELECTED" && HISTTIMEFORMAT="$HISTTIMEFORMATSAVE" && eval "$SELECTED" ; 
+}
 ```
 
-
-`hist` should be added to `~/.bashrc`. It allows a previous command to be re-run,  
+It allows a previous command to be re-run,  
 like a better combination of `reverse-i-search` and `history | grep "$whatever"`.

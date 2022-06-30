@@ -1,21 +1,24 @@
 #include <ncurses.h>
+#include <string.h>
 #include <unistd.h>
 #include <algorithm>
 #include <csignal>
 #include <cstdlib>
 #include <limits>
-#include <regex>
-#include <string>
 #include <vector>
+
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
 
 static constexpr int PAIR_SELECTED = 1;
 
 static volatile sig_atomic_t sigint_occured = 0;
 
+// read_done is used to handle an edge case:
 // sigint_occured writes the buffered output to stdout upon ctrl-c, however
 // sigint_occured is only evaluated in the tui loop
 // the "read" function blocks until there is input, meaning, if ctrl-c is
-// pressed with no input to the program, it will hang
+// pressed with no input to the program, it will hang.
 // read_done allows exit on ctrl-c with no input
 static volatile sig_atomic_t read_done = 0;
 
@@ -28,7 +31,8 @@ static void sig_handler([[maybe_unused]] int sig) {
 
 int main(int argc, char** argv) {
   signal(SIGINT, sig_handler);
-  // ============================= args ===================================
+
+  // ============================= help message ================================
 
   if (argc == 2 &&
       (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
@@ -39,24 +43,30 @@ int main(int argc, char** argv) {
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
         "description:\n"
-        "\tSplits an input into tokens based on a regex separator,\n"
-        "\tand provides a text based ui for selecting which token are sent to "
+        "\tSplits an input into tokens based on a PCRE2 regex separator, "
+        "and provides a text based ui for selecting which token are sent to "
         "the output.\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose <options> [<input separator, default \\n>] [-o <output "
-        "separator, default \\n>]\n"
+        "\tchoose <options> [<input separator>] [-o <output separator>]\n"
+        "\tThe default input separator matches newlines not contained in quotes, "
+        "excluding escaped quotes.\n"
         "options:\n"
-        "\t-r use regex (ECMAScript) in the input separator\n"
         "\t-s sort the output based on selection order instead of input order\n"
-        "\t-i make the input separator case insensitive\n"
-        "\t-t tenacious; don't exit on confirmed selection. for "
-        "non-tty output, each selection is flushed\n"
+        "\t-t tenacious; don't exit on confirmed selection. in "
+        "non-tty outputs, each selection is flushed individually\n"
+        "\t-r reverse the token order\n"
         "examples:\n"
-        "\techo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
-        "\thist() { SELECTED=`history | grep \"\\`echo \"$@\"\\`\" | sed "
-        "'s/^\\s*[0-9*]*\\s*//' | head -n -1 | tac \\\n            | choose` "
-        "&& history -s \"$SELECTED\" && eval \"$SELECTED\" ; }\n"
+        "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
+        "\techo -n \"1A2a3\" | choose \"(?i)a\"\n"
+        "\thist() {\n"
+        "\t\tHISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
+        "\t\ttrap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
+        "\t\tunset HISTTIMEFORMAT\n"
+        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -r` && \\\n"
+        "\t\thistory -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
+        "eval \"$SELECTED\" ; \n"
+        "\t}\n"
         "controls:\n"
         "\tscrolling:\n"
         "\t\t- arrow up/down\n"
@@ -82,11 +92,14 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  bool regex = false;
-  bool selection_order = false;
-  std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
-  bool tenacious = false;
+  // ============================= args ===================================
 
+  bool selection_order = false;
+  bool tenacious = false;
+  bool reverse = false;
+
+  // indices are initialized to invalid positions
+  // if it is not set by the args, then it will use default values instead
   int in_separator_index = std::numeric_limits<int>::min();
   int out_separator_index = std::numeric_limits<int>::min();
 
@@ -96,17 +109,14 @@ int main(int argc, char** argv) {
       char ch;
       while ((ch = *pos++)) {
         switch (ch) {
-          case 'r':
-            regex = true;
-            break;
           case 's':
             selection_order = true;
             break;
-          case 'i':
-            flags |= std::regex_constants::icase;
-            break;
           case 't':
             tenacious = true;
+            break;
+          case 'r':
+            reverse = true;
             break;
           case 'o':
             if (i == argc - 1) {
@@ -134,10 +144,18 @@ int main(int argc, char** argv) {
 
   // ============================= stdin ===================================
 
-  std::vector<std::vector<char>> tokens;
+  std::vector<char> raw_input;  // hold stdin
+
+  // points to sections of raw_input
+  struct Token {
+    const char* begin;
+    const char* end;
+  };
+  std::vector<Token> tokens;
+
   {
-    // read input
-    std::vector<char> raw_input;
+    // =========================== read input ==============================
+
     char ch;
     while (read(STDIN_FILENO, &ch, sizeof(char)) > 0) {
       raw_input.push_back(ch);
@@ -148,47 +166,185 @@ int main(int argc, char** argv) {
       return 0;
     }
 
-    // parse input
+    // =========================== make tokens ==============================
+
     const char* pos = &*raw_input.cbegin();
 
-    auto insert_token = [&tokens](const char*& begin, const char* end) {
-      // insert the token
-      // begin is modified and points to the end
+    auto insert_token_and_advance = [&tokens, reverse](const char*& begin,
+                                                       const char* end) {
       if (begin == end)
         return;
-      tokens.emplace_back();
-      while (begin != end) {
-        tokens.rbegin()->push_back(*begin++);
-      }
-      tokens.rbegin()->push_back('\0');
+      tokens.insert(reverse ? tokens.begin() : tokens.end(), {begin, end});
+      begin = end;
     };
 
-    const char* input_separator =
-        in_separator_index == std::numeric_limits<int>::min()
-            ? "\n"
-            : argv[in_separator_index];
-
-    if (regex) {
-      std::regex re(input_separator, flags);
-      std::cmatch match;
-      while (std::regex_search(pos, match, re)) {
-        const char* match_begin = match.cbegin()->first;
-        auto length = match.cbegin()->length();
-        insert_token(pos, match_begin);
-        pos += length;
-      }
+    const char* input_separator;
+    if (in_separator_index == std::numeric_limits<int>::min()) {
+      // default sep
+      // https://regex101.com/r/RHyz6D/
+      // the above link, but with "pattern" replaced with a newline char
+      input_separator =
+          R"(\G((?:(?:\\\\)*+\\["']|(?:\\\\)*(?!\\+['"])[^"'])*?\K(?:
+|(?:\\\\)*'(?:\\\\)*+(?:(?:\\')|(?!\\')[^'])*(?:\\\\)*'(?1)|(?:\\\\)*"(?:\\\\)*+(?:(?:\\")|(?!\\")[^"])*(?:\\\\)*"(?1))))";
     } else {
-      // non-regex match
-      unsigned int length = strlen(input_separator);
-      while (const char* match_begin = std::strstr(pos, input_separator)) {
-        insert_token(pos, match_begin);
-        pos += length;
+      input_separator = argv[in_separator_index];
+    }
+
+    /*
+     * Using the PCRE2 c library is absolutely abhorrent.
+     * It's just sooooo outdated.
+     *   - Modern practices would use templates instead of preprocessor macros,
+     *   - ovector is an implementation detail that should be abstracted away by
+     * an object, instead of the user having to manually move everything around
+     * and just KNOW what each index of the vector means
+     *
+     * I am using PCRE2 because std::regex and boost::regex both can't handle
+     * the above regex I crafted online (regex flavour not supported).
+     * Another alternative is jpcre2 (a c++ wrapper), but that one...
+     * ... actually I probably should have used that instead. anyways:
+     *
+     * I'm following the example here:
+     * https://www.pcre.org/current/doc/html/pcre2demo.html
+     */
+
+    {
+      // compile the regex
+      PCRE2_SPTR pattern = (PCRE2_SPTR)input_separator;
+      int errornumber;
+      PCRE2_SIZE erroroffset;
+      pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, 0,
+                                     &errornumber, &erroroffset, NULL);
+      if (re == NULL) {
+        PCRE2_UCHAR buffer[256];
+        pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+        fprintf(stderr, "PCRE2 compilation failed at offset %d: %s\n",
+                (int)erroroffset, buffer);
+        return 1;
+      }
+
+      // match
+      pcre2_match_data* match_data =
+          pcre2_match_data_create_from_pattern(re, NULL);
+      PCRE2_SPTR subject = (PCRE2_SPTR) & *raw_input.cbegin();
+      PCRE2_SIZE subject_length = (PCRE2_SIZE)raw_input.size();
+      int rc = pcre2_match(re, subject, subject_length, 0, 0, match_data, NULL);
+
+      // check the result
+      if (rc == PCRE2_ERROR_NOMATCH) {
+        goto regex_done;
+      } else if (rc <= 0) {
+        // < 0 is a regex error
+        // = 0 means the match_data ovector wasn't big enough
+        // should never happen
+        fprintf(stderr, "First match, matching error %d\n", rc);
+        // not bothering to call free since program terminates
+        return 1;
+      }
+
+      // access the result
+      PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data);
+      if (ovector[0] > ovector[1]) {
+        fprintf(stderr,
+                "\\K was used in an assertion to set the match start after its "
+                "end.\n"
+                "From end to start the match was: %.*s\n",
+                (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
+        fprintf(stderr, "Run abandoned\n");
+        return 1;
+      }
+
+      // just take the entire match, [0]
+      PCRE2_SPTR substring_start = subject + ovector[0];
+      PCRE2_SIZE substring_length = ovector[1] - ovector[0];
+      insert_token_and_advance(pos, (char*)substring_start);
+      pos += substring_length;
+
+      // for the next matches
+      uint32_t options_bits;
+      (void)pcre2_pattern_info(re, PCRE2_INFO_ALLOPTIONS, &options_bits);
+      int utf8 = (options_bits & PCRE2_UTF) != 0;
+
+      uint32_t newline;
+      (void)pcre2_pattern_info(re, PCRE2_INFO_NEWLINE, &newline);
+      int crlf_is_newline = newline == PCRE2_NEWLINE_ANY ||
+                            newline == PCRE2_NEWLINE_CRLF ||
+                            newline == PCRE2_NEWLINE_ANYCRLF;
+
+      // get subsequent matches
+      while (1) {
+        uint32_t options = 0;
+        PCRE2_SIZE start_offset = ovector[1];
+        // some weird implementation details I don't quite understand
+        // again, I'm copying pasting from the example linked above
+        if (ovector[0] == ovector[1]) {
+          if (ovector[0] == subject_length)
+            break;
+          options |= PCRE2_NOTEMPTY_ATSTART | PCRE2_ANCHORED;
+        } else {
+          PCRE2_SIZE startchar = pcre2_get_startchar(match_data);
+          if (start_offset <= startchar) {
+            if (startchar >= subject_length)
+              break;
+            start_offset = startchar + 1;
+            if (utf8) {
+              for (; start_offset < subject_length; start_offset++)
+                if ((subject[start_offset] & 0xc0) != 0x80)
+                  break;
+            }
+          }
+        }
+
+        // the next matches
+        rc = pcre2_match(re, subject, subject_length, start_offset, options,
+                         match_data, NULL);
+
+        if (rc == PCRE2_ERROR_NOMATCH) {
+          if (options == 0)
+            break;
+          ovector[1] = start_offset + 1;
+          if (crlf_is_newline && start_offset < subject_length - 1 &&
+              subject[start_offset] == '\r' &&
+              subject[start_offset + 1] == '\n')
+            ovector[1] += 1;
+          else if (utf8) {
+            while (ovector[1] < subject_length) {
+              if ((subject[ovector[1]] & 0xc0) != 0x80)
+                break;
+              ovector[1] += 1;
+            }
+          }
+          continue;
+        }
+
+        if (rc <= 0) {
+          fprintf(stderr, "Matching error %d\n", rc);
+          return 1;
+        }
+
+        if (ovector[0] > ovector[1]) {
+          fprintf(
+              stderr,
+              "\\K was used in an assertion to set the match start after its "
+              "end.\n"
+              "From end to start the match was: %.*s\n",
+              (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
+          fprintf(stderr, "Run abandoned\n");
+          return 1;
+        }
+
+        PCRE2_SPTR substring_start = subject + ovector[0];
+        PCRE2_SIZE substring_length = ovector[1] - ovector[0];
+        insert_token_and_advance(pos, (char*)substring_start);
+        pos += substring_length;
       }
     }
 
-    // last token
-    insert_token(pos, &*raw_input.cend());
+  regex_done:
+    // last token (anchored to end of input)
+    insert_token_and_advance(pos, &*raw_input.cend());
   }
+
+  // ============================ END OF REGEX STUFF ========================
 
   if (tokens.empty()) {
     return 0;
@@ -282,8 +438,8 @@ on_resize:
 
         static constexpr int INITIAL_X = 2;
         int x = INITIAL_X;
-        auto pos = tokens[y + scroll_position].cbegin();
-        auto end = tokens[y + scroll_position].cend() - 1;  // ignore null char
+        auto pos = tokens[y + scroll_position].begin;
+        auto end = tokens[y + scroll_position].end;
         bool only_spaces =
             true;  // if the line only contains spaces, draw it differently
         while (pos != end) {
@@ -316,6 +472,7 @@ on_resize:
               special_char = 'v';
               break;
             default:
+              // default case. normal character
               special_char = '\0';
               break;
           }
@@ -336,9 +493,10 @@ on_resize:
 
         if (row_highlighted || row_selected) {
           if (only_spaces) {
-            for (unsigned int i = INITIAL_X;
-                 i < INITIAL_X + (tokens[y + scroll_position].size() - 1 * 2);
-                 i += 2) {
+            const Token& token = tokens[y + scroll_position];
+            unsigned int size = token.end - token.begin;
+
+            for (unsigned int i = INITIAL_X; i < INITIAL_X + size * 2; i += 2) {
               attron(A_DIM);
               mvaddch(y, i, '\\');
               mvaddch(y, i + 1, 's');
@@ -353,9 +511,8 @@ on_resize:
       }
     }
 
-    // ========================== handle input ================================
+    // ========================== user input ================================
 
-    // handle input
     int ch = getch();
 
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
@@ -432,15 +589,17 @@ on_resize:
             }
           }
         }
-        if (immediate_output) {
-          fprintf(stdout, "%s", &*tokens[s].cbegin());
-        } else {
-          char c;
-          const char* token_iter = &*tokens[s].cbegin();
-          while ((c = *token_iter++)) {
-            queued_output.push_back(c);
+        const Token& token = tokens[s];
+        const char* iter = token.begin;
+        while (iter != token.end) {
+          if (immediate_output) {
+            fputc(*iter, stdout);
+          } else {
+            queued_output.push_back(*iter);
           }
+          ++iter;
         }
+
         first_output = false;
       }
       if (immediate_output) {

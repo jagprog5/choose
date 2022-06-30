@@ -15,9 +15,14 @@ endif()
 
 set(CURSES_NEED_NCURSES TRUE)
 find_package(Curses REQUIRED)
-
 target_include_directories(choose PRIVATE ${CURSES_INCLUDE_DIRS})
 target_link_libraries(choose PRIVATE ${CURSES_LIBRARIES})
 target_compile_options(choose PRIVATE ${CURSES_CFLAGS})
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PCRE REQUIRED libpcre2-8)
+
+target_include_directories(choose PRIVATE ${PCRE_INCLUDEDIR})
+target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES}) 
 
 install(TARGETS choose DESTINATION /usr/bin)
