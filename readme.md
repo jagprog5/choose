@@ -26,7 +26,7 @@ hist() {
     HISTTIMEFORMATSAVE="$HISTTIMEFORMAT"
     trap 'HISTTIMEFORMAT="$HISTTIMEFORMATSAVE"' err
     unset HISTTIMEFORMAT
-    SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -r` && \
+    SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -fr` && \
     history -s "$SELECTED" && HISTTIMEFORMAT="$HISTTIMEFORMATSAVE" && eval "$SELECTED" ; 
 }
 ```
