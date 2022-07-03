@@ -43,27 +43,29 @@ int main(int argc, char** argv) {
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
         "description:\n"
-        "\tSplits an input into tokens based on a PCRE2 regex separator, "
+        "\tSplits an input into tokens based on a separator, "
         "and provides a text based ui for selecting which token are sent to "
         "the output.\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
         "\tchoose <options> [<input separator>] [-o <output separator>]\n"
-        "\tThe default input separator matches newlines not contained in quotes, "
-        "excluding escaped quotes.\n"
         "options:\n"
+        "\t-f flip the token order\n"
+        "\t-i make the match case-insensitive\n"
+        "\t-r use (PCRE2) regex for the input separator\n"
+        "\t\tIf disabled, the default input separator is a newline character.\n"
+        "\t\tIf enabled, the default input separator is a regex which matches newline characters not contained in single or double quotes, excluding escaped quotes.\n"
         "\t-s sort the output based on selection order instead of input order\n"
         "\t-t tenacious; don't exit on confirmed selection. in "
         "non-tty outputs, each selection is flushed individually\n"
-        "\t-r reverse the token order\n"
         "examples:\n"
-        "\techo -n \"this 1 is 2 a 3 test\" | choose \" [0-9] \"\n"
-        "\techo -n \"1A2a3\" | choose \"(?i)a\"\n"
+        "\techo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
+        "\techo -n \"1A2a3\" | choose -i \"a\"\n"
         "\thist() {\n"
         "\t\tHISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
         "\t\ttrap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
         "\t\tunset HISTTIMEFORMAT\n"
-        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -r` && \\\n"
+        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -fr` && \\\n"
         "\t\thistory -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
         "eval \"$SELECTED\" ; \n"
         "\t}\n"
@@ -94,9 +96,10 @@ int main(int argc, char** argv) {
 
   // ============================= args ===================================
 
+  uint32_t flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
-  bool reverse = false;
+  bool flip = false;
 
   // indices are initialized to invalid positions
   // if it is not set by the args, then it will use default values instead
@@ -109,14 +112,20 @@ int main(int argc, char** argv) {
       char ch;
       while ((ch = *pos++)) {
         switch (ch) {
+          case 'r':
+            flags &= ~PCRE2_LITERAL;
+            break;
+          case 'i':
+            flags |= PCRE2_CASELESS;
+            break;
           case 's':
             selection_order = true;
             break;
           case 't':
             tenacious = true;
             break;
-          case 'r':
-            reverse = true;
+          case 'f':
+            flip = true;
             break;
           case 'o':
             if (i == argc - 1) {
@@ -170,22 +179,26 @@ int main(int argc, char** argv) {
 
     const char* pos = &*raw_input.cbegin();
 
-    auto insert_token_and_advance = [&tokens, reverse](const char*& begin,
+    auto insert_token_and_advance = [&tokens, flip](const char*& begin,
                                                        const char* end) {
       if (begin == end)
         return;
-      tokens.insert(reverse ? tokens.begin() : tokens.end(), {begin, end});
+      tokens.insert(flip ? tokens.begin() : tokens.end(), {begin, end});
       begin = end;
     };
 
     const char* input_separator;
     if (in_separator_index == std::numeric_limits<int>::min()) {
       // default sep
-      // https://regex101.com/r/RHyz6D/
-      // the above link, but with "pattern" replaced with a newline char
-      input_separator =
-          R"(\G((?:(?:\\\\)*+\\["']|(?:\\\\)*(?!\\+['"])[^"'])*?\K(?:
+      if (flags & PCRE2_LITERAL) {
+        input_separator = "\n";
+      } else {
+        // https://regex101.com/r/RHyz6D/
+        // the above link, but with "pattern" replaced with a newline char
+        input_separator =
+            R"(\G((?:(?:\\\\)*+\\["']|(?:\\\\)*(?!\\+['"])[^"'])*?\K(?:
 |(?:\\\\)*'(?:\\\\)*+(?:(?:\\')|(?!\\')[^'])*(?:\\\\)*'(?1)|(?:\\\\)*"(?:\\\\)*+(?:(?:\\")|(?!\\")[^"])*(?:\\\\)*"(?1))))";
+      }
     } else {
       input_separator = argv[in_separator_index];
     }
@@ -212,7 +225,8 @@ int main(int argc, char** argv) {
       PCRE2_SPTR pattern = (PCRE2_SPTR)input_separator;
       int errornumber;
       PCRE2_SIZE erroroffset;
-      pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, 0,
+      
+      pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, flags,
                                      &errornumber, &erroroffset, NULL);
       if (re == NULL) {
         PCRE2_UCHAR buffer[256];
