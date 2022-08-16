@@ -53,11 +53,12 @@ int main(int argc, char** argv) {
         "\t-f flip the token order\n"
         "\t-i make the match case-insensitive\n"
         "\t-r use (PCRE2) regex for the input separator\n"
-        "\t\tIf disabled, the default input separator is a newline character.\n"
-        "\t\tIf enabled, the default input separator is a regex which matches newline characters not contained in single or double quotes, excluding escaped quotes.\n"
+        "\t\tIf disabled, the default input separator is a newline character\n"
+        "\t\tIf enabled, the default input separator is a regex which matches newline characters not contained in single or double quotes, excluding escaped quotes\n"
         "\t-s sort the output based on selection order instead of input order\n"
         "\t-t tenacious; don't exit on confirmed selection. in "
         "non-tty outputs, each selection is flushed individually\n"
+        "\t-0 use null as the input separator\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
         "\techo -n \"1A2a3\" | choose -i \"a\"\n"
@@ -65,7 +66,7 @@ int main(int argc, char** argv) {
         "\t\tHISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
         "\t\ttrap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
         "\t\tunset HISTTIMEFORMAT\n"
-        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -fr` && \\\n"
+        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
         "\t\thistory -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
         "eval \"$SELECTED\" ; \n"
         "\t}\n"
@@ -100,6 +101,7 @@ int main(int argc, char** argv) {
   bool selection_order = false;
   bool tenacious = false;
   bool flip = false;
+  bool null = false;
 
   // indices are initialized to invalid positions
   // if it is not set by the args, then it will use default values instead
@@ -126,6 +128,9 @@ int main(int argc, char** argv) {
             break;
           case 'f':
             flip = true;
+            break;
+          case '0':
+            null = true;
             break;
           case 'o':
             if (i == argc - 1) {
@@ -188,7 +193,9 @@ int main(int argc, char** argv) {
     };
 
     const char* input_separator;
-    if (in_separator_index == std::numeric_limits<int>::min()) {
+    if (null) {
+      input_separator = ""; // points to a single null character
+    } else if (in_separator_index == std::numeric_limits<int>::min()) {
       // default sep
       if (flags & PCRE2_LITERAL) {
         input_separator = "\n";
@@ -226,7 +233,7 @@ int main(int argc, char** argv) {
       int errornumber;
       PCRE2_SIZE erroroffset;
       
-      pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, flags,
+      pcre2_code* re = pcre2_compile(pattern, null ? 1 : PCRE2_ZERO_TERMINATED, flags,
                                      &errornumber, &erroroffset, NULL);
       if (re == NULL) {
         PCRE2_UCHAR buffer[256];
@@ -454,10 +461,15 @@ on_resize:
         int x = INITIAL_X;
         auto pos = tokens[y + scroll_position].begin;
         auto end = tokens[y + scroll_position].end;
-        bool only_spaces =
-            true;  // if the line only contains spaces, draw it differently
+        // if the line only contains spaces, draw it differently
+        bool only_spaces = true;
         while (pos != end) {
           char c = *pos++;
+
+          if (c != ' ') {
+            only_spaces = false;
+          }
+
           // draw some characters differently
           char special_char;
           switch (c) {
@@ -485,24 +497,28 @@ on_resize:
             case '\v':
               special_char = 'v';
               break;
+            case '\0':
+              special_char = '0';
+              break;
             default:
-              // default case. normal character
-              special_char = '\0';
+              // default case. print char normally
+              goto print_normal_char;
               break;
           }
 
-          if (c != ' ') {
-            only_spaces = false;
-          }
-
-          if (special_char == '\0') {
-            mvaddch(y, x++, c);
-          } else {
+          // if char is special {
             attron(A_DIM);
             mvaddch(y, x++, '\\');
             mvaddch(y, x++, special_char);
             attroff(A_DIM);
-          }
+          // }
+            goto after_print_normal_char;
+          print_normal_char:
+          // else {
+            mvaddch(y, x++, c);
+          // }
+          after_print_normal_char:
+            (void)0;
         }
 
         if (row_highlighted || row_selected) {

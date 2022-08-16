@@ -26,10 +26,12 @@ hist() {
     HISTTIMEFORMATSAVE="$HISTTIMEFORMAT"
     trap 'HISTTIMEFORMAT="$HISTTIMEFORMATSAVE"' err
     unset HISTTIMEFORMAT
-    SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -fr` && \
+    SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \
     history -s "$SELECTED" && HISTTIMEFORMAT="$HISTTIMEFORMATSAVE" && eval "$SELECTED" ; 
 }
 ```
 
 It allows a previous command to be re-run,  
 like a better combination of `reverse-i-search` and `history | grep "$whatever"`.
+
+*<sub><sup>Multiline history entries are not displayed correctly because gnu-history [doesn't](https://askubuntu.com/a/1210371) support this by default and parsing is a pain.</sup></sub>
