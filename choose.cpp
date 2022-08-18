@@ -43,55 +43,65 @@ int main(int argc, char** argv) {
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
         "              :'    ╘══════╛                     :'   \n\n"
         "description:\n"
-        "\tSplits an input into tokens based on a separator, "
-        "and provides a text based ui for selecting which token are sent to "
+        "\tSplits the input into tokens based on a separator, "
+        "and provides a text based ui for selecting which tokens are sent to "
         "the output.\n"
+        "terminology:\n"
+        "\t\"input separator\": describes where to split the input to create tokens\n"
+        "\t\"output separator\": placed between each selected token in the output\n"
+        "\t\"multiple selection output separator\": placed between each \"batch\" of selected tokens.\n"
+        // spaces here in case of inconsistent space vs tab length
+        "\t                                       selecting multiple tokens (see controls, below) forms a batch.\n"
+        "\t                                       more than one batch can be sent to the output in tenacious mode (see below).\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
-        "\tchoose <options> [<input separator>] [-o <output separator>]\n"
+        "\tchoose <options> [<input separator>] "
+        "[-o <output separator, default: \\n>] "
+        "[-m <multiple selection output separator, default: output separator>]\n"
         "options:\n"
+        "\t-d delimit; adds a trailing multiple selection output separator at the end of the output.\n"
         "\t-f flip the token order\n"
-        "\t-i make the match case-insensitive\n"
+        "\t-i make the input separator case-insensitive\n"
         "\t-r use (PCRE2) regex for the input separator\n"
         "\t\tIf disabled, the default input separator is a newline character\n"
-        "\t\tIf enabled, the default input separator is a regex which matches newline characters not contained in single or double quotes, excluding escaped quotes\n"
+        "\t\tIf enabled, the default input separator is a regex which matches "
+        "newline characters not contained in single or double quotes, excluding escaped quotes\n"
         "\t-s sort the output based on selection order instead of input order\n"
-        "\t-t tenacious; don't exit on confirmed selection. in "
-        "non-tty outputs, each selection is flushed individually\n"
+        "\t-t tenacious; don't exit on confirmed selection\n"
+        "\t-y use null as the multiple selection output separator\n"
+        "\t-z use null as the output separator\n"
         "\t-0 use null as the input separator\n"
         "examples:\n"
         "\techo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
         "\techo -n \"1A2a3\" | choose -i \"a\"\n"
+        "\techo -n \"1 2 3\" | choose -o \",\" -m $'\\n' \" \" -dst\n"
         "\thist() {\n"
         "\t\tHISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
         "\t\ttrap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
         "\t\tunset HISTTIMEFORMAT\n"
-        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
+        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | "
+        "sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
         "\t\thistory -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
         "eval \"$SELECTED\" ; \n"
         "\t}\n"
         "controls:\n"
         "\tscrolling:\n"
-        "\t\t- arrow up/down\n"
-        "\t\t- page up/down\n"
+        "\t\t- arrow/page up/down\n"
         "\t\t- home/end\n"
 #ifdef BUTTON5_PRESSED
         "\t\t- mouse scroll\n"
 #endif
         "\t\t- j/k\n"
-        "\tconfirm selection:\n"
-        "\t\t- enter\n"
-        "\t\t- d or f\n"
+        "\tconfirm selections:\n"
+        "\t\t- enter, d, or f\n"
         "\tmultiple selections:\n"
         "\t\t- space\n"
         "\tinvert selections:\n"
-        "\t\t- t\n"
+        "\t\t- i\n"
         "\tclear selections:\n"
         "\t\t- c\n"
         "\texit:\n"
-        "\t\t- q\n"
-        "\t\t- backspace\n"
-        "\t\t- escape\n");
+        "\t\t- q, backspace, or escape\n");
     return 0;
   }
 
@@ -101,24 +111,39 @@ int main(int argc, char** argv) {
   bool selection_order = false;
   bool tenacious = false;
   bool flip = false;
-  bool null = false;
+
+  // these are separate options since null can't really be typed as a command line arg
+  // there's precedent elsewhere, e.g. find -print0 -> xargs -0
+  bool in_sep_null = false;
+  bool out_sep_null = false;
+  bool mout_sep_null = false;
+  bool mout_delimit = false;
 
   // indices are initialized to invalid positions
   // if it is not set by the args, then it will use default values instead
   int in_separator_index = std::numeric_limits<int>::min();
   int out_separator_index = std::numeric_limits<int>::min();
+  int mout_separator_index = std::numeric_limits<int>::min();
 
   for (int i = 1; i < argc; ++i) {
-    if (argv[i][0] == '-') {
+    // match args like -abc
+    // unless the previous arg was -o, which is instead reserved for the output separator
+    if (argv[i][0] == '-' && i != out_separator_index && i != mout_separator_index) {
       char* pos = argv[i] + 1;
       char ch;
       while ((ch = *pos++)) {
         switch (ch) {
-          case 'r':
-            flags &= ~PCRE2_LITERAL;
+          case 'd':
+            mout_delimit = true;
+            break;
+          case 'f':
+            flip = true;
             break;
           case 'i':
             flags |= PCRE2_CASELESS;
+            break;
+          case 'r':
+            flags &= ~PCRE2_LITERAL;
             break;
           case 's':
             selection_order = true;
@@ -126,18 +151,32 @@ int main(int argc, char** argv) {
           case 't':
             tenacious = true;
             break;
-          case 'f':
-            flip = true;
+          case 'y':
+            mout_sep_null = true;
+            break;
+          case 'z':
+            out_sep_null = true;
             break;
           case '0':
-            null = true;
+            in_sep_null = true;
             break;
           case 'o':
+            // -o can be specified with other flags
+            // e.g. these are the same:
+            // -roi output
+            // -ri -o output
             if (i == argc - 1) {
               fprintf(stderr, "-o must be followed by an arg\n");
               return 1;
             }
             out_separator_index = i + 1;
+            break;
+          case 'm':
+            if (i == argc - 1) {
+              fprintf(stderr, "-m must be followed by an arg\n");
+              return 1;
+            }
+            mout_separator_index = i + 1;
             break;
           default:
             fprintf(stderr, "unknown option: '%c'\n", ch);
@@ -145,16 +184,20 @@ int main(int argc, char** argv) {
             break;
         }
       }
-    } else if (i != out_separator_index) {
+    } else if (i != out_separator_index && i != mout_separator_index) {
       // the last non option argument is the separator
       in_separator_index = i;
     }
   }
 
-  const char* out_separator =
+  const char* const out_separator =
       out_separator_index == std::numeric_limits<int>::min()
           ? "\n"
           : argv[out_separator_index];
+  
+  const char* const mout_separator = mout_separator_index == std::numeric_limits<int>::min()
+          ? out_separator
+          : argv[mout_separator_index];
 
   // ============================= stdin ===================================
 
@@ -193,7 +236,7 @@ int main(int argc, char** argv) {
     };
 
     const char* input_separator;
-    if (null) {
+    if (in_sep_null) {
       input_separator = ""; // points to a single null character
     } else if (in_separator_index == std::numeric_limits<int>::min()) {
       // default sep
@@ -233,7 +276,7 @@ int main(int argc, char** argv) {
       int errornumber;
       PCRE2_SIZE erroroffset;
       
-      pcre2_code* re = pcre2_compile(pattern, null ? 1 : PCRE2_ZERO_TERMINATED, flags,
+      pcre2_code* re = pcre2_compile(pattern, in_sep_null ? 1 : PCRE2_ZERO_TERMINATED, flags,
                                      &errornumber, &erroroffset, NULL);
       if (re == NULL) {
         PCRE2_UCHAR buffer[256];
@@ -374,6 +417,7 @@ int main(int argc, char** argv) {
   // ============================= init tui ===================================
 
   int is_tty = isatty(fileno(stdout));
+  bool immediate_output = tenacious && !is_tty;
 
   /*
   problem: re-entering ncurses mode clears the last line printed to the
@@ -541,17 +585,42 @@ on_resize:
       }
     }
 
+    auto send_output_seperator = [&](bool sep_null, const char* const sep) {
+      if (immediate_output) {
+        if (sep_null) {
+          putchar('\0');
+        } else {
+          fprintf(stdout, "%s", sep);
+        }
+      } else {
+        if (sep_null) {
+          putchar('\0');
+        } else {
+          char c;
+          const char* delim_iter = sep;
+          while ((c = *delim_iter++)) {
+            queued_output.push_back(c);
+          }
+        }
+      }
+    };
+
     // ========================== user input ================================
 
     int ch = getch();
 
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
+      if (mout_delimit) {
+        send_output_seperator(mout_sep_null, mout_separator);
+      }
       endwin();
-      queued_output.push_back('\0');
-      fprintf(stdout, "%s", &*queued_output.cbegin());
       delscreen(screen);
       fclose(f);
+      const auto* pos = &*queued_output.cbegin();
+      while (pos != &*queued_output.cend()) {
+        putchar(*pos++);
+      }
       return 0;
     } else
 #ifdef BUTTON5_PRESSED
@@ -602,23 +671,20 @@ on_resize:
       if (!selection_order) {
         std::sort(selections.begin(), selections.end());
       }
-      bool immediate_output = tenacious && !is_tty;
+
       if (immediate_output) {
         endwin();
       }
+      
+      // send the multiple selection output separator between groups of selections
+      // e.g. a|b|c=a|b|b=a|b|c 
       static bool first_output = true;
+      if (!first_output) {
+        send_output_seperator(mout_sep_null, mout_separator);
+      }
+      first_output = false;
+
       for (const auto& s : selections) {
-        if (!first_output) {
-          if (immediate_output) {
-            fprintf(stdout, "%s", out_separator);
-          } else {
-            char c;
-            const char* delim_iter = out_separator;
-            while ((c = *delim_iter++)) {
-              queued_output.push_back(c);
-            }
-          }
-        }
         const Token& token = tokens[s];
         const char* iter = token.begin;
         while (iter != token.end) {
@@ -629,9 +695,13 @@ on_resize:
           }
           ++iter;
         }
-
-        first_output = false;
+        // send the output separator if between two selections
+        // e.g. a|b|c
+        if (&s != &*selections.crbegin()) {
+          send_output_seperator(out_sep_null, out_separator);
+        }
       }
+
       if (immediate_output) {
         fflush(stdout);
       }
