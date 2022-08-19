@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <csignal>
 #include <cstdlib>
-#include <limits>
 #include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -32,8 +31,12 @@ static void sig_handler([[maybe_unused]] int sig) {
 int main(int argc, char** argv) {
   signal(SIGINT, sig_handler);
 
-  // ============================= help message ================================
-
+  // ============================= messages ================================
+  if (argc == 2 &&
+      (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
+    puts("1.0.0");
+    return 0;
+  }
   if (argc == 2 &&
       (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
     puts(
@@ -47,28 +50,29 @@ int main(int argc, char** argv) {
         "and provides a text based ui for selecting which tokens are sent to "
         "the output.\n"
         "terminology:\n"
-        "\t\"input separator\": describes where to split the input to create tokens\n"
-        "\t\"output separator\": placed between each selected token in the output\n"
-        "\t\"multiple selection output separator\": placed between each \"batch\" of selected tokens.\n"
+        "\t                    \"input separator\": describes where to split the input to create tokens\n"
+        "\t                   \"output separator\": placed between each selected token in the output\n"
+        "\t\"multiple selection output separator\": placed between each \"batch\" of selected tokens in the output.\n"
         // spaces here in case of inconsistent space vs tab length
         "\t                                       selecting multiple tokens (see controls, below) forms a batch.\n"
         "\t                                       more than one batch can be sent to the output in tenacious mode (see below).\n"
         "usage:\n"
         "\tchoose (-h|--help)\n"
+        "\tchoose (-v|--version)\n"
         "\tchoose <options> [<input separator>] "
         "[-o <output separator, default: \\n>] "
         "[-m <multiple selection output separator, default: output separator>]\n"
         "options:\n"
-        "\t-d delimit; adds a trailing multiple selection output separator at the end of the output.\n"
+        "\t-d delimit; adds a trailing multiple selection output separator at the end of the output\n"
         "\t-f flip the token order\n"
         "\t-i make the input separator case-insensitive\n"
         "\t-r use (PCRE2) regex for the input separator\n"
         "\t\tIf disabled, the default input separator is a newline character\n"
         "\t\tIf enabled, the default input separator is a regex which matches "
         "newline characters not contained in single or double quotes, excluding escaped quotes\n"
-        "\t-s sort the output based on selection order instead of input order\n"
-        "\t-t tenacious; don't exit on confirmed selection\n"
-        "\t-y use null as the multiple selection output separator\n"
+        "\t-s sort the output based on selection order instead of input order                             ^\n"
+        "\t-t tenacious; don't exit on confirmed selection                                                |\n"
+        "\t-y use null as the multiple selection output separator                               regex101.com/r/RHyz6D/\n"
         "\t-z use null as the output separator\n"
         "\t-0 use null as the input separator\n"
         "examples:\n"
@@ -85,119 +89,141 @@ int main(int argc, char** argv) {
         "eval \"$SELECTED\" ; \n"
         "\t}\n"
         "controls:\n"
-        "\tscrolling:\n"
-        "\t\t- arrow/page up/down\n"
-        "\t\t- home/end\n"
+        "\t confirm selections: enter, d, or f\n"
+        "\tmultiple selections: space\n"
+        "\t  invert selections: i\n"
+        "\t   clear selections: c\n"
+        "\t               exit: q, backspace, or escape\n"
+        "\t          scrolling: arrow/page up/down, home/end, "
 #ifdef BUTTON5_PRESSED
-        "\t\t- mouse scroll\n"
+        "mouse scroll, "
 #endif
-        "\t\t- j/k\n"
-        "\tconfirm selections:\n"
-        "\t\t- enter, d, or f\n"
-        "\tmultiple selections:\n"
-        "\t\t- space\n"
-        "\tinvert selections:\n"
-        "\t\t- i\n"
-        "\tclear selections:\n"
-        "\t\t- c\n"
-        "\texit:\n"
-        "\t\t- q, backspace, or escape\n");
+        "j/k\n"
+        "source:\n\tgithub.com/jagprog5/choose\n");
     return 0;
   }
 
   // ============================= args ===================================
 
+  // FLAGS
   uint32_t flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
   bool flip = false;
 
-  // these are separate options since null can't really be typed as a command line arg
+  // these options are made available since null can't be typed as a command line arg
   // there's precedent elsewhere, e.g. find -print0 -> xargs -0
   bool in_sep_null = false;
   bool out_sep_null = false;
   bool mout_sep_null = false;
   bool mout_delimit = false;
 
-  // indices are initialized to invalid positions
-  // if it is not set by the args, then it will use default values instead
-  int in_separator_index = std::numeric_limits<int>::min();
-  int out_separator_index = std::numeric_limits<int>::min();
-  int mout_separator_index = std::numeric_limits<int>::min();
+  // these pointers point inside one of the argv elements
+  const char* in_separator = (char*)-1;
+  const char* out_separator = "\n";
+  const char* mout_separator = (char*)-1;
 
-  for (int i = 1; i < argc; ++i) {
-    // match args like -abc
-    // unless the previous arg was -o, which is instead reserved for the output separator
-    if (argv[i][0] == '-' && i != out_separator_index && i != mout_separator_index) {
-      char* pos = argv[i] + 1;
-      char ch;
-      while ((ch = *pos++)) {
-        switch (ch) {
-          case 'd':
-            mout_delimit = true;
-            break;
-          case 'f':
-            flip = true;
-            break;
-          case 'i':
-            flags |= PCRE2_CASELESS;
-            break;
-          case 'r':
-            flags &= ~PCRE2_LITERAL;
-            break;
-          case 's':
-            selection_order = true;
-            break;
-          case 't':
-            tenacious = true;
-            break;
-          case 'y':
-            mout_sep_null = true;
-            break;
-          case 'z':
-            out_sep_null = true;
-            break;
-          case '0':
-            in_sep_null = true;
-            break;
-          case 'o':
-            // -o can be specified with other flags
-            // e.g. these are the same:
-            // -roi output
-            // -ri -o output
-            if (i == argc - 1) {
-              fprintf(stderr, "-o must be followed by an arg\n");
-              return 1;
-            }
-            out_separator_index = i + 1;
-            break;
-          case 'm':
-            if (i == argc - 1) {
-              fprintf(stderr, "-m must be followed by an arg\n");
-              return 1;
-            }
-            mout_separator_index = i + 1;
-            break;
-          default:
-            fprintf(stderr, "unknown option: '%c'\n", ch);
-            return 1;
-            break;
-        }
+  {
+    // e.g. in -o stuff_here, the arg after -o should not be parsed.
+    bool next_arg_reserved = false;
+
+    for (int i = 1; i < argc; ++i) {
+      if (next_arg_reserved) {
+        next_arg_reserved = false;
+        continue;
       }
-    } else if (i != out_separator_index && i != mout_separator_index) {
-      // the last non option argument is the separator
-      in_separator_index = i;
+
+      if (argv[i][0] == '-') {
+        if (argv[i][1] == '\0') {
+          fprintf(stderr, "dash specified without anything after it, in arg %d\n", i);
+          return -1;
+        }
+        char* pos = argv[i] + 1;
+        char ch;
+        while ((ch = *pos)) {
+          switch (ch) {
+            // flags
+            default:
+              fprintf(stderr, "unknown flag -%c in arg %d\n", ch, i);
+              return 1;
+              break;
+            case 'd':
+              mout_delimit = true;
+              break;
+            case 'f':
+              flip = true;
+              break;
+            case 'i':
+              flags |= PCRE2_CASELESS;
+              break;
+            case 'r':
+              flags &= ~PCRE2_LITERAL;
+              break;
+            case 's':
+              selection_order = true;
+              break;
+            case 't':
+              tenacious = true;
+              break;
+            case 'y':
+              mout_sep_null = true;
+              break;
+            case 'z':
+              out_sep_null = true;
+              break;
+            case '0':
+              in_sep_null = true;
+              break;
+            // optional args
+            case 'o':
+            case 'm':
+              if (pos != argv[i] + 1) {
+                // checking that the flag is just after the dash. e.g. -o, not -io
+                fprintf(stderr, "-%c can't be specified with other flags "
+                    "in the same arg, but it was in arg %d: \"%s\"\n", ch, i, argv[i]);
+                return 1;
+              }
+              // if it is only -o, then the next arg is the seperator
+              if (*(pos + 1) == '\0') {
+                if (i == argc - 1) {
+                  fprintf(stderr, "-%c must be followed by an arg\n", ch);
+                  return 1;
+                }
+                next_arg_reserved = true;
+                if (ch == 'o') {
+                  out_separator = argv[i + 1];
+                } else {
+                  mout_separator = argv[i + 1];
+                }
+              } else {
+                // if not, then it is specified without a space, like -ostuff
+                if (ch == 'o') {
+                  out_separator = argv[i] + 2;
+                } else {
+                  mout_separator = argv[i] + 2;
+                }
+                goto next_arg;
+              }
+              break;
+          }
+          ++pos;
+        }
+        next_arg:
+          (void)0;
+      } else {
+        // the sole positional argument
+        if (in_separator != (char*)-1) {
+          fprintf(stderr, "only one positional argument is allowed. a second one was found at position %d\n", i);
+          return 1;
+        }
+        in_separator = argv[i];
+      }
+    }
+
+    if (mout_separator == (char*)-1) {
+      mout_separator = out_separator;
     }
   }
-
-  const char* const out_separator =
-      out_separator_index == std::numeric_limits<int>::min()
-          ? "\n"
-          : argv[out_separator_index];
-  
-  const char* const mout_separator = mout_separator_index == std::numeric_limits<int>::min()
-          ? out_separator
-          : argv[mout_separator_index];
 
   // ============================= stdin ===================================
 
@@ -235,22 +261,19 @@ int main(int argc, char** argv) {
       begin = end;
     };
 
-    const char* input_separator;
     if (in_sep_null) {
-      input_separator = ""; // points to a single null character
-    } else if (in_separator_index == std::numeric_limits<int>::min()) {
+      in_separator = ""; // points to a single null character
+    } else if (in_separator == (char*)-1) {
       // default sep
       if (flags & PCRE2_LITERAL) {
-        input_separator = "\n";
+        in_separator = "\n";
       } else {
         // https://regex101.com/r/RHyz6D/
         // the above link, but with "pattern" replaced with a newline char
-        input_separator =
+        in_separator =
             R"(\G((?:(?:\\\\)*+\\["']|(?:\\\\)*(?!\\+['"])[^"'])*?\K(?:
 |(?:\\\\)*'(?:\\\\)*+(?:(?:\\')|(?!\\')[^'])*(?:\\\\)*'(?1)|(?:\\\\)*"(?:\\\\)*+(?:(?:\\")|(?!\\")[^"])*(?:\\\\)*"(?1))))";
       }
-    } else {
-      input_separator = argv[in_separator_index];
     }
 
     /*
@@ -272,7 +295,7 @@ int main(int argc, char** argv) {
 
     {
       // compile the regex
-      PCRE2_SPTR pattern = (PCRE2_SPTR)input_separator;
+      PCRE2_SPTR pattern = (PCRE2_SPTR)in_separator;
       int errornumber;
       PCRE2_SIZE erroroffset;
       
