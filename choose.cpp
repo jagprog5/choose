@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <csignal>
 #include <cstdlib>
+#include <cmath>
 #include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -44,57 +45,53 @@ int main(int argc, char** argv) {
         "   .. ........;;.   |      |  .. ................;;.  \n"
         "    ..::stdin:;;;;. |choose|   ..::chosen stdout:;;;;.\n"
         "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
-        "              :'    ╘══════╛                     :'   \n\n"
+        "              :'    ╘══════╛                     :'   \n"
         "description:\n"
-        "\tSplits the input into tokens based on a separator, "
-        "and provides a text based ui for selecting which tokens are sent to "
+        "        Splits the input into tokens based on a separator,\n"
+        "        and provides a text based ui for selecting which tokens are sent to "
         "the output.\n"
         "terminology:\n"
-        "\t                    \"input separator\": describes where to split the input to create tokens\n"
-        "\t                   \"output separator\": placed between each selected token in the output\n"
-        "\t\"multiple selection output separator\": placed between each \"batch\" of selected tokens in the output.\n"
+        "               \"input separator\": describes where to split the input to create tokens\n"
+        "              \"output separator\": placed between each token in the output\n"
+        "        \"batch output separator\": selecting multiple tokens and sending them to the output together is a \"batch\"\n"
         // spaces here in case of inconsistent space vs tab length
-        "\t                                       selecting multiple tokens (see controls, below) forms a batch.\n"
-        "\t                                       more than one batch can be sent to the output in tenacious mode (see below).\n"
-        "usage:\n"
-        "\tchoose (-h|--help)\n"
-        "\tchoose (-v|--version)\n"
-        "\tchoose <options> [<input separator>] "
-        "[-o <output separator, default: \\n>] "
-        "[-m <multiple selection output separator, default: output separator>]\n"
+        "                                  if multiple batches are sent to the output (by using tenacious mode),\n"
+        "usage:                            then a batch separator is placed between each batch in the output,\n"
+        "        choose (-h|--help)        instead of a normal output separator\n"
+        "        choose (-v|--version)\n"
+        "        choose <options> [<input separator>]\n"
+        "                [-o <output separator, default: \\n>]\n"
+        "                [-b <batch output separator, default: output separator>]\n"
         "options:\n"
-        "\t-d delimit; adds a trailing multiple selection output separator at the end of the output\n"
-        "\t-f flip the token order\n"
-        "\t-i make the input separator case-insensitive\n"
-        "\t-r use (PCRE2) regex for the input separator\n"
-        "\t\tIf disabled, the default input separator is a newline character\n"
-        "\t\tIf enabled, the default input separator is a regex which matches "
-        "newline characters not contained in single or double quotes, excluding escaped quotes\n"
-        "\t-s sort the output based on selection order instead of input order                             ^\n"
-        "\t-t tenacious; don't exit on confirmed selection                                                |\n"
-        "\t-y use null as the multiple selection output separator                               regex101.com/r/RHyz6D/\n"
-        "\t-z use null as the output separator\n"
-        "\t-0 use null as the input separator\n"
+        "        -d delimit; adds a trailing batch output separator at the end of the output\n"
+        "        -f flip the token order\n"
+        "        -i make the input separator case-insensitive\n"
+        "        -r use (PCRE2) regex for the input separator\n"
+        "                If disabled, the default input separator is a newline character.\n"
+        "                If enabled, the default input separator is a regex which matches\n"
+        "                newline characters not contained in single or double quotes, excluding escaped quotes\n"
+        "        -s sort the output based on selection order instead of input order                    ^\n"
+        "        -t tenacious; don't exit on confirmed selection                                       |\n"
+        "        -y use null as the batch output separator                                   regex101.com/r/RHyz6D/\n"
+        "        -z use null as the output separator\n"
+        "        -0 use null as the input separator\n"
         "examples:\n"
-        "\techo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
-        "\techo -n \"1A2a3\" | choose -i \"a\"\n"
-        "\techo -n \"1 2 3\" | choose -o \",\" -m $'\\n' \" \" -dst\n"
-        "\thist() {\n"
-        "\t\tHISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
-        "\t\ttrap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
-        "\t\tunset HISTTIMEFORMAT\n"
-        "\t\tSELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | "
+        "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
+        "        echo -n \"1A2a3\" | choose -i \"a\"\n"
+        "        echo -n \"1 2 3\" | choose -o \",\" -b $'\\n' \" \" -dst\n"
+        "        hist() {\n"
+        "          HISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
+        "          trap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
+        "          unset HISTTIMEFORMAT\n"
+        "          SELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | "
         "sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
-        "\t\thistory -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
+        "          history -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
         "eval \"$SELECTED\" ; \n"
-        "\t}\n"
+        "        }\n"
         "controls:\n"
-        "\t confirm selections: enter, d, or f\n"
-        "\tmultiple selections: space\n"
-        "\t  invert selections: i\n"
-        "\t   clear selections: c\n"
-        "\t               exit: q, backspace, or escape\n"
-        "\t          scrolling: arrow/page up/down, home/end, "
+        "         confirm selections: enter, d, or f        clear selections: c\n"
+        "            batch selection: space                             exit: q, backspace, or escape\n"
+        "          invert selections: i                            scrolling: arrow/page up/down, home/end, "
 #ifdef BUTTON5_PRESSED
         "mouse scroll, "
 #endif
@@ -115,13 +112,13 @@ int main(int argc, char** argv) {
   // there's precedent elsewhere, e.g. find -print0 -> xargs -0
   bool in_sep_null = false;
   bool out_sep_null = false;
-  bool mout_sep_null = false;
-  bool mout_delimit = false;
+  bool bout_sep_null = false;
+  bool bout_delimit = false;
 
   // these pointers point inside one of the argv elements
   const char* in_separator = (char*)-1;
   const char* out_separator = "\n";
-  const char* mout_separator = (char*)-1;
+  const char* bout_separator = (char*)-1;
 
   {
     // e.g. in -o stuff_here, the arg after -o should not be parsed.
@@ -148,7 +145,7 @@ int main(int argc, char** argv) {
               return 1;
               break;
             case 'd':
-              mout_delimit = true;
+              bout_delimit = true;
               break;
             case 'f':
               flip = true;
@@ -166,7 +163,7 @@ int main(int argc, char** argv) {
               tenacious = true;
               break;
             case 'y':
-              mout_sep_null = true;
+              bout_sep_null = true;
               break;
             case 'z':
               out_sep_null = true;
@@ -176,7 +173,7 @@ int main(int argc, char** argv) {
               break;
             // optional args
             case 'o':
-            case 'm':
+            case 'b':
               if (pos != argv[i] + 1) {
                 // checking that the flag is just after the dash. e.g. -o, not -io
                 fprintf(stderr, "-%c can't be specified with other flags "
@@ -193,14 +190,14 @@ int main(int argc, char** argv) {
                 if (ch == 'o') {
                   out_separator = argv[i + 1];
                 } else {
-                  mout_separator = argv[i + 1];
+                  bout_separator = argv[i + 1];
                 }
               } else {
                 // if not, then it is specified without a space, like -ostuff
                 if (ch == 'o') {
                   out_separator = argv[i] + 2;
                 } else {
-                  mout_separator = argv[i] + 2;
+                  bout_separator = argv[i] + 2;
                 }
                 goto next_arg;
               }
@@ -220,8 +217,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mout_separator == (char*)-1) {
-      mout_separator = out_separator;
+    if (bout_separator == (char*)-1) {
+      bout_separator = out_separator;
     }
   }
 
@@ -507,24 +504,36 @@ on_resize:
     // ============================= draw tui =================================
 
     erase();
+
+    const int selection_text_space = selections.size() == 0 || !selection_order ?
+                                     0 : int(std::log10(selections.size())) + 1;
+
     for (int y = 0; y < num_rows; ++y) {
       // draw the tokens
       int current_row = y + scroll_position;
       if (current_row >= 0 && current_row < (int)tokens.size()) {
         bool row_highlighted = current_row == selection_position;
-        bool row_selected = std::find(selections.cbegin(), selections.cend(),
-                                      current_row) != selections.cend();
+        auto it = std::find(selections.cbegin(), selections.cend(), current_row);
+        bool row_selected = it != selections.cend();
+
+        if (selection_order && row_selected) {
+          attron(A_DIM);
+          mvprintw(y, 0, "%d", 1 + it - selections.begin());
+          attroff(A_DIM);
+        }
+
         if (row_highlighted || row_selected) {
           attron(A_BOLD);
           if (row_highlighted) {
-            mvaddch(y, 0, tenacious_single_select_indicator & 0b1 ? '}' : '>');
+            mvaddch(y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
           }
           if (row_selected) {
             attron(COLOR_PAIR(PAIR_SELECTED));
           }
         }
 
-        static constexpr int INITIAL_X = 2;
+        // 2 leaves a space for the indicator '>' and a single space
+        const int INITIAL_X = selection_text_space + 2;
         int x = INITIAL_X;
         auto pos = tokens[y + scroll_position].begin;
         auto end = tokens[y + scroll_position].end;
@@ -634,8 +643,8 @@ on_resize:
 
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
-      if (mout_delimit) {
-        send_output_seperator(mout_sep_null, mout_separator);
+      if (bout_delimit) {
+        send_output_seperator(bout_sep_null, bout_separator);
       }
       endwin();
       delscreen(screen);
@@ -699,11 +708,11 @@ on_resize:
         endwin();
       }
       
-      // send the multiple selection output separator between groups of selections
+      // send the batch output separator between groups of selections
       // e.g. a|b|c=a|b|b=a|b|c 
       static bool first_output = true;
       if (!first_output) {
-        send_output_seperator(mout_sep_null, mout_separator);
+        send_output_seperator(bout_sep_null, bout_separator);
       }
       first_output = false;
 
