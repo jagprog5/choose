@@ -5,6 +5,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cmath>
+#include <errno.h>
 #include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -40,63 +41,77 @@ int main(int argc, char** argv) {
   }
   if (argc == 2 &&
       (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
-    puts(
-        "              .     ╒══════╕                     .    \n"
-        "   .. ........;;.   |      |  .. ................;;.  \n"
-        "    ..::stdin:;;;;. |choose|   ..::chosen stdout:;;;;.\n"
-        "  . . ::::::::;;:'  |  ⇑⇓  | . . ::::::::::::::::;;:' \n"
-        "              :'    ╘══════╛                     :'   \n"
-        "description:\n"
-        "        Splits the input into tokens based on a separator,\n"
-        "        and provides a text based ui for selecting which tokens are sent to "
-        "the output.\n"
-        "terminology:\n"
-        "               \"input separator\": describes where to split the input to create tokens\n"
-        "              \"output separator\": placed between each token in the output\n"
-        "        \"batch output separator\": selecting multiple tokens and sending them to the output together is a \"batch\"\n"
-        // spaces here in case of inconsistent space vs tab length
-        "                                  if multiple batches are sent to the output (by using tenacious mode),\n"
-        "usage:                            then a batch separator is placed between each batch in the output,\n"
-        "        choose (-h|--help)        instead of a normal output separator\n"
-        "        choose (-v|--version)\n"
-        "        choose <options> [<input separator>]\n"
-        "                [-o <output separator, default: \\n>]\n"
-        "                [-b <batch output separator, default: output separator>]\n"
-        "options:\n"
-        "        -d delimit; adds a trailing batch output separator at the end of the output\n"
-        "        -f flip the token order\n"
-        "        -i make the input separator case-insensitive\n"
-        "        -r use (PCRE2) regex for the input separator\n"
-        "                If disabled, the default input separator is a newline character.\n"
-        "                If enabled, the default input separator is a regex which matches\n"
-        "                newline characters not contained in single or double quotes, excluding escaped quotes\n"
-        "        -s sort the output based on selection order instead of input order                    ^\n"
-        "        -t tenacious; don't exit on confirmed selection                                       |\n"
-        "        -y use null as the batch output separator                                   regex101.com/r/RHyz6D/\n"
-        "        -z use null as the output separator\n"
-        "        -0 use null as the input separator\n"
-        "examples:\n"
-        "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
-        "        echo -n \"1A2a3\" | choose -i \"a\"\n"
-        "        echo -n \"1 2 3\" | choose -o \",\" -b $'\\n' \" \" -dst\n"
-        "        hist() {\n"
-        "          HISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
-        "          trap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
-        "          unset HISTTIMEFORMAT\n"
-        "          SELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | "
-        "sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
-        "          history -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && "
-        "eval \"$SELECTED\" ; \n"
-        "        }\n"
-        "controls:\n"
-        "         confirm selections: enter, d, or f        clear selections: c\n"
-        "            batch selection: space                             exit: q, backspace, or escape\n"
-        "          invert selections: i                            scrolling: arrow/page up/down, home/end, "
+    // respects 80 char width, and pipes the text to less to accomodate terminal height
+    FILE *fp = popen("less", "w");
+    if (fp != NULL) {
+      fputs(""
+"                             .     ╒══════╕                                .    \n"
+"   .. .......................;;.   |      |  .. ...........................;;.  \n"
+"    ..::::::::::stdin::::::::;;;;. |choose|   ..::::::::chosen stdout::::::;;;;.\n"
+"  . . :::::::::::::::::::::::;;:'  |  ⇑⇓  | . . :::::::::::::::::::::::::::;;:' \n"
+"                             :'    ╘══════╛                                :'   \n"
+"description:\n"
+"        Splits the input into tokens based on a separator, and provides a text\n"
+"        based ui for selecting which tokens are sent to the output.\n"
+"terminology:\n"
+"               \"input separator\": describes how to split the input into tokens.\n"
+"              \"output separator\": placed between each token in the output.\n"
+"        \"batch output separator\": selecting multiple tokens and sending them to\n"
+"                                  the output together is a \"batch\". if multiple\n"
+"                                  batches are sent to the output by using\n"
+"                                  tenacious mode, then a batch separator is used\n"
+"usage:                            between batches, instead of a normal output\n"
+"        choose (-h|--help)        separator.\n"
+"        choose (-v|--version)\n"
+"        choose <options> [<input separator>]\n"
+"                [-o <output separator, default: \\n>]\n"
+"                [-b <batch output separator, default: output separator>]\n"
+"options:\n"
+"        -d delimit; add a batch output separator at the end of the output\n"
+"        -f flip the received token order\n"
+"        -i make the input separator case-insensitive\n"
+"        -r use (PCRE2) regex for the input separator\n"
+"                If disabled, the default input separator is a newline character.\n"
+"                If enabled, the default input separator is a regex which matches\n"
+"                newline characters not contained in single or double quotes,\n"
+"                excluding escaped quotes. regex101.com/r/RHyz6D/\n"
+"        -s sort the output based on selection order instead of input order\n"
+"        -t tenacious; don't exit on confirmed selection\n"
+"        -y use null as the batch output separator\n"
+"        -z use null as the output separator\n"
+"        -0 use null as the input separator\n"
+"examples:\n"
+"        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
+"        echo -n \"1A2a3\" | choose -i \"a\"\n"
+"        echo -n \"1 2 3\" | choose -o \",\" -b $'\\n' \" \" -dst\n\n"
+"        hist() { # copy paste this into ~/.bashrc\n"
+"          HISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
+"          trap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
+"          unset HISTTIMEFORMAT\n"
+"          SELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | \\\n"
+"          sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
+"          history -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && \\\n"
+"          eval \"$SELECTED\" ; \n"
+"        }\n"
+"controls:\n"
+"         confirm selections: enter, d, or f\n"
+"            batch selection: space\n"
+"          invert selections: i\n"
+"           clear selections: c\n"
+"                       exit: q, backspace, or escape\n"
+"                  scrolling: arrow/page up/down, home/end, "
 #ifdef BUTTON5_PRESSED
-        "mouse scroll, "
+"mouse scroll, "
 #endif
-        "j/k\n"
-        "source:\n\tgithub.com/jagprog5/choose\n");
+"j/k\n\n"
+"to view the license, or report an issue, visit:\n"
+"        github.com/jagprog5/choose\n"
+      "", fp);
+      pclose(fp);
+    } else {
+      fprintf(stderr, "%s\n", strerror(errno));
+      return 1;
+    }
     return 0;
   }
 
