@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   // ============================= messages ================================
   if (argc == 2 &&
       (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
-    puts("1.0.0");
+    puts("1.0.1");
     return 0;
   }
   if (argc == 2 &&
