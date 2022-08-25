@@ -11,9 +11,9 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
 
-static constexpr int PAIR_SELECTED = 1;
+constexpr int PAIR_SELECTED = 1;
 
-static volatile sig_atomic_t sigint_occured = 0;
+volatile sig_atomic_t sigint_occured = 0;
 
 // read_done is used to handle an edge case:
 // sigint_occured writes the buffered output to stdout upon ctrl-c, however
@@ -21,9 +21,9 @@ static volatile sig_atomic_t sigint_occured = 0;
 // the "read" function blocks until there is input, meaning, if ctrl-c is
 // pressed with no input to the program, it will hang.
 // read_done allows exit on ctrl-c with no input
-static volatile sig_atomic_t read_done = 0;
+volatile sig_atomic_t read_done = 0;
 
-static void sig_handler([[maybe_unused]] int sig) {
+void sig_handler(int) {
   if (read_done == 0) {
     exit(0);
   }
@@ -31,25 +31,19 @@ static void sig_handler([[maybe_unused]] int sig) {
 }
 
 int main(int argc, char** argv) {
-  signal(SIGINT, sig_handler);
-
   // ============================= messages ================================
-  if (argc == 2 &&
-      (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
-    puts("1.0.1");
-    return 0;
+  if (argc == 2 && (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
+    return puts("1.0.2") < 0;
   }
-  if (argc == 2 &&
-      (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
+  if (argc == 2 && (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
     // respects 80 char width, and pipes the text to less to accomodate terminal height
-    FILE *fp = popen("less", "w");
-    if (fp != NULL) {
-      fputs(""
-"                             .     ╒══════╕                                .    \n"
+
+    const char* const help_text = ""
+"                             .     /======\\                                .    \n"
 "   .. .......................;;.   |      |  .. ...........................;;.  \n"
 "    ..::::::::::stdin::::::::;;;;. |choose|   ..::::::::chosen stdout::::::;;;;.\n"
-"  . . :::::::::::::::::::::::;;:'  |  ⇑⇓  | . . :::::::::::::::::::::::::::;;:' \n"
-"                             :'    ╘══════╛                                :'   \n"
+"  . . :::::::::::::::::::::::;;:'  | >    | . . :::::::::::::::::::::::::::;;:' \n"
+"                             :'    \\======/                                :'   \n"
 "description:\n"
 "        Splits the input into tokens based on a separator, and provides a text\n"
 "        based ui for selecting which tokens are sent to the output.\n"
@@ -105,14 +99,32 @@ int main(int argc, char** argv) {
 #endif
 "j/k\n\n"
 "to view the license, or report an issue, visit:\n"
-"        github.com/jagprog5/choose\n"
-      "", fp);
-      pclose(fp);
+"        github.com/jagprog5/choose\n";
+
+    FILE *fp = popen("less", "w");
+    if (fp != NULL) {
+      // opening up less succeeded
+      bool fputs_failed = fputs(help_text, fp) < 0;
+      bool pclose_failed = pclose(fp) == -1;
+      if (fputs_failed) {
+        puts(help_text);
+      }
+      if (pclose_failed) {
+        fprintf(stderr, "%s\n", strerror(errno));
+      }
+      return pclose_failed || fputs_failed;
     } else {
+      // opening up less failed
+      puts(help_text);
       fprintf(stderr, "%s\n", strerror(errno));
       return 1;
     }
-    return 0;
+  }
+
+  if (signal(SIGINT, sig_handler) == SIG_IGN) {
+    // for SIG_IGN: https://www.gnu.org/software/libc/manual/html_node/Basic-Signal-Handling.html
+    // also, I don't check for SIG_ERR here since SIGINT as an arg guarantees this can't happen
+    signal(SIGINT, SIG_IGN);
   }
 
   // ============================= args ===================================
@@ -148,7 +160,7 @@ int main(int argc, char** argv) {
       if (argv[i][0] == '-') {
         if (argv[i][1] == '\0') {
           fprintf(stderr, "dash specified without anything after it, in arg %d\n", i);
-          return -1;
+          return 1;
         }
         char* pos = argv[i] + 1;
         char ch;
@@ -195,7 +207,7 @@ int main(int argc, char** argv) {
                     "in the same arg, but it was in arg %d: \"%s\"\n", ch, i, argv[i]);
                 return 1;
               }
-              // if it is only -o, then the next arg is the seperator
+              // if it is only -o, then the next arg is the separator
               if (*(pos + 1) == '\0') {
                 if (i == argc - 1) {
                   fprintf(stderr, "-%c must be followed by an arg\n", ch);
@@ -252,8 +264,20 @@ int main(int argc, char** argv) {
     // =========================== read input ==============================
 
     char ch;
-    while (read(STDIN_FILENO, &ch, sizeof(char)) > 0) {
-      raw_input.push_back(ch);
+    bool read_flag = true;
+    while (read_flag) {
+      auto read_ret = read(STDIN_FILENO, &ch, sizeof(char));
+      switch (read_ret) {
+        default:
+          raw_input.push_back(ch);
+          break;
+        case -1:
+          fprintf(stderr, "%s\n", strerror(errno));
+          return read_ret;
+        case 0:
+          read_flag = false;
+          break;
+      }
     }
     read_done = 1;
 
@@ -451,7 +475,7 @@ int main(int argc, char** argv) {
 
   // ============================= init tui ===================================
 
-  int is_tty = isatty(fileno(stdout));
+  bool is_tty = isatty(fileno(stdout));
   bool immediate_output = tenacious && !is_tty;
 
   /*
@@ -466,34 +490,75 @@ int main(int argc, char** argv) {
   // https://stackoverflow.com/a/44884859/15534181
   // required for ncurses to work after using stdin
   FILE* f = fopen("/dev/tty", "r+");
+  if (f == NULL) {
+    fprintf(stderr, "%s\n", strerror(errno));
+    return 1;
+  }
   SCREEN* screen = newterm(NULL, f, f);
-  set_term(screen);
-
-  keypad(stdscr, true);  // enable arrow keys
-  cbreak();              // pass keys directly from input without buffering
-  noecho();              // disable echo back of keys entered
-  curs_set(0);           // invisible cursor
-
+  if (screen == NULL) {
+    fputs("ncurses err", stderr);
+    return 1;
+  }
+  if (set_term(screen) == NULL) {
+    fputs("ncurses err", stderr);
+    return 1;
+  }
+  // enable arrow keys
+  if (keypad(stdscr, true) == ERR) {
+    // shouldn't be handled
+  }
+  // pass keys directly from input without buffering
+  if (cbreak() == ERR) {
+    fputs("ncurses err", stderr);
+    return 1;
+  }
+  // disable echo back of keys entered
+  if (noecho() == ERR) {
+    fputs("ncurses err", stderr);
+    return 1;
+  }
+  // invisible cursor
+  if (curs_set(0) == ERR) {
+    // shouldn't be handled
+  }
   // as opposed to: nodelay(stdscr, false) // make getch block
   // a very large timeout still allows sigint to be effective immediately
   wtimeout(stdscr, std::numeric_limits<int>::max());
+  // get mouse events right away
+  if (mouseinterval(0) == ERR) {
+    fputs("ncurses config err", stderr);
+    return 1;
+  }
 
-  mouseinterval(0);  // get mouse events right away
+  // this should be called before exiting after this point
+  // (to clean up resources and restore terminal settings)
+  // returns false if the output is still going to the screen and not stdout
+  auto ncurses_deinit = [&]() {
+    // it's ok to call endwin after endwin. it's idempotent
+    auto ret = endwin();
+    delscreen(screen);
+    fclose(f);
+    return ret != ERR;
+  };
 
   /*
-  the doc says that the mousemask must be set to enable mouse control,
-  however, it seems to work even without calling the function
+   * the doc says that the mousemask must be set to enable mouse control,
+   * however, it seems to work even without calling the function
+   * 
+   * calling the function makes the left mouse button captured, which prevents a
+   * user from selecting and copying text
+   * 
+   * so with no benefit and a small downside, I leave this commented out
+   * 
+   * // #ifdef BUTTON5_PRESSED
+   * //   mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
+   * // #endif
+   */
 
-  calling the function makes the left mouse button captured, which prevents a
-  user from selecting and copying text
-
-  so with no benefit and a small downside, I leave this commented out
-  */
-
-  // #ifdef BUTTON5_PRESSED
-  //   mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
-  // #endif
-
+  // I don't handle ERR for anything color or attribute related since
+  // the application still works, even on failure (just without color)
+  // I also don't check ERR for ncurses printing, since if that stuff
+  // is not working, it will be very apparent to the user
   start_color();
   init_pair(PAIR_SELECTED, COLOR_GREEN, COLOR_BLACK);
 
@@ -632,22 +697,24 @@ on_resize:
       }
     }
 
-    auto send_output_seperator = [&](bool sep_null, const char* const sep) {
+    // returns true on success, false on write failure
+    auto send_output_separator = [&](bool sep_null, const char* const sep) -> bool {
       if (immediate_output) {
         if (sep_null) {
-          putchar('\0');
+          return putchar('\0') != EOF;
         } else {
-          fprintf(stdout, "%s", sep);
+          return fprintf(stdout, "%s", sep) >= 0;
         }
       } else {
         if (sep_null) {
-          putchar('\0');
+          return putchar('\0') != EOF;
         } else {
           char c;
           const char* delim_iter = sep;
           while ((c = *delim_iter++)) {
             queued_output.push_back(c);
           }
+          return true;
         }
       }
     };
@@ -658,15 +725,21 @@ on_resize:
 
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
-      if (bout_delimit) {
-        send_output_seperator(bout_sep_null, bout_separator);
+      if (!ncurses_deinit()) {
+        // send_output_separator (below) might not work,
+        // since ncurses is still capturing the output
+        return 1;
       }
-      endwin();
-      delscreen(screen);
-      fclose(f);
+      if (bout_delimit) {
+        if (!send_output_separator(bout_sep_null, bout_separator)) {
+          return 1;
+        }
+      }
       const auto* pos = &*queued_output.cbegin();
       while (pos != &*queued_output.cend()) {
-        putchar(*pos++);
+        if (putchar(*pos++) == EOF) {
+          return 1;
+        }
       }
       return 0;
     } else
@@ -720,14 +793,21 @@ on_resize:
       }
 
       if (immediate_output) {
-        endwin();
+        if (endwin() == ERR) {
+          // this would be bad since text is going to the window instead of stdout
+          ncurses_deinit();
+          return 1;
+        }
       }
       
       // send the batch output separator between groups of selections
       // e.g. a|b|c=a|b|b=a|b|c 
       static bool first_output = true;
       if (!first_output) {
-        send_output_seperator(bout_sep_null, bout_separator);
+        if (!send_output_separator(bout_sep_null, bout_separator)) {
+          ncurses_deinit();
+          return 1;
+        }
       }
       first_output = false;
 
@@ -736,7 +816,10 @@ on_resize:
         const char* iter = token.begin;
         while (iter != token.end) {
           if (immediate_output) {
-            fputc(*iter, stdout);
+            if (fputc(*iter, stdout) == EOF) {
+              ncurses_deinit();
+              return 1;
+            }
           } else {
             queued_output.push_back(*iter);
           }
@@ -745,12 +828,18 @@ on_resize:
         // send the output separator if between two selections
         // e.g. a|b|c
         if (&s != &*selections.crbegin()) {
-          send_output_seperator(out_sep_null, out_separator);
+          if (!send_output_separator(out_sep_null, out_separator)) {
+            ncurses_deinit();
+            return 1;
+          }
         }
       }
 
       if (immediate_output) {
-        fflush(stdout);
+        if (fflush(stdout) == EOF) {
+          ncurses_deinit();
+          return 1;
+        }
       }
       if (tenacious) {
         selections.clear();
@@ -805,6 +894,4 @@ on_resize:
       }
     }
   }
-
-  return 0;
 }

@@ -7,7 +7,7 @@ Splits an input into tokens based on a regex separator, and provides a text base
 ## Installation
 
 ```bash
-sudo apt-get install -y libncurses-dev libpcre2-dev
+sudo apt-get install -y libncurses-dev libpcre2-dev pkg-config
 cmake . && sudo cmake --build . --target install 
 ```
 
