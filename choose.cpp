@@ -56,13 +56,17 @@ int main(int argc, char** argv) {
 "        based ui for selecting which tokens are sent to the output.\n"
 "terminology:\n"
 "               \"input separator\": describes how to split the input into tokens.\n"
-"              \"output separator\": placed between each token in the output.\n"
+"                                  each token is displayed for selection in the\n"
+"                                  user interface.\n"
+"              \"output separator\": if multiple tokens are selected (which is\n"
+"                                  enabled via -m), then an output separator is\n"
+"                                  placed between each token in the output.\n"
 "        \"batch output separator\": selecting multiple tokens and sending them to\n"
 "                                  the output together is a \"batch\". if multiple\n"
-"                                  batches are sent to the output by using\n"
-"                                  tenacious mode, then a batch separator is used\n"
-"usage:                            between batches, instead of a normal output\n"
-"        choose (-h|--help)        separator.\n"
+"                                  batches are sent to the output (which is\n"
+"                                  enabled via -t), then a batch separator is\n"
+"usage:                            used between batches, instead of a normal\n"
+"        choose (-h|--help)        output separator.\n"
 "        choose (-v|--version)\n"
 "        choose <options> [<input separator>]\n"
 "                [-o <output separator, default: \\n>]\n"
@@ -71,12 +75,13 @@ int main(int argc, char** argv) {
 "        -d delimit; add a batch output separator at the end of the output\n"
 "        -f flip the received token order\n"
 "        -i make the input separator case-insensitive\n"
+"        -m allow the selection of multiple tokens\n"
 "        -r use (PCRE2) regex for the input separator\n"
 "                If disabled, the default input separator is a newline character.\n"
 "                If enabled, the default input separator is a regex which matches\n"
 "                newline characters not contained in single or double quotes,\n"
 "                excluding escaped quotes. regex101.com/r/RHyz6D/\n"
-"        -s sort the output based on selection order instead of input order\n"
+"        -s sort the token output based on selection order instead of input order\n"
 "        -t tenacious; don't exit on confirmed selection\n"
 "        -u enable regex UTF-8\n"
 "        -y use null as the batch output separator\n"
@@ -85,7 +90,7 @@ int main(int argc, char** argv) {
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
-"        echo -n \"1 2 3\" | choose -o \",\" -b $'\\n' \" \" -dst\n\n"
+"        echo -n \"1 2 3\" | choose -o \",\" -b $'\\n' \" \" -dmst\n\n"
 "        hist() { # copy paste this into ~/.bashrc\n"
 "          HISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
 "          trap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
@@ -97,9 +102,9 @@ int main(int argc, char** argv) {
 "        }\n"
 "controls:\n"
 "         confirm selections: enter, d, or f\n"
-"            batch selection: space\n"
-"          invert selections: i\n"
-"           clear selections: c\n"
+"         multiple selection: space   <-}\n"
+"          invert selections: i       <-} enabled with -m\n"
+"           clear selections: c       <-}\n"
 "                       exit: q, backspace, or escape\n"
 "                  scrolling: arrow/page up/down, home/end, "
 #ifdef BUTTON5_PRESSED
@@ -144,6 +149,7 @@ int main(int argc, char** argv) {
   bool selection_order = false;
   bool tenacious = false;
   bool flip = false;
+  bool multiple_selections = false;
 
   // these options are made available since null can't be typed as a command line arg
   // there's precedent elsewhere, e.g. find -print0 -> xargs -0
@@ -189,6 +195,9 @@ int main(int argc, char** argv) {
               break;
             case 'i':
               flags |= PCRE2_CASELESS;
+              break;
+            case 'm':
+              multiple_selections = true;
               break;
             case 'r':
               flags &= ~PCRE2_LITERAL;
@@ -929,7 +938,7 @@ on_resize:
 #endif
         if (ch == KEY_RESIZE) {
       goto on_resize;
-    } else if (ch == 'i') {
+    } else if (ch == 'i' && multiple_selections) {
       std::sort(selections.begin(), selections.end());
       auto selections_position = selections.cbegin();
       decltype(selections) replacement;
@@ -945,9 +954,9 @@ on_resize:
         }
       }
       selections = std::move(replacement);
-    } else if (ch == 'c') {
+    } else if (ch == 'c') { // && multiple_selections
       selections.clear();
-    } else if (ch == ' ') {
+    } else if (ch == ' ' && multiple_selections) {
       auto pos =
           std::find(selections.cbegin(), selections.cend(), selection_position);
       if ((pos == selections.cend())) {
