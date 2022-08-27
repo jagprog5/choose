@@ -14,6 +14,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 set(CURSES_NEED_NCURSES TRUE)
+set(CURSES_NEED_WIDE TRUE)
 find_package(Curses REQUIRED)
 target_include_directories(choose PRIVATE ${CURSES_INCLUDE_DIRS})
 target_link_libraries(choose PRIVATE ${CURSES_LIBRARIES})

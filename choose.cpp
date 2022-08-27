@@ -7,6 +7,8 @@
 #include <cmath>
 #include <errno.h>
 #include <vector>
+#include <locale.h>
+#include <cwchar>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -31,7 +33,12 @@ void sig_handler(int) {
 }
 
 int main(int argc, char** argv) {
-  // ============================= messages ================================
+  setlocale(LC_ALL, ""); // for utf8
+  
+  // ===========================================================================
+  // ============================= messages ====================================
+  // ===========================================================================
+
   if (argc == 2 && (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
     return puts("1.0.2") < 0;
   }
@@ -71,6 +78,7 @@ int main(int argc, char** argv) {
 "                excluding escaped quotes. regex101.com/r/RHyz6D/\n"
 "        -s sort the output based on selection order instead of input order\n"
 "        -t tenacious; don't exit on confirmed selection\n"
+"        -u enable regex UTF-8\n"
 "        -y use null as the batch output separator\n"
 "        -z use null as the output separator\n"
 "        -0 use null as the input separator\n"
@@ -127,7 +135,9 @@ int main(int argc, char** argv) {
     signal(SIGINT, SIG_IGN);
   }
 
-  // ============================= args ===================================
+  // ===========================================================================
+  // ========================= cli arg parsing =================================
+  // ===========================================================================
 
   // FLAGS
   uint32_t flags = PCRE2_LITERAL;
@@ -189,6 +199,9 @@ int main(int argc, char** argv) {
             case 't':
               tenacious = true;
               break;
+            case 'u':
+              flags |= PCRE2_UTF;
+              break;
             case 'y':
               bout_sep_null = true;
               break;
@@ -249,7 +262,9 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ============================= stdin ===================================
+  // ===========================================================================
+  // ================================ stdin ====================================
+  // ===========================================================================
 
   std::vector<char> raw_input;  // hold stdin
 
@@ -261,7 +276,7 @@ int main(int argc, char** argv) {
   std::vector<Token> tokens;
 
   {
-    // =========================== read input ==============================
+    // =========================== read input ==================================
 
     char ch;
     bool read_flag = true;
@@ -285,7 +300,7 @@ int main(int argc, char** argv) {
       return 0;
     }
 
-    // =========================== make tokens ==============================
+    // ============================= make tokens ===============================
 
     const char* pos = &*raw_input.cbegin();
 
@@ -467,13 +482,15 @@ int main(int argc, char** argv) {
     insert_token_and_advance(pos, &*raw_input.cend());
   }
 
-  // ============================ END OF REGEX STUFF ========================
+  // ============================ end of token making ==========================
 
   if (tokens.empty()) {
     return 0;
   }
 
-  // ============================= init tui ===================================
+  // ===========================================================================
+  // ============================= init tui ====================================
+  // ===========================================================================
 
   bool is_tty = isatty(fileno(stdout));
   bool immediate_output = tenacious && !is_tty;
@@ -526,7 +543,7 @@ int main(int argc, char** argv) {
   wtimeout(stdscr, std::numeric_limits<int>::max());
   // get mouse events right away
   if (mouseinterval(0) == ERR) {
-    fputs("ncurses config err", stderr);
+    fputs("ncurses err", stderr);
     return 1;
   }
 
@@ -581,7 +598,9 @@ on_resize:
   }
 
   while (true) {
-    // ============================= draw tui =================================
+    // =========================================================================
+    // ============================= draw tui ==================================
+    // =========================================================================
 
     erase();
 
@@ -589,7 +608,9 @@ on_resize:
                                      0 : int(std::log10(selections.size())) + 1;
 
     for (int y = 0; y < num_rows; ++y) {
-      // draw the tokens
+
+      // =============================== draw line =============================
+
       int current_row = y + scroll_position;
       if (current_row >= 0 && current_row < (int)tokens.size()) {
         bool row_highlighted = current_row == selection_position;
@@ -617,77 +638,226 @@ on_resize:
         int x = INITIAL_X;
         auto pos = tokens[y + scroll_position].begin;
         auto end = tokens[y + scroll_position].end;
-        // if the line only contains spaces, draw it differently
-        bool only_spaces = true;
-        while (pos != end) {
-          char c = *pos++;
 
-          if (c != ' ') {
-            only_spaces = false;
+        // ============================ draw token =============================
+
+        // if the token only contains chars which are not drawn visibly by choose
+        bool invisible_only = true;
+        std::mbstate_t ps; // text decode state gets reset per token
+        memset(&ps, 0, sizeof(ps));
+        while (pos != end) {
+          wchar_t ch[2];
+          ch[1] = L'\0';
+
+          const char* escape_sequence = 0; // draw non printing ascii via escape sequence
+          bool char_is_invalid = false;
+
+          size_t num_bytes = std::mbrtowc(&ch[0], pos, end - pos, &ps);
+          if (num_bytes == 0) {
+            // null char was decoded. this is perfectly valid
+            num_bytes = 1; // keep going
+          } else if (num_bytes == (size_t)-1) {
+            // this sets errno, but we can try?? to keep going
+            num_bytes = 1;
+            char_is_invalid = true;
+          } else if (num_bytes == (size_t)-2) { 
+            // the remaining bytes in the token do not complete a character
+            num_bytes = end - pos; // go to the end
+            char_is_invalid = true;
           }
 
-          // draw some characters differently
-          char special_char;
-          switch (c) {
-            case '\a':
-              special_char = 'a';
+          pos += num_bytes;
+
+          if (char_is_invalid) {
+            escape_sequence = "?";
+          } else {
+            // the escape sequence will first be this:
+            // https://en.wikipedia.org/wiki/Escape_sequences_in_C#Table_of_escape_sequences
+            // and if it doesn't exist there, then it takes the letters here:
+            // https://flaviocopes.com/non-printable-ascii-characters/
+            switch (ch[0]) {
+            case L'\0':
+              escape_sequence = "0";
               break;
-            case '\b':
-              special_char = 'b';
+            case 1:
+              escape_sequence = "SOH";
               break;
-            case (char)27:
-              special_char = 'e';
+            case 2:
+              escape_sequence = "STX";
               break;
-            case '\f':
-              special_char = 'f';
+            case 3:
+              escape_sequence = "ETX";
               break;
-            case '\n':
-              special_char = 'n';
+            case 4:
+              escape_sequence = "EOT";
               break;
-            case '\r':
-              special_char = 'r';
+            case 5:
+              escape_sequence = "ENQ";
               break;
-            case '\t':
-              special_char = 't';
+            case 6:
+              escape_sequence = "ACK";
               break;
-            case '\v':
-              special_char = 'v';
+            case L'\a':
+              escape_sequence = "a";
               break;
-            case '\0':
-              special_char = '0';
+            case L'\b':
+              escape_sequence = "b";
+              break;
+            case L'\t':
+              escape_sequence = "t";
+              break;
+            case L'\n':
+              escape_sequence = "n";
+              break;
+            case L'\v':
+              escape_sequence = "v";
+              break;
+            case L'\f':
+              escape_sequence = "f";
+              break;
+            case L'\r':
+              escape_sequence = "r";
+              break;
+            case 14:
+              escape_sequence = "SO";
+              break;
+            case 15:
+              escape_sequence = "SI";
+              break;
+            case 16:
+              escape_sequence = "DLE";
+              break;
+            case 17:
+              escape_sequence = "DC1";
+              break;
+            case 18:
+              escape_sequence = "DC2";
+              break;
+            case 19:
+              escape_sequence = "DC3";
+              break;
+            case 20:
+              escape_sequence = "DC4";
+              break;
+            case 21:
+              escape_sequence = "NAK";
+              break;
+            case 22:
+              escape_sequence = "SYN";
+              break;
+            case 23:
+              escape_sequence = "ETB";
+              break;
+            case 24:
+              escape_sequence = "CAN";
+              break;
+            case 25:
+              escape_sequence = "EM";
+              break;
+            case 26:
+              escape_sequence = "SUB";
+              break;
+            case 27:
+              escape_sequence = "e";
+              break;
+            case 28:
+              escape_sequence = "FS";
+              break;
+            case 29:
+              escape_sequence = "GS";
+              break;
+            case 30:
+              escape_sequence = "RS";
+              break;
+            case 31:
+              escape_sequence = "US";
+              break;
+            }
+          }
+
+          if (escape_sequence) {
+            int len = strlen(escape_sequence);
+            invisible_only = false;
+            attron(A_DIM); // todo show if text is cut off on right side
+            mvaddch(y, x++, '\\');
+            mvaddstr(y, x, escape_sequence);
+            x += len;
+            attroff(A_DIM);
+          } else {
+            mvaddwstr(y, x, ch);
+            int display_width = wcwidth(ch[0]);
+            x += display_width;
+            switch (ch[0]) {
+            // I'm using this list:
+            // https://invisible-characters.com/#:~:text=Invisible%20Unicode%20characters%3F,%2B2800%20BRAILLE%20PATTERN%20BLANK).
+            // tab is handled as an escape sequence above
+            case L' ': // 0020
+            case L' ': // 00a0
+            case L'­': // 00ad
+            case L'͏': // 034f
+            case L'؜': // 061c
+            case L'ᅟ': // 115f
+            case L'ᅠ': // 1160
+            case L'឴': // 17b4
+            case L'឵': // 17b5
+            case L'᠎': // 180e
+            case L' ': // 2000
+            case L' ': // 2001
+            case L' ': // 2002
+            case L' ': // 2003
+            case L' ': // 2004
+            case L' ': // 2005
+            case L' ': // 2006
+            case L' ': // 2007
+            case L' ': // 2008
+            case L' ': // 2009
+            case L' ': // 200a
+            case L'​': // 200b
+            case L'‌': // 200c
+            case L'‍': // 200d
+            case L'‎': // 200e
+            case L'‏': // 200f
+            case L' ': // 202f
+            case L' ': // 205f
+            case L'⁠': // 2060
+            case L'⁡': // 2061
+            case L'⁢': // 2062
+            case L'⁣': // 2063
+            case L'⁤': // 2064
+            case L'⁫': // 206b
+            case L'⁬': // 206c
+            case L'⁭': // 206d
+            case L'⁮': // 206e
+            case L'⁯': // 206f
+            case L'　': // 3000
+            case L'⠀': // 2800
+            case L'ㅤ': // 3164
+            case L'﻿': // feff
+            case L'ﾠ': // ffa0
+            case L'𝅙': // 1d159
+            case L'𝅳': // 1d173
+            case L'𝅴': // 1d174
+            case L'𝅵': // 1d175
+            case L'𝅶': // 1d176
+            case L'𝅷': // 1d177
+            case L'𝅸': // 1d178
+            case L'𝅹': // 1d179
+            case L'𝅺': // 1d17a
               break;
             default:
-              // default case. print char normally
-              goto print_normal_char;
+              invisible_only = false;
               break;
+            }
           }
-
-          // if char is special {
-            attron(A_DIM);
-            mvaddch(y, x++, '\\');
-            mvaddch(y, x++, special_char);
-            attroff(A_DIM);
-          // }
-            goto after_print_normal_char;
-          print_normal_char:
-          // else {
-            mvaddch(y, x++, c);
-          // }
-          after_print_normal_char:
-            (void)0;
         }
 
         if (row_highlighted || row_selected) {
-          if (only_spaces) {
+          if (invisible_only) {
             const Token& token = tokens[y + scroll_position];
-            unsigned int size = token.end - token.begin;
-
-            for (unsigned int i = INITIAL_X; i < INITIAL_X + size * 2; i += 2) {
-              attron(A_DIM);
-              mvaddch(y, i, '\\');
-              mvaddch(y, i + 1, 's');
-              attroff(A_DIM);
-            }
+            attron(A_DIM);
+            move(y, INITIAL_X);
+            printw("\\s{%d bytes}", token.end - token.begin);
+            attroff(A_DIM);
           }
           attroff(A_BOLD);
           if (row_selected) {
@@ -719,7 +889,7 @@ on_resize:
       }
     };
 
-    // ========================== user input ================================
+    // ============================= user input ================================
 
     int ch = getch();
 
@@ -728,6 +898,7 @@ on_resize:
       if (!ncurses_deinit()) {
         // send_output_separator (below) might not work,
         // since ncurses is still capturing the output
+        fputs("endwin err", stderr);
         return 1;
       }
       if (bout_delimit) {
@@ -738,6 +909,7 @@ on_resize:
       const auto* pos = &*queued_output.cbegin();
       while (pos != &*queued_output.cend()) {
         if (putchar(*pos++) == EOF) {
+          fputs("stdout err", stderr);
           return 1;
         }
       }
@@ -796,6 +968,7 @@ on_resize:
         if (endwin() == ERR) {
           // this would be bad since text is going to the window instead of stdout
           ncurses_deinit();
+          fputs("endwin err", stderr);
           return 1;
         }
       }
@@ -806,6 +979,7 @@ on_resize:
       if (!first_output) {
         if (!send_output_separator(bout_sep_null, bout_separator)) {
           ncurses_deinit();
+          fputs("stdout err", stderr);
           return 1;
         }
       }
@@ -818,6 +992,7 @@ on_resize:
           if (immediate_output) {
             if (fputc(*iter, stdout) == EOF) {
               ncurses_deinit();
+              fputs("stdout err", stderr);
               return 1;
             }
           } else {
@@ -830,6 +1005,7 @@ on_resize:
         if (&s != &*selections.crbegin()) {
           if (!send_output_separator(out_sep_null, out_separator)) {
             ncurses_deinit();
+            fputs("stdout err", stderr);
             return 1;
           }
         }
@@ -838,6 +1014,7 @@ on_resize:
       if (immediate_output) {
         if (fflush(stdout) == EOF) {
           ncurses_deinit();
+          fputs("stdout err", stderr);
           return 1;
         }
       }
