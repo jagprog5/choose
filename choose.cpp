@@ -61,18 +61,19 @@ int main(int argc, char** argv) {
 "              \"output separator\": if multiple tokens are selected (which is\n"
 "                                  enabled via -m), then an output separator is\n"
 "                                  placed between each token in the output.\n"
-"        \"batch output separator\": selecting multiple tokens and sending them to\n"
+"               \"batch separator\": selecting multiple tokens and sending them to\n"
 "                                  the output together is a \"batch\". if multiple\n"
 "                                  batches are sent to the output (which is\n"
 "                                  enabled via -t), then a batch separator is\n"
-"usage:                            used between batches, instead of a normal\n"
-"        choose (-h|--help)        output separator.\n"
+"usage:                            used between batches, instead of an output\n"
+"        choose (-h|--help)        separator.\n"
 "        choose (-v|--version)\n"
 "        choose <options> [<input separator>]\n"
-"                [-o <output separator, default: \\n>]\n"
-"                [-b <batch output separator, default: output separator>]\n"
+"                [-o <output separator, default: '\\n'>]\n"
+"                [-b <batch separator, default: <output separator>>]\n"
+"                [-p <prompt>]\n"
 "options:\n"
-"        -d delimit; add a batch output separator at the end of the output\n"
+"        -d delimit; add a batch separator at the end of the output\n"
 "        -f flip the received token order\n"
 "        -i make the input separator case-insensitive\n"
 "        -m allow the selection of multiple tokens\n"
@@ -84,19 +85,19 @@ int main(int argc, char** argv) {
 "        -s sort the token output based on selection order instead of input order\n"
 "        -t tenacious; don't exit on confirmed selection\n"
 "        -u enable regex UTF-8\n"
-"        -y use null as the batch output separator\n"
+"        -y use null as the batch separator\n"
 "        -z use null as the output separator\n"
 "        -0 use null as the input separator\n"
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
-"        echo -n \"1 2 3\" | choose -o \",\" -b $'\\n' \" \" -dmst\n\n"
+"        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst\n\n"
 "        hist() { # copy paste this into ~/.bashrc\n"
 "          HISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
 "          trap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
 "          unset HISTTIMEFORMAT\n"
 "          SELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | \\\n"
-"          sed 's/^ *[0-9]*[ *] //' | head -n -1 | choose -f` && \\\n"
+"          sed 's/^ *[0-9]*[ *] //' | head -n-1 | choose -f -p \"Select a line to run.\"` && \\\n"
 "          history -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && \\\n"
 "          eval \"$SELECTED\" ; \n"
 "        }\n"
@@ -159,9 +160,10 @@ int main(int argc, char** argv) {
   bool bout_delimit = false;
 
   // these pointers point inside one of the argv elements
-  const char* in_separator = (char*)-1;
+  const char* in_separator = 0;
   const char* out_separator = "\n";
-  const char* bout_separator = (char*)-1;
+  const char* bout_separator = 0;
+  const char* prompt = 0;
 
   {
     // e.g. in -o stuff_here, the arg after -o should not be parsed.
@@ -223,6 +225,7 @@ int main(int argc, char** argv) {
             // optional args
             case 'o':
             case 'b':
+            case 'p':
               if (pos != argv[i] + 1) {
                 // checking that the flag is just after the dash. e.g. -o, not -io
                 fprintf(stderr, "-%c can't be specified with other flags "
@@ -238,15 +241,19 @@ int main(int argc, char** argv) {
                 next_arg_reserved = true;
                 if (ch == 'o') {
                   out_separator = argv[i + 1];
-                } else {
+                } else if (ch == 'b') {
                   bout_separator = argv[i + 1];
+                } else { // 'p'
+                  prompt = argv[i + 1];
                 }
               } else {
                 // if not, then it is specified without a space, like -ostuff
                 if (ch == 'o') {
                   out_separator = argv[i] + 2;
-                } else {
+                } else if (ch == 'b') {
                   bout_separator = argv[i] + 2;
+                } else { // 'p'
+                  prompt = argv[i] + 2;
                 }
                 goto next_arg;
               }
@@ -258,7 +265,7 @@ int main(int argc, char** argv) {
           (void)0;
       } else {
         // the sole positional argument
-        if (in_separator != (char*)-1) {
+        if (in_separator) {
           fprintf(stderr, "only one positional argument is allowed. a second one was found at position %d\n", i);
           return 1;
         }
@@ -266,7 +273,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (bout_separator == (char*)-1) {
+    if (!bout_separator) {
       bout_separator = out_separator;
     }
   }
@@ -323,7 +330,7 @@ int main(int argc, char** argv) {
 
     if (in_sep_null) {
       in_separator = ""; // points to a single null character
-    } else if (in_separator == (char*)-1) {
+    } else if (!in_separator) {
       // default sep
       if (flags & PCRE2_LITERAL) {
         in_separator = "\n";
@@ -491,8 +498,6 @@ int main(int argc, char** argv) {
     insert_token_and_advance(pos, &*raw_input.cend());
   }
 
-  // ============================ end of token making ==========================
-
   if (tokens.empty()) {
     return 0;
   }
@@ -502,6 +507,8 @@ int main(int argc, char** argv) {
   // ===========================================================================
 
   bool is_tty = isatty(fileno(stdout));
+
+  // don't use queued_output, instead send directly to the output
   bool immediate_output = tenacious && !is_tty;
 
   /*
@@ -522,11 +529,11 @@ int main(int argc, char** argv) {
   }
   SCREEN* screen = newterm(NULL, f, f);
   if (screen == NULL) {
-    fputs("ncurses err", stderr);
+    fputs("ncurses err\n", stderr);
     return 1;
   }
   if (set_term(screen) == NULL) {
-    fputs("ncurses err", stderr);
+    fputs("ncurses err\n", stderr);
     return 1;
   }
   // enable arrow keys
@@ -535,12 +542,12 @@ int main(int argc, char** argv) {
   }
   // pass keys directly from input without buffering
   if (cbreak() == ERR) {
-    fputs("ncurses err", stderr);
+    fputs("ncurses err\n", stderr);
     return 1;
   }
   // disable echo back of keys entered
   if (noecho() == ERR) {
-    fputs("ncurses err", stderr);
+    fputs("ncurses err\n", stderr);
     return 1;
   }
   // invisible cursor
@@ -552,16 +559,20 @@ int main(int argc, char** argv) {
   wtimeout(stdscr, std::numeric_limits<int>::max());
   // get mouse events right away
   if (mouseinterval(0) == ERR) {
-    fputs("ncurses err", stderr);
+    fputs("ncurses err\n", stderr);
     return 1;
   }
+
+  WINDOW* prompt_window = 0;
+  WINDOW* selection_window = 0;
 
   // this should be called before exiting after this point
   // (to clean up resources and restore terminal settings)
   // returns false if the output is still going to the screen and not stdout
   auto ncurses_deinit = [&]() {
-    // it's ok to call endwin after endwin. it's idempotent
-    auto ret = endwin();
+    auto ret = endwin(); // it's ok to call endwin after endwin. it's idempotent
+    delwin(prompt_window); // calling delwin is fine even if null
+    delwin(selection_window);
     delscreen(screen);
     fclose(f);
     return ret != ERR;
@@ -595,28 +606,92 @@ int main(int argc, char** argv) {
 
   std::vector<int> selections;
 
-  int num_rows, num_columns;
+  int num_rows; // of the entire screen
+  int num_columns;
+
+  const int INITIAL_PROMPT_ROWS = prompt ? 1 + 2 : 0; // todo obtain height
+  int prompt_rows; 
+  int selection_rows;
+
+  // ============================= resize handling =============================
 on_resize:
   getmaxyx(stdscr, num_rows, num_columns);
 
-  // how close is the selection to the top or bottom before it scrolls
+  prompt_rows = INITIAL_PROMPT_ROWS;
+  selection_rows = num_rows - prompt_rows;
+
+  if (selection_rows <= 0) {
+    // the prompt has a fixed size, and the selection fills the remaining space
+    // unless the selection would have 0 height, in which case it eats into the prompt to stay visible
+    prompt_rows = INITIAL_PROMPT_ROWS + selection_rows - 1;
+    selection_rows = 1;
+  }
+
+  if (prompt_window) {
+    if (delwin(prompt_window) == ERR) {
+      ncurses_deinit();
+      fputs("ncurses err\n", stderr);
+      return 1;
+    }
+  }
+  if (selection_window) {
+    if (delwin(selection_window) == ERR) {
+      ncurses_deinit();
+      fputs("ncurses err\n", stderr);
+      return 1;
+    }
+  }
+
+  if (prompt) {
+    prompt_window = newwin(prompt_rows, num_columns, 0, 0);
+    if (!prompt_window) {
+      ncurses_deinit();
+      fputs("ncurses err\n", stderr);
+      return 1;
+    }
+    box(prompt_window, 0, 0);
+    mvwaddstr(prompt_window, 1, 1, prompt);
+  }
+
+  selection_window = newwin(selection_rows, num_columns, prompt_rows, 0);
+  if (!selection_window) {
+    ncurses_deinit();
+    fputs("ncurses err\n", stderr);
+    return 1;
+  }
+
+  // how close is the selection to the top or bottom while scrolling
   int scroll_border = 5;
   // disable border if the terminal is very small
-  if (num_rows < scroll_border * 2) {
+  if (selection_rows <= scroll_border * 2) {
     scroll_border = 0;
   }
+
+  // scroll to keep the selection on screen when a resize occured
+  static bool previous_scroll_on_resize = false;
+  bool scroll_on_resize = selection_position >= selection_rows - 1;
+
+  if (scroll_on_resize) {
+    scroll_position = selection_position - (selection_rows - 1);
+  } else if (!scroll_on_resize && previous_scroll_on_resize) {
+    // handle if the screen is resized fast
+    scroll_position = 0;
+  }
+  previous_scroll_on_resize = scroll_on_resize;
+
+  refresh();
 
   while (true) {
     // =========================================================================
     // ============================= draw tui ==================================
     // =========================================================================
 
-    erase();
+    werase(selection_window);
 
     const int selection_text_space = selections.size() == 0 || !selection_order ?
                                      0 : int(std::log10(selections.size())) + 1;
 
-    for (int y = 0; y < num_rows; ++y) {
+    for (int y = 0; y < selection_rows; ++y) {
 
       // =============================== draw line =============================
 
@@ -627,18 +702,18 @@ on_resize:
         bool row_selected = it != selections.cend();
 
         if (selection_order && row_selected) {
-          attron(A_DIM);
-          mvprintw(y, 0, "%d", 1 + it - selections.begin());
-          attroff(A_DIM);
+          wattron(selection_window, A_DIM);
+          mvwprintw(selection_window, y, 0, "%d", 1 + it - selections.begin());
+          wattroff(selection_window, A_DIM);
         }
 
         if (row_highlighted || row_selected) {
-          attron(A_BOLD);
+          wattron(selection_window, A_BOLD);
           if (row_highlighted) {
-            mvaddch(y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
+            mvwaddch(selection_window, y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
           }
           if (row_selected) {
-            attron(COLOR_PAIR(PAIR_SELECTED));
+            wattron(selection_window, COLOR_PAIR(PAIR_SELECTED));
           }
         }
 
@@ -686,7 +761,7 @@ on_resize:
             // https://flaviocopes.com/non-printable-ascii-characters/
             switch (ch[0]) {
             case L'\0':
-              escape_sequence = "0";
+              escape_sequence = "\\0";
               break;
             case 1:
               escape_sequence = "SOH";
@@ -707,25 +782,25 @@ on_resize:
               escape_sequence = "ACK";
               break;
             case L'\a':
-              escape_sequence = "a";
+              escape_sequence = "\\a";
               break;
             case L'\b':
-              escape_sequence = "b";
+              escape_sequence = "\\b";
               break;
             case L'\t':
-              escape_sequence = "t";
+              escape_sequence = "\\t";
               break;
             case L'\n':
-              escape_sequence = "n";
+              escape_sequence = "\\n";
               break;
             case L'\v':
-              escape_sequence = "v";
+              escape_sequence = "\\v";
               break;
             case L'\f':
-              escape_sequence = "f";
+              escape_sequence = "\\f";
               break;
             case L'\r':
-              escape_sequence = "r";
+              escape_sequence = "\\r";
               break;
             case 14:
               escape_sequence = "SO";
@@ -767,7 +842,7 @@ on_resize:
               escape_sequence = "SUB";
               break;
             case 27:
-              escape_sequence = "e";
+              escape_sequence = "\\e";
               break;
             case 28:
               escape_sequence = "FS";
@@ -784,16 +859,16 @@ on_resize:
             }
           }
 
+          // the printing functions handle bound checking
           if (escape_sequence) {
             int len = strlen(escape_sequence);
             invisible_only = false;
-            attron(A_DIM); // todo show if text is cut off on right side
-            mvaddch(y, x++, '\\');
-            mvaddstr(y, x, escape_sequence);
+            wattron(selection_window, A_DIM);
+            mvwaddstr(selection_window, y, x, escape_sequence);
             x += len;
-            attroff(A_DIM);
+            wattroff(selection_window, A_DIM);
           } else {
-            mvaddwstr(y, x, ch);
+            mvwaddwstr(selection_window, y, x, ch);
             int display_width = wcwidth(ch[0]);
             x += display_width;
             switch (ch[0]) {
@@ -858,23 +933,39 @@ on_resize:
               break;
             }
           }
+          // draw ... at the right side of the screen if the x exceeds the width for this line
+          if (x > num_columns) {
+            wattron(selection_window, A_DIM);
+            mvwaddstr(selection_window, y, num_columns - 3, "...");
+            wattroff(selection_window, A_DIM);
+            break; // cancel printing the rest of the token
+          }
         }
 
         if (row_highlighted || row_selected) {
           if (invisible_only) {
             const Token& token = tokens[y + scroll_position];
-            attron(A_DIM);
+            wattron(selection_window, A_DIM);
             move(y, INITIAL_X);
-            printw("\\s{%d bytes}", token.end - token.begin);
-            attroff(A_DIM);
+            wprintw(selection_window, "\\s{%d bytes}", token.end - token.begin);
+            wattroff(selection_window, A_DIM);
           }
-          attroff(A_BOLD);
+          wattroff(selection_window, A_BOLD);
           if (row_selected) {
-            attroff(COLOR_PAIR(PAIR_SELECTED));
+            wattroff(selection_window, COLOR_PAIR(PAIR_SELECTED));
           }
         }
       }
     }
+
+    wrefresh(prompt_window); // fine even if null
+    wrefresh(selection_window);
+    
+    // =========================================================================
+    // ============================ user input =================================
+    // =========================================================================
+
+    int ch = getch();
 
     // returns true on success, false on write failure
     auto send_output_separator = [&](bool sep_null, const char* const sep) -> bool {
@@ -898,16 +989,12 @@ on_resize:
       }
     };
 
-    // ============================= user input ================================
-
-    int ch = getch();
-
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
       if (!ncurses_deinit()) {
         // send_output_separator (below) might not work,
         // since ncurses is still capturing the output
-        fputs("endwin err", stderr);
+        fputs("endwin err\n", stderr);
         return 1;
       }
       if (bout_delimit) {
@@ -918,7 +1005,7 @@ on_resize:
       const auto* pos = &*queued_output.cbegin();
       while (pos != &*queued_output.cend()) {
         if (putchar(*pos++) == EOF) {
-          fputs("stdout err", stderr);
+          fputs("stdout err\n", stderr);
           return 1;
         }
       }
@@ -930,8 +1017,10 @@ on_resize:
       if (getmouse(&e) != OK)
         continue;
       if (e.bstate & BUTTON4_PRESSED) {
+        tenacious_single_select_indicator = 0;
         goto scroll_up;
       } else if (e.bstate & BUTTON5_PRESSED) {
+        tenacious_single_select_indicator = 0;
         goto scroll_down;
       }
     } else
@@ -977,18 +1066,18 @@ on_resize:
         if (endwin() == ERR) {
           // this would be bad since text is going to the window instead of stdout
           ncurses_deinit();
-          fputs("endwin err", stderr);
+          fputs("endwin err\n", stderr);
           return 1;
         }
       }
       
-      // send the batch output separator between groups of selections
+      // send the batch separator between groups of selections
       // e.g. a|b|c=a|b|b=a|b|c 
       static bool first_output = true;
       if (!first_output) {
         if (!send_output_separator(bout_sep_null, bout_separator)) {
           ncurses_deinit();
-          fputs("stdout err", stderr);
+          fputs("stdout err\n", stderr);
           return 1;
         }
       }
@@ -1001,7 +1090,7 @@ on_resize:
           if (immediate_output) {
             if (fputc(*iter, stdout) == EOF) {
               ncurses_deinit();
-              fputs("stdout err", stderr);
+              fputs("stdout err\n", stderr);
               return 1;
             }
           } else {
@@ -1014,7 +1103,7 @@ on_resize:
         if (&s != &*selections.crbegin()) {
           if (!send_output_separator(out_sep_null, out_separator)) {
             ncurses_deinit();
-            fputs("stdout err", stderr);
+            fputs("stdout err\n", stderr);
             return 1;
           }
         }
@@ -1023,7 +1112,7 @@ on_resize:
       if (immediate_output) {
         if (fflush(stdout) == EOF) {
           ncurses_deinit();
-          fputs("stdout err", stderr);
+          fputs("stdout err\n", stderr);
           return 1;
         }
       }
@@ -1032,51 +1121,63 @@ on_resize:
       } else {
         goto cleanup_exit;
       }
-    } else if (ch == KEY_UP || ch == 'k') {
-      [[maybe_unused]] scroll_up : --selection_position;
+    } else {
+
+      // ========================== movement commands ==========================
+      
       tenacious_single_select_indicator = 0;
-    } else if (ch == KEY_DOWN || ch == 'j') {
-      [[maybe_unused]] scroll_down : ++selection_position;
-      tenacious_single_select_indicator = 0;
-    } else if (ch == KEY_HOME) {
-      selection_position = 0;
-      scroll_position = 0;
-    } else if (ch == KEY_END) {
-      selection_position = (int)tokens.size() - 1;
-      if ((int)tokens.size() > num_rows) {
-        scroll_position = (int)tokens.size() - num_rows;
-      } else {
+
+      if (ch == KEY_UP || ch == 'k') {
+        [[maybe_unused]] scroll_up : --selection_position;
+      } else if (ch == KEY_DOWN || ch == 'j') {
+        [[maybe_unused]] scroll_down : ++selection_position;
+      } else if (ch == KEY_HOME) {
+        selection_position = 0;
         scroll_position = 0;
+      } else if (ch == KEY_END) {
+        selection_position = (int)tokens.size() - 1;
+        if ((int)tokens.size() > selection_rows) {
+          scroll_position = (int)tokens.size() - selection_rows;
+        } else {
+          scroll_position = 0;
+        }
+      } else if (ch == KEY_PPAGE) {
+        selection_position -= selection_rows;
+        if (selection_position < scroll_border) {
+          scroll_position = 0;
+        }
+      } else if (ch == KEY_NPAGE) {
+        if ((int)tokens.size() < selection_rows) {
+          // handle an edge case where there is few tokens
+          selection_position = (int)tokens.size() - 1;
+        } else {
+          selection_position += selection_rows;
+          if (selection_position >= (int)tokens.size() - scroll_border) {
+            scroll_position = (int)tokens.size() - selection_rows;
+          }
+        }
       }
-    } else if (ch == KEY_PPAGE) {
-      selection_position -= num_rows;
-      if (selection_position < scroll_border) {
-        scroll_position = 0;
-      }
-    } else if (ch == KEY_NPAGE) {
-      selection_position += num_rows;
-      if (selection_position >= (int)tokens.size() - scroll_border) {
-        scroll_position = (int)tokens.size() - num_rows;
-      }
-    }
 
-    if (selection_position < 0) {
-      selection_position = 0;
-    } else if (selection_position >= (int)tokens.size()) {
-      selection_position = (int)tokens.size() - 1;
-    }
+      // ========================== scroll adjustments ===========================
 
-    // scroll to keep the selection in view
-    if (selection_position >= scroll_border) {
-      if (selection_position - scroll_border < scroll_position) {
-        scroll_position = selection_position - scroll_border;
+      if (selection_position < 0) {
+        selection_position = 0;
+      } else if (selection_position >= (int)tokens.size()) {
+        selection_position = (int)tokens.size() - 1;
       }
-    }
 
-    if (selection_position < (int)tokens.size() - scroll_border) {
-      if (selection_position + scroll_border - scroll_position >=
-          num_rows - 1) {
-        scroll_position = selection_position + scroll_border - num_rows + 1;
+      // scroll to keep the selection in view
+      if (selection_position >= scroll_border) {
+        if (selection_position - scroll_border < scroll_position) {
+          scroll_position = selection_position - scroll_border;
+        }
+      }
+
+      if (selection_position < (int)tokens.size() - scroll_border) {
+        if (selection_position + scroll_border - scroll_position >=
+            selection_rows - 1) {
+          scroll_position = selection_position + scroll_border - selection_rows + 1;
+        }
       }
     }
   }
