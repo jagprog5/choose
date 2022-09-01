@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
   // ===========================================================================
 
   if (argc == 2 && (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
-    return puts("1.0.2") < 0;
+    return puts("1.1.0") < 0;
   }
   if (argc == 2 && (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
     // respects 80 char width, and pipes the text to less to accomodate terminal height
@@ -360,13 +360,15 @@ int main(int argc, char** argv) {
      * https://www.pcre.org/current/doc/html/pcre2demo.html
      */
 
+    pcre2_code* re;
+    pcre2_match_data* match_data;
     {
       // compile the regex
       PCRE2_SPTR pattern = (PCRE2_SPTR)in_separator;
       int errornumber;
       PCRE2_SIZE erroroffset;
       
-      pcre2_code* re = pcre2_compile(pattern, in_sep_null ? 1 : PCRE2_ZERO_TERMINATED, flags,
+      re = pcre2_compile(pattern, in_sep_null ? 1 : PCRE2_ZERO_TERMINATED, flags,
                                      &errornumber, &erroroffset, NULL);
       if (re == NULL) {
         PCRE2_UCHAR buffer[256];
@@ -377,7 +379,7 @@ int main(int argc, char** argv) {
       }
 
       // match
-      pcre2_match_data* match_data =
+      match_data =
           pcre2_match_data_create_from_pattern(re, NULL);
       PCRE2_SPTR subject = (PCRE2_SPTR) & *raw_input.cbegin();
       PCRE2_SIZE subject_length = (PCRE2_SIZE)raw_input.size();
@@ -492,8 +494,10 @@ int main(int argc, char** argv) {
         pos += substring_length;
       }
     }
-
   regex_done:
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
+
     // last token (anchored to end of input)
     insert_token_and_advance(pos, &*raw_input.cend());
   }
@@ -606,24 +610,162 @@ int main(int argc, char** argv) {
 
   std::vector<int> selections;
 
+  // ============================= resize handling =============================
+on_resize:
   int num_rows; // of the entire screen
   int num_columns;
 
-  const int INITIAL_PROMPT_ROWS = prompt ? 1 + 2 : 0; // todo obtain height
   int prompt_rows; 
   int selection_rows;
 
-  // ============================= resize handling =============================
-on_resize:
   getmaxyx(stdscr, num_rows, num_columns);
 
-  prompt_rows = INITIAL_PROMPT_ROWS;
+  if (num_rows < (prompt ? 2 : 1) || num_columns < 1) {
+    // too small to be functional. lock out everything until it's big enough
+    if (num_rows > 0 || num_columns > 0) {
+      mvprintw(0, 0, "too small!");
+    }
+    int ch;
+    do {
+      ch = getch();
+    } while (ch != KEY_RESIZE);
+    goto on_resize;
+  }
+
+  // convert the prompt to a vector of wide char null terminating strings
+  std::vector<std::vector<wchar_t>> prompt_lines;
+  if (prompt) {
+    std::mbstate_t ps; // text decode context
+    memset(&ps, 0, sizeof(ps));
+
+    const char* prompt_terminator = prompt;
+    while (*prompt_terminator != 0) {
+      ++prompt_terminator;
+    }
+    // prompt_terminator points to the position of the null terminator in the prompt
+    // it is needed for the "n" arg in mbrtowc
+
+    prompt_lines.emplace_back();
+
+    const char* pos = prompt;
+    const int INITIAL_AVAILBLE_WIDTH = num_columns - 2;
+    int available_width = INITIAL_AVAILBLE_WIDTH;
+    while (pos != prompt_terminator) {
+      wchar_t ch;
+      auto consume_ch = [&]() -> bool {
+        size_t num_bytes = std::mbrtowc(&ch, pos, prompt_terminator - pos, &ps);
+        if (num_bytes == 0) {
+          // will never happen, since prompt_terminator points to the first null
+        } else if (num_bytes == (size_t)-1) {
+          ncurses_deinit();
+          fprintf(stderr, "%s\n", strerror(errno));
+          return false;
+        } else if (num_bytes == (size_t)-2) {
+          ncurses_deinit();
+          fputs("incomplete multibyte in prompt\n", stderr);
+          return false;
+        }
+        pos += num_bytes;
+        return true;
+      };
+      if (!consume_ch()) {
+        return 1;
+      }
+
+      auto insert_new_prompt_line = [&]() {
+        available_width = INITIAL_AVAILBLE_WIDTH;
+        prompt_lines.rbegin()->push_back(L'\0');
+        prompt_lines.emplace_back();
+      };
+
+      switch (ch) {
+        case L'\n':
+          insert_new_prompt_line();
+          break;
+        case L'\r':
+          // ignore
+          break;
+        case L'\t':
+          ch = L' ';
+          [[fallthrough]];
+        default:
+          available_width -= wcwidth(ch);
+          #ifdef CHOOSE_PROMPT_LETTER_WRAP
+            if (available_width < 0) {
+              insert_new_prompt_line();
+              available_width -= wcwidth(ch);
+            }
+          #else // word wrap
+            if (available_width < 0) {
+              // edge case on word boundary wrap, looks like:
+              //                |
+              //                V wrap end of screen here
+              //      test  test  test  test   
+              bool edge_case = ch == L' '
+                            && prompt_lines.rbegin()->size() != 0
+                            && (*prompt_lines.rbegin()->rbegin()) != L' ';
+
+              // consume excess whitespace before line wrapping
+              // if there was nothing except whitespace then abort the wrap
+              while (ch == L' ') {
+                if (pos == prompt_terminator) goto get_out;
+                if (!consume_ch()) {
+                  return 1;
+                }
+              }
+
+              insert_new_prompt_line();
+
+              // we just inserted a line, so previous_line is
+              // the line that we just tried to print past the width
+              auto& previous_line = prompt_lines.rbegin()[1];
+
+              // find the first character that isn't a space and is proceeded by a space
+              // starting point is just before the null char
+              wchar_t* word_begin = &previous_line.rbegin()[1]; // a b 0
+              while (word_begin != &*previous_line.rend()) {
+                  if (*word_begin == ' ' && word_begin[1] != ' ') {
+                    ++word_begin;
+                    break;
+                  }
+                  --word_begin;
+              }
+
+              if (!edge_case) {
+                if (word_begin != &*previous_line.rend()) {
+                  // word boundary found. cut the word into the new line from the previous line
+                  wchar_t* word_begin_copy = word_begin;
+                  wchar_t ch;
+                  while ((ch = *word_begin++)) {
+                    available_width -= wcwidth(ch);
+                    prompt_lines.rbegin()->push_back(ch);
+                  }
+                  previous_line.erase(decltype(previous_line.end())(word_begin_copy), previous_line.end() - 1); // -1, don't erase null terminator
+                }
+              }
+
+              available_width -= wcwidth(ch);
+            }
+          #endif
+          prompt_lines.rbegin()->push_back(ch);
+          break;
+      }
+
+    }
+
+    get_out:
+
+    prompt_lines.rbegin()->push_back(L'\0');
+  }
+
+  int initial_prompt_rows = prompt ? prompt_lines.size() + 2 : 0; // top and bottom border
+  prompt_rows = initial_prompt_rows;
   selection_rows = num_rows - prompt_rows;
 
   if (selection_rows <= 0) {
     // the prompt has a fixed size, and the selection fills the remaining space
     // unless the selection would have 0 height, in which case it eats into the prompt to stay visible
-    prompt_rows = INITIAL_PROMPT_ROWS + selection_rows - 1;
+    prompt_rows = initial_prompt_rows + selection_rows - 1;
     selection_rows = 1;
   }
 
@@ -650,7 +792,9 @@ on_resize:
       return 1;
     }
     box(prompt_window, 0, 0);
-    mvwaddstr(prompt_window, 1, 1, prompt);
+    for (size_t i = 0; i < prompt_lines.size(); ++i) {
+       mvwaddwstr(prompt_window, 1 + i, 1, &*prompt_lines[i].begin());
+    }
   }
 
   selection_window = newwin(selection_rows, num_columns, prompt_rows, 0);
@@ -862,15 +1006,19 @@ on_resize:
           // the printing functions handle bound checking
           if (escape_sequence) {
             int len = strlen(escape_sequence);
-            invisible_only = false;
-            wattron(selection_window, A_DIM);
-            mvwaddstr(selection_window, y, x, escape_sequence);
+            if (x + len <= num_columns) { // check if drawing the char would wrap
+              wattron(selection_window, A_DIM);
+              mvwaddstr(selection_window, y, x, escape_sequence);
+              wattroff(selection_window, A_DIM);
+            }
             x += len;
-            wattroff(selection_window, A_DIM);
+            invisible_only = false;
           } else {
-            mvwaddwstr(selection_window, y, x, ch);
-            int display_width = wcwidth(ch[0]);
-            x += display_width;
+            int len = wcwidth(ch[0]);
+            if (x + len <= num_columns) {
+              mvwaddwstr(selection_window, y, x, ch);
+            }
+            x += len;
             switch (ch[0]) {
             // I'm using this list:
             // https://invisible-characters.com/#:~:text=Invisible%20Unicode%20characters%3F,%2B2800%20BRAILLE%20PATTERN%20BLANK).
