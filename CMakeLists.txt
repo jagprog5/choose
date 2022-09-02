@@ -10,7 +10,7 @@ project(choose)
 add_executable(choose choose.cpp)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -Os -fno-exceptions -fno-rtti -fno-strict-aliasing)
+  target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -Os -fno-rtti -fno-strict-aliasing)
 endif()
 
 set(CURSES_NEED_NCURSES TRUE)
