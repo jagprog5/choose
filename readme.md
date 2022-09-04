@@ -31,6 +31,7 @@ hist() {
     trap 'HISTTIMEFORMAT="$HISTTIMEFORMATSAVE"' err
     unset HISTTIMEFORMAT
     SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n-1 | \
+    cat -n | sort -uk2 | sort -nk1 | cut -f2- | \
     choose -f -p "Select a line to run."` && \
     history -s "$SELECTED" && HISTTIMEFORMAT="$HISTTIMEFORMATSAVE" && eval "$SELECTED" ; 
 }
@@ -49,26 +50,17 @@ like a better combination of `reverse-i-search` and `history | grep "$whatever"`
   rm -rf *
   cd build
   git pull
-  ls
   cd choose/
   ls
   cd ~/
   clear
   git push
   git commit --amend
-  sudo make install
   echo -n "this 1 is 2 a 3 test" | choose -r " [0-9] "
-  choose -h
-  echo -n "a b c" | choose -o "," -b $'\n' " " -dms > temp.txt
   echo -n "a b c" | choose -o "," -b $'\n' " " -dmst > temp.txt
   cat temp.txt
-  echo -n "a b c" | choose -o "," -b $'\n' " " -dmst > temp.txt
-  choose -h
   top
-  choose -h
-  sudo make install
   git log --oneline
-  git push
 ```
 
 ## Examples
