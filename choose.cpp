@@ -754,7 +754,7 @@ on_resize:
 
     }
 
-    get_out:
+    [[maybe_unused]] get_out:
 
     prompt_lines.rbegin()->push_back(L'\0');
   }
@@ -1095,8 +1095,7 @@ on_resize:
           if (invisible_only) {
             const Token& token = tokens[y + scroll_position];
             wattron(selection_window, A_DIM);
-            move(y, INITIAL_X);
-            wprintw(selection_window, "\\s{%d bytes}", token.end - token.begin);
+            mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", token.end - token.begin);
             wattroff(selection_window, A_DIM);
           }
           wattroff(selection_window, A_BOLD);

@@ -6,6 +6,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+OPTION(LETTER_WRAP "Make prompts wrap by letter instead of by word" OFF)
 project(choose)
 add_executable(choose choose.cpp)
 
@@ -24,6 +25,12 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCRE REQUIRED libpcre2-8)
 
 target_include_directories(choose PRIVATE ${PCRE_INCLUDEDIR})
-target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES}) 
+target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES})
+
+if (LETTER_WRAP)
+  target_compile_definitions(choose PRIVATE
+    CHOOSE_PROMPT_LETTER_WRAP
+  )
+endif()
 
 install(TARGETS choose DESTINATION /usr/bin)
