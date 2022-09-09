@@ -55,39 +55,44 @@ int main(int argc, char** argv) {
 "        Splits the input into tokens based on a separator, and provides a text\n"
 "        based ui for selecting which tokens are sent to the output.\n"
 "terminology:\n"
-"               \"input separator\": describes how to split the input into tokens.\n"
-"                                  each token is displayed for selection in the\n"
-"                                  user interface.\n"
-"              \"output separator\": if multiple tokens are selected (which is\n"
-"                                  enabled via -m), then an output separator is\n"
-"                                  placed between each token in the output.\n"
-"               \"batch separator\": selecting multiple tokens and sending them to\n"
-"                                  the output together is a \"batch\". if multiple\n"
-"                                  batches are sent to the output (which is\n"
-"                                  enabled via -t), then a batch separator is\n"
-"usage:                            used between batches, instead of an output\n"
-"        choose (-h|--help)        separator.\n"
+"       \"input separator\": describes how to split the input into tokens. each\n"
+"                          token is displayed for selection in the interface.\n"
+"      \"output separator\": if multiple tokens are selected (which is enabled via\n"
+"                          via -m), then an output separator is placed between\n"
+"                          each token in the output.\n"
+"       \"batch separator\": selecting multiple tokens and sending them to the\n"
+"                          output together is a \"batch\". if multiple batches\n"
+"                          are sent to the output (which is enabled bia -t), then\n"
+"                          a batch separator is used between batches, instead of\n"
+"usage:                    an output separator.\n"
+"        choose (-h|--help)\n"
 "        choose (-v|--version)\n"
 "        choose <options> [<input separator>]\n"
-"                [-o <output separator, default: '\\n'>]\n"
-"                [-b <batch separator, default: <output separator>>]\n"
-"                [-p <prompt>]\n"
+"                [(-o|--output-separator) <output separator, default: '\\n'>]\n"
+"                [(-b|--batch-separator)\n"
+"                        <batch separator, default: <output separator>>]\n"
+"                [(-p|--prompt) <prompt>]\n"
 "options:\n"
-"        -d delimit; add a batch separator at the end of the output\n"
-"        -f flip the received token order\n"
-"        -i make the input separator case-insensitive\n"
-"        -m allow the selection of multiple tokens\n"
-"        -r use (PCRE2) regex for the input separator\n"
-"                If disabled, the default input separator is a newline character.\n"
-"                If enabled, the default input separator is a regex which matches\n"
-"                newline characters not contained in single or double quotes,\n"
-"                excluding escaped quotes. regex101.com/r/RHyz6D/\n"
-"        -s sort the token output based on selection order instead of input order\n"
-"        -t tenacious; don't exit on confirmed selection\n"
-"        -u enable regex UTF-8\n"
-"        -y use null as the batch separator\n"
-"        -z use null as the output separator\n"
-"        -0 use null as the input separator\n"
+"        -d, --delimit   add a batch separator at the end of the output\n"
+"        -f, --flip      reverse the received token order\n"
+"        -i, --ignore-case\n"
+"                        make the input separator case-insensitive\n"
+"        -m, --multi     allow the selection of multiple tokens\n"
+"        -r, --regex     use (PCRE2) regex for the input separator.\n"
+"                        DISABLED: the default input separator is a newline\n"
+"                        ENABLED: the default input separator is a regex which\n"
+"                        matches newline characters not contained in single or\n"
+"                        double quotes, excluding escaped quotes:\n"
+"                        regex101.com/r/RHyz6D/\n"
+"        -s, --sort      sort the token output based on selection order instead\n"
+"                        of input order\n"
+"        -t, --tenacious don't exit on confirmed selection\n"
+"        -u, --utf       enable regex UTF-8\n"
+"        -y, --batch-print0\n"
+"                        use null as the batch separator\n"
+"        -z, --print0    use null as the output separator\n"
+"        -0, --null, --read0\n"
+"                        use null as the input separator\n"
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
@@ -185,7 +190,7 @@ int main(int argc, char** argv) {
         char ch;
         while ((ch = *pos)) {
           switch (ch) {
-            // flags
+            // short flags
             default:
               fprintf(stderr, "unknown flag -%c in arg %d\n", ch, i);
               return 1;
@@ -223,6 +228,50 @@ int main(int argc, char** argv) {
             case '0':
               in_sep_null = true;
               break;
+            case '-':
+              // long form of flags / args
+              pos += 1; // point to just after the --
+              if (strcmp("delimit", pos) == 0) {
+                bout_delimit = true;
+              } else if (strcmp("flip", pos) == 0) {
+                flip = true;
+              } else if (strcmp("ignore-case", pos) == 0) {
+                flags |= PCRE2_CASELESS;
+              } else if (strcmp("multi", pos) == 0) {
+                multiple_selections = true;
+              } else if (strcmp("regex", pos) == 0) {
+                flags &= ~PCRE2_LITERAL;
+              } else if (strcmp("sort", pos) == 0) {
+                selection_order = true;
+              } else if (strcmp("tenacious", pos) == 0) {
+                tenacious = true;
+              } else if (strcmp("utf", pos) == 0) {
+                flags |= PCRE2_UTF;
+              } else if (strcmp("batch-print0", pos) == 0) {
+                bout_sep_null = true;
+              } else if (strcmp("print0", pos) == 0) {
+                out_sep_null = true;
+              } else if (strcmp("null", pos) == 0 || strcmp("read0", pos) == 0) {
+                in_sep_null = true;
+              } else if (strcmp("output-separator", pos) == 0) {
+                // reuse the code below after putting the variables in an equivalent state
+                ch = 'o';
+                pos += strlen("output-separator") - 1; // done with this arg
+                goto parse_param;
+              } else if (strcmp("batch-separator", pos) == 0) {
+                ch = 'b';
+                pos += strlen("batch-separator") - 1;
+                goto parse_param;
+              } else if (strcmp("prompt", pos) == 0) {
+                ch = 'p';
+                pos += strlen("prompt") - 1;
+                goto parse_param;
+              } else {
+                fprintf(stderr, "unknown long option in arg %d: \"%s\"\n", i, argv[i]);
+                return 1;
+              }
+              goto next_arg;
+              break;
             // optional args
             case 'o':
             case 'b':
@@ -233,6 +282,7 @@ int main(int argc, char** argv) {
                     "in the same arg, but it was in arg %d: \"%s\"\n", ch, i, argv[i]);
                 return 1;
               }
+              parse_param:
               // if it is only -o, then the next arg is the separator
               if (*(pos + 1) == '\0') {
                 if (i == argc - 1) {

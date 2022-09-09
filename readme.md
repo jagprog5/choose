@@ -82,7 +82,7 @@ In fzf, you [can't](https://github.com/junegunn/fzf/issues/1670) change the inpu
 
 ## size
 
-choose is very simple and light weight, 280K compared to fzf's 2.4M (and choose could definitely be made smaller). For a fair comparison, this is with everything statically linked. fzf is like this out of the box, while choose needs to be compiled like so:
+choose is very simple and light weight, ~280K compared to fzf's 2.4M (and choose could definitely be made smaller). For a fair comparison, this is with everything statically linked. fzf is like this out of the box, while choose needs to be compiled like so:
 
 ```bash
 clang++ -DPCRE2_STATIC -Os -DNDEBUG -fno-rtti -fno-strict-aliasing -I/usr/include ../choose.cpp /usr/lib/x86_64-linux-gnu/libncursesw.a /usr/lib/x86_64-linux-gnu/libform.a /usr/lib/x86_64-linux-gnu/libtinfo.a /usr/lib/x86_64-linux-gnu/libgpm.a -lpcre2-8
