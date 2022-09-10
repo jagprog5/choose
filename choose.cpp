@@ -58,13 +58,13 @@ int main(int argc, char** argv) {
 "       \"input separator\": describes how to split the input into tokens. each\n"
 "                          token is displayed for selection in the interface.\n"
 "      \"output separator\": if multiple tokens are selected (which is enabled via\n"
-"                          via -m), then an output separator is placed between\n"
-"                          each token in the output.\n"
+"                          -m), then an output separator is placed between each\n"
+"                          token in the output.\n"
 "       \"batch separator\": selecting multiple tokens and sending them to the\n"
-"                          output together is a \"batch\". if multiple batches\n"
-"                          are sent to the output (which is enabled bia -t), then\n"
-"                          a batch separator is used between batches, instead of\n"
-"usage:                    an output separator.\n"
+"                          output together is a \"batch\". if multiple batches are\n"
+"                          sent to the output (which is enabled via -t), then a\n"
+"                          batch separator is used between batches, instead of an\n"
+"usage:                    output separator.\n"
 "        choose (-h|--help)\n"
 "        choose (-v|--version)\n"
 "        choose <options> [<input separator>]\n"
@@ -363,21 +363,20 @@ int main(int argc, char** argv) {
     }
     read_done = 1;
 
-    if (raw_input.empty()) {
-      return 0;
-    }
-
     // ============================= make tokens ===============================
 
     const char* pos = &*raw_input.cbegin();
 
     auto insert_token_and_advance = [&tokens, flip](const char*& begin,
                                                        const char* end) {
-      if (begin == end)
-        return;
       tokens.insert(flip ? tokens.begin() : tokens.end(), {begin, end});
       begin = end;
     };
+
+    if (raw_input.empty()) {
+      tokens.push_back(Token{NULL, NULL});
+      goto skip_regex;
+    }
 
     if (in_sep_null) {
       in_separator = ""; // points to a single null character
@@ -443,7 +442,9 @@ int main(int argc, char** argv) {
         // < 0 is a regex error
         // = 0 means the match_data ovector wasn't big enough
         // should never happen
-        fprintf(stderr, "First match, matching error %d\n", rc);
+        PCRE2_UCHAR buffer[256];
+        pcre2_get_error_message(rc, buffer, sizeof(buffer));
+        fprintf(stderr, "Matching error: \"%s\"\n", buffer);
         // not bothering to call free since program terminates
         return 1;
       }
@@ -524,7 +525,9 @@ int main(int argc, char** argv) {
         }
 
         if (rc <= 0) {
-          fprintf(stderr, "Matching error %d\n", rc);
+          PCRE2_UCHAR buffer[256];
+          pcre2_get_error_message(rc, buffer, sizeof(buffer));
+          fprintf(stderr, "Matching error: \"%s\"\n", buffer);
           return 1;
         }
 
@@ -550,11 +553,11 @@ int main(int argc, char** argv) {
     pcre2_code_free(re);
 
     // last token (anchored to end of input)
-    insert_token_and_advance(pos, &*raw_input.cend());
-  }
-
-  if (tokens.empty()) {
-    return 0;
+    if (pos != &*raw_input.cend()) {
+      insert_token_and_advance(pos, &*raw_input.cend());
+    }
+  skip_regex:
+    (void)0;
   }
 
   // ===========================================================================
