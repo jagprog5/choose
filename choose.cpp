@@ -93,19 +93,19 @@ int main(int argc, char** argv) {
 "        -z, --print0    use null as the output separator\n"
 "        -0, --null, --read0\n"
 "                        use null as the input separator\n"
+"                        this is the same as -r and \\x00\n"
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
-"        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst\n\n"
+"        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst -pspacebar\n\n"
 "        hist() { # copy paste this into ~/.bashrc\n"
-"          HISTTIMEFORMATSAVE=\"$HISTTIMEFORMAT\"\n"
-"          trap 'HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\"' err\n"
-"          unset HISTTIMEFORMAT\n"
-"          SELECTED=`history | grep -i \"\\`echo \"$@\"\\`\" | \\\n"
-"          sed 's/^ *[0-9]*[ *] //' | head -n-1 | cat -n | sort -uk2 | \\\n"
-"          sort -nk1 | cut -f2- | choose -f -p \"Select a line to run.\"` && \\\n"
-"          history -s \"$SELECTED\" && HISTTIMEFORMAT=\"$HISTTIMEFORMATSAVE\" && \\\n"
-"          eval \"$SELECTED\" ; \n"
+"        local LINE\n"
+"        # parse history lines, grep, and filter for latest unique entries\n"
+"        LINE=\"$(unset HISTTIMEFORMAT && history | sed 's/^ *[0-9]*[ *] //' |\\\n"
+"        grep -i \"$*\" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 | \\\n"
+"        cut -f2- | choose -p \"Select a line to run.\")\"\n"
+"        # save selection to history and run it\n"
+"        [ ! -z \"$LINE\" ] && history -s \"$LINE\" && eval \"$LINE\" ;\n"
 "        }\n"
 "controls:\n"
 "         confirm selections: enter, d, or f\n"
@@ -160,7 +160,6 @@ int main(int argc, char** argv) {
 
   // these options are made available since null can't be typed as a command line arg
   // there's precedent elsewhere, e.g. find -print0 -> xargs -0
-  bool in_sep_null = false;
   bool out_sep_null = false;
   bool bout_sep_null = false;
   bool bout_delimit = false;
@@ -226,7 +225,8 @@ int main(int argc, char** argv) {
               out_sep_null = true;
               break;
             case '0':
-              in_sep_null = true;
+              in_separator = "\\x00";
+              flags &= ~PCRE2_LITERAL;
               break;
             case '-':
               // long form of flags / args
@@ -252,7 +252,8 @@ int main(int argc, char** argv) {
               } else if (strcmp("print0", pos) == 0) {
                 out_sep_null = true;
               } else if (strcmp("null", pos) == 0 || strcmp("read0", pos) == 0) {
-                in_sep_null = true;
+                in_separator = "\\x00";
+                flags &= ~PCRE2_LITERAL;
               } else if (strcmp("output-separator", pos) == 0) {
                 // reuse the code below after putting the variables in an equivalent state
                 ch = 'o';
@@ -317,7 +318,8 @@ int main(int argc, char** argv) {
       } else {
         // the sole positional argument
         if (in_separator) {
-          fprintf(stderr, "only one positional argument is allowed. a second one was found at position %d\n", i);
+          fprintf(stderr, "the input separator can only be specified once. "
+            "the second instance was found at position %d: \"%s\"\n", i, argv[i]);
           return 1;
         }
         in_separator = argv[i];
@@ -378,9 +380,7 @@ int main(int argc, char** argv) {
       goto skip_regex;
     }
 
-    if (in_sep_null) {
-      in_separator = ""; // points to a single null character
-    } else if (!in_separator) {
+    if (!in_separator) {
       // default sep
       if (flags & PCRE2_LITERAL) {
         in_separator = "\n";
@@ -418,8 +418,8 @@ int main(int argc, char** argv) {
       int errornumber;
       PCRE2_SIZE erroroffset;
       
-      re = pcre2_compile(pattern, in_sep_null ? 1 : PCRE2_ZERO_TERMINATED, flags,
-                                     &errornumber, &erroroffset, NULL);
+      re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, flags, &errornumber,
+                              &erroroffset, NULL);
       if (re == NULL) {
         PCRE2_UCHAR buffer[256];
         pcre2_get_error_message(errornumber, buffer, sizeof(buffer));

@@ -26,14 +26,14 @@ choose --help
 `hist` is a bash function which uses `choose`. It should be added to `~/.bashrc`
 
 ```bash
-hist() {
-    HISTTIMEFORMATSAVE="$HISTTIMEFORMAT"
-    trap 'HISTTIMEFORMAT="$HISTTIMEFORMATSAVE"' err
-    unset HISTTIMEFORMAT
-    SELECTED=`history | grep -i "\`echo "$@"\`" | sed 's/^ *[0-9]*[ *] //' | head -n-1 | \
-    cat -n | sort -uk2 | sort -nk1 | cut -f2- | \
-    choose -f -p "Select a line to run."` && \
-    history -s "$SELECTED" && HISTTIMEFORMAT="$HISTTIMEFORMATSAVE" && eval "$SELECTED" ; 
+hist() { # copy paste this into ~/.bashrc
+local LINE
+# parse history lines, grep, and filter for latest unique entries
+LINE="$(unset HISTTIMEFORMAT && history | sed 's/^ *[0-9]*[ *] //' |\
+grep -i "$*" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 | \
+cut -f2- | choose -p "Select a line to run.")"
+# save selection to history and run it
+[ ! -z "$LINE" ] && history -s "$LINE" && eval "$LINE" ;
 }
 ```
 
@@ -78,7 +78,7 @@ hist hello there
 
 ## Flexibility
 
-In fzf, you [can't](https://github.com/junegunn/fzf/issues/1670) change the input separator to anything other than a newline or null. choose is more flexible, and lets you specify whatever separator you want, including some crazy regular expressions.
+In fzf, you [can't](https://github.com/junegunn/fzf/issues/1670) change the input separator to anything other than a newline or null. choose is more flexible, and lets you specify whatever separator you want, including regular expressions.
 
 In fzf, the [only](https://github.com/junegunn/fzf/issues/1417) output order is the order in which the user selected the tokens. In choose, you can have the tokens be outputted in the same order they arrived in.
 
@@ -94,7 +94,7 @@ If you *really* wanted to, choose could run on an embedded system and provide ni
 
 ## Search Bar
 
-choose doesn't have a search bar for additional filtering within the UI, whereas this is fzf's core feature. In the `hist` case above, the idea is that you would cancel (with ctrl+c) and re-run the command with a different search argument. A search bar doesn't really fit choose's niche.
+choose doesn't have a search bar for additional filtering within the UI, whereas this is fzf's core feature. In the `hist` case above, instead you would cancel (with ctrl+c) and re-run the command with a different search argument. A search bar doesn't fit choose's niche.
 
 ## Selection Dialogs
 
