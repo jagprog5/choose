@@ -866,16 +866,11 @@ on_resize:
   }
 
   // scroll to keep the selection on screen when a resize occured
-  static bool previous_scroll_on_resize = false;
-  bool scroll_on_resize = selection_position >= selection_rows - 1;
+  bool scroll_on_resize = selection_position >= selection_rows - 1 + scroll_position;
 
   if (scroll_on_resize) {
     scroll_position = selection_position - (selection_rows - 1);
-  } else if (!scroll_on_resize && previous_scroll_on_resize) {
-    // handle if the screen is resized fast
-    scroll_position = 0;
   }
-  previous_scroll_on_resize = scroll_on_resize;
 
   refresh();
 
