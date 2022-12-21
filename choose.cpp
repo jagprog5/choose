@@ -123,18 +123,28 @@ int main(int argc, char** argv) {
 
     FILE *fp = popen("less", "w");
     if (fp != NULL) {
-      // opening up less succeeded
-      bool fputs_failed = fputs(help_text, fp) < 0;
-      bool pclose_failed = pclose(fp) == -1;
-      if (fputs_failed) {
+      if (fputs(help_text, fp) < 0) {
+        pclose(fp);
         puts(help_text);
+        return 1;
       }
-      if (pclose_failed) {
+
+      int close_result = pclose(fp);
+      if (close_result < 0) {
+        puts(help_text);
         fprintf(stderr, "%s\n", strerror(errno));
+        return 1;
       }
-      return pclose_failed || fputs_failed;
+
+      if (close_result > 0) {
+        puts(help_text);
+        fprintf(stderr, "!!! an error was printed just before the help text above !!!\n");
+        return 1;
+      }
+
+      return 0;
     } else {
-      // opening up less failed
+      // popen failed
       puts(help_text);
       fprintf(stderr, "%s\n", strerror(errno));
       return 1;
@@ -441,11 +451,11 @@ int main(int argc, char** argv) {
       } else if (rc <= 0) {
         // < 0 is a regex error
         // = 0 means the match_data ovector wasn't big enough
-        // should never happen
         PCRE2_UCHAR buffer[256];
         pcre2_get_error_message(rc, buffer, sizeof(buffer));
         fprintf(stderr, "Matching error: \"%s\"\n", buffer);
-        // not bothering to call free since program terminates
+        pcre2_match_data_free(match_data); // superfluous free, but good form
+        pcre2_code_free(re);
         return 1;
       }
 
@@ -458,6 +468,8 @@ int main(int argc, char** argv) {
                 "From end to start the match was: %.*s\n",
                 (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
         fprintf(stderr, "Run abandoned\n");
+        pcre2_match_data_free(match_data);
+        pcre2_code_free(re);
         return 1;
       }
 
@@ -528,6 +540,8 @@ int main(int argc, char** argv) {
           PCRE2_UCHAR buffer[256];
           pcre2_get_error_message(rc, buffer, sizeof(buffer));
           fprintf(stderr, "Matching error: \"%s\"\n", buffer);
+          pcre2_match_data_free(match_data);
+          pcre2_code_free(re);
           return 1;
         }
 
@@ -539,6 +553,8 @@ int main(int argc, char** argv) {
               "From end to start the match was: %.*s\n",
               (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
           fprintf(stderr, "Run abandoned\n");
+          pcre2_match_data_free(match_data);
+          pcre2_code_free(re);
           return 1;
         }
 
@@ -587,10 +603,14 @@ int main(int argc, char** argv) {
   }
   SCREEN* screen = newterm(NULL, f, f);
   if (screen == NULL) {
+    endwin();
+    fclose(f);
     fputs("ncurses err\n", stderr);
     return 1;
   }
   if (set_term(screen) == NULL) {
+    endwin();
+    fclose(f);
     fputs("ncurses err\n", stderr);
     return 1;
   }
@@ -600,11 +620,15 @@ int main(int argc, char** argv) {
   }
   // pass keys directly from input without buffering
   if (cbreak() == ERR) {
+    endwin();
+    fclose(f);
     fputs("ncurses err\n", stderr);
     return 1;
   }
   // disable echo back of keys entered
   if (noecho() == ERR) {
+    endwin();
+    fclose(f);
     fputs("ncurses err\n", stderr);
     return 1;
   }
@@ -617,6 +641,8 @@ int main(int argc, char** argv) {
   wtimeout(stdscr, std::numeric_limits<int>::max());
   // get mouse events right away
   if (mouseinterval(0) == ERR) {
+    endwin();
+    fclose(f);
     fputs("ncurses err\n", stderr);
     return 1;
   }
@@ -698,7 +724,6 @@ on_resize:
     }
     // prompt_terminator points to the position of the null terminator in the prompt
     // it is needed for the "n" arg in mbrtowc
-
     prompt_lines.emplace_back();
 
     const char* pos = prompt;
@@ -710,6 +735,9 @@ on_resize:
         size_t num_bytes = std::mbrtowc(&ch, pos, prompt_terminator - pos, &ps);
         if (num_bytes == 0) {
           // will never happen, since prompt_terminator points to the first null
+          ncurses_deinit();
+          fputs("decode err in prompt\n", stderr);
+          return false;
         } else if (num_bytes == (size_t)-1) {
           ncurses_deinit();
           fprintf(stderr, "%s\n", strerror(errno));
@@ -762,7 +790,7 @@ on_resize:
               // consume excess whitespace before line wrapping
               // if there was nothing except whitespace then abort the wrap
               while (ch == L' ') {
-                if (pos == prompt_terminator) goto get_out;
+                if (pos >= prompt_terminator) goto get_out;
                 if (!consume_ch()) {
                   return 1;
                 }
