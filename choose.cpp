@@ -751,6 +751,7 @@ on_resize:
         return true;
       };
       if (!consume_ch()) {
+        ncurses_deinit();
         return 1;
       }
 
@@ -792,6 +793,7 @@ on_resize:
               while (ch == L' ') {
                 if (pos >= prompt_terminator) goto get_out;
                 if (!consume_ch()) {
+                  ncurses_deinit();
                   return 1;
                 }
               }
