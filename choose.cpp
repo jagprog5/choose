@@ -887,18 +887,43 @@ on_resize:
   }
 
   // how close is the selection to the top or bottom while scrolling
-  int scroll_border = 5;
-  // disable border if the terminal is very small
-  if (selection_rows <= scroll_border * 2) {
-    scroll_border = 0;
+  int scroll_border = selection_rows / 3;
+
+  auto handle_scroll_constraints = [&]() {
+    // selection constraint
+    if (selection_position < 0) {
+      selection_position = 0;
+    } else if (selection_position >= (int)tokens.size()) {
+      selection_position = (int)tokens.size() - 1;
+    }
+
+    // scroll constraint (respects scroll_border)
+    int selection_pos_min = scroll_position;
+    if (selection_position >= scroll_border) {
+      selection_pos_min += scroll_border;
+    }
+    if (selection_position < selection_pos_min) {
+      scroll_position -= selection_pos_min - selection_position;
+    }
+
+    int selection_pos_max = scroll_position + selection_rows - 1;
+    if (selection_position < (int)tokens.size() - scroll_border) {
+      selection_pos_max -= scroll_border;
+    }
+
+    if (selection_position > selection_pos_max) {
+      scroll_position -= selection_pos_max - selection_position;
+    }
+  };
+
+  // this scroll constraint that only comes into effect when resizing:
+  // when the window height is increased at the end of the tokens,
+  // if there are available token above then pull the entire scroll down
+  if (scroll_position + selection_rows > (int)tokens.size() && (int)tokens.size() >= selection_rows) {
+    scroll_position = (int)tokens.size() - selection_rows;
   }
 
-  // scroll to keep the selection on screen when a resize occured
-  bool scroll_on_resize = selection_position >= selection_rows - 1 + scroll_position;
-
-  if (scroll_on_resize) {
-    scroll_position = selection_position - (selection_rows - 1);
-  }
+  handle_scroll_constraints();
 
   refresh();
 
@@ -1357,52 +1382,15 @@ on_resize:
         [[maybe_unused]] scroll_down : ++selection_position;
       } else if (ch == KEY_HOME) {
         selection_position = 0;
-        scroll_position = 0;
       } else if (ch == KEY_END) {
         selection_position = (int)tokens.size() - 1;
-        if ((int)tokens.size() > selection_rows) {
-          scroll_position = (int)tokens.size() - selection_rows;
-        } else {
-          scroll_position = 0;
-        }
       } else if (ch == KEY_PPAGE) {
         selection_position -= selection_rows;
-        if (selection_position < scroll_border) {
-          scroll_position = 0;
-        }
       } else if (ch == KEY_NPAGE) {
-        if ((int)tokens.size() < selection_rows) {
-          // handle an edge case where there is few tokens
-          selection_position = (int)tokens.size() - 1;
-        } else {
-          selection_position += selection_rows;
-          if (selection_position >= (int)tokens.size() - scroll_border) {
-            scroll_position = (int)tokens.size() - selection_rows;
-          }
-        }
+        selection_position += selection_rows;
       }
 
-      // ========================== scroll adjustments ===========================
-
-      if (selection_position < 0) {
-        selection_position = 0;
-      } else if (selection_position >= (int)tokens.size()) {
-        selection_position = (int)tokens.size() - 1;
-      }
-
-      // scroll to keep the selection in view
-      if (selection_position >= scroll_border) {
-        if (selection_position - scroll_border < scroll_position) {
-          scroll_position = selection_position - scroll_border;
-        }
-      }
-
-      if (selection_position < (int)tokens.size() - scroll_border) {
-        if (selection_position + scroll_border - scroll_position >=
-            selection_rows - 1) {
-          scroll_position = selection_position + scroll_border - selection_rows + 1;
-        }
-      }
+      handle_scroll_constraints();
     }
   }
 }
