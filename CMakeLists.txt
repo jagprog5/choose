@@ -7,6 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 OPTION(LETTER_WRAP "Make prompts wrap by letter instead of by word" OFF)
+OPTION(NO_SCROLL_BORDER "Disable the scroll border" OFF)
 project(choose)
 add_executable(choose choose.cpp)
 
@@ -30,6 +31,12 @@ target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES})
 if (LETTER_WRAP)
   target_compile_definitions(choose PRIVATE
     CHOOSE_PROMPT_LETTER_WRAP
+  )
+endif()
+
+if (NO_SCROLL_BORDER)
+  target_compile_definitions(choose PRIVATE
+    CHOOSE_NO_SCROLL_BORDER
   )
 endif()
 

@@ -17,12 +17,7 @@ constexpr int PAIR_SELECTED = 1;
 
 volatile sig_atomic_t sigint_occured = 0;
 
-// read_done is used to handle an edge case:
-// sigint_occured writes the buffered output to stdout upon ctrl-c, however
-// sigint_occured is only evaluated in the tui loop
-// the "read" function blocks until there is input, meaning, if ctrl-c is
-// pressed with no input to the program, it will hang.
-// read_done allows exit on ctrl-c with no input
+// read_done allows ctrl+c to stop the program when no input has been received yet
 volatile sig_atomic_t read_done = 0;
 
 void sig_handler(int) {
@@ -889,17 +884,21 @@ on_resize:
   }
 
   // how close is the selection to the top or bottom while scrolling
+#ifdef CHOOSE_NO_SCROLL_BORDER
+  static constexpr int scroll_border = 0;
+#else
   int scroll_border = selection_rows / 3;
+#endif
 
-  auto handle_scroll_constraints = [&]() {
-    // selection constraint
+  auto apply_constraints = [&]() {
+    // constrain selection
     if (selection_position < 0) {
       selection_position = 0;
     } else if (selection_position >= (int)tokens.size()) {
       selection_position = (int)tokens.size() - 1;
     }
 
-    // scroll constraint (respects scroll_border)
+    // constrain scroll to selection
     int selection_pos_min = scroll_position;
     if (selection_position >= scroll_border) {
       selection_pos_min += scroll_border;
@@ -925,7 +924,7 @@ on_resize:
     scroll_position = (int)tokens.size() - selection_rows;
   }
 
-  handle_scroll_constraints();
+  apply_constraints();
 
   refresh();
 
@@ -1386,13 +1385,24 @@ on_resize:
         selection_position = 0;
       } else if (ch == KEY_END) {
         selection_position = (int)tokens.size() - 1;
-      } else if (ch == KEY_PPAGE) {
-        selection_position -= selection_rows;
-      } else if (ch == KEY_NPAGE) {
-        selection_position += selection_rows;
+      } else if (ch == KEY_PPAGE || ch == KEY_NPAGE) {
+        if (ch == KEY_PPAGE) {
+          scroll_position -= selection_rows;
+          if (scroll_position < 0) {
+            scroll_position = 0;
+          }
+        } else {
+          scroll_position += selection_rows;
+          if (scroll_position > (int)tokens.size() - selection_rows) {
+            scroll_position = (int)tokens.size() - selection_rows;
+          }
+        }
+        selection_position = scroll_position + selection_rows / 2;
+        // skip applying constraints
+        continue;
       }
 
-      handle_scroll_constraints();
+      apply_constraints();
     }
   }
 }
