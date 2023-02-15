@@ -82,7 +82,8 @@ int main(int argc, char** argv) {
 "        -s, --sort      sort the token output based on selection order instead\n"
 "                        of input order\n"
 "        -t, --tenacious don't exit on confirmed selection\n"
-"        -u, --utf       enable regex UTF-8\n"
+"        -u, --unique    remove duplicate input tokens. applied after --flip.\n"
+"        --utf       enable regex UTF-8\n"
 "        -y, --batch-print0\n"
 "                        use null as the batch separator\n"
 "        -z, --print0    use null as the output separator\n"
@@ -94,23 +95,14 @@ int main(int argc, char** argv) {
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
-"        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst -pspacebar\n\n"
-"        hist() { # copy paste this into ~/.bashrc\n"
-"        local LINE\n"
-"        # parse history lines, grep, and filter for latest unique entries\n"
-"        LINE=\"$(unset HISTTIMEFORMAT && builtin history | sed 's/^ *[0-9]*[ *] //' |\\\n"
-"        grep -i -- \"$*\" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 |\\\n"
-"        cut -f2- | choose -p \"Select a line to run.\")\"\n"
-"        # give prompt, save selection to history, and run it\n"
-"        read -e -p \"> \" -i \"$LINE\" && builtin history -s \"$REPLY\" && eval \"$REPLY\" ;\n"
-"        }\n"
+"        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst -pspacebar\n"
 "controls:\n"
-"         confirm selections: enter, d, or f\n"
-"         multiple selection: space   <-}\n"
-"          invert selections: i       <-} enabled with -m\n"
-"           clear selections: c       <-}\n"
-"                       exit: q, backspace, or escape\n"
-"                  scrolling: arrow/page up/down, home/end, "
+"        confirm selections: enter, d, or f\n"
+"        multiple selection: space   <-}\n"
+"         invert selections: i       <-} enabled with -m\n"
+"          clear selections: c       <-}\n"
+"                      exit: q, backspace, or escape\n"
+"                 scrolling: arrow/page up/down, home/end, "
 #ifdef BUTTON5_PRESSED
 "mouse scroll, "
 #endif
@@ -163,6 +155,7 @@ int main(int argc, char** argv) {
   bool selection_order = false;
   bool tenacious = false;
   bool flip = false;
+  bool unique = false;
   bool multiple_selections = false;
 
   // these options are made available since null can't be typed as a command line arg
@@ -225,7 +218,7 @@ int main(int argc, char** argv) {
               tenacious = true;
               break;
             case 'u':
-              flags |= PCRE2_UTF;
+              unique = true;
               break;
             case 'y':
               bout_sep_null = true;
@@ -257,6 +250,8 @@ int main(int argc, char** argv) {
                 selection_order = true;
               } else if (strcmp("tenacious", pos) == 0) {
                 tenacious = true;
+              } else if (strcmp("unique", pos) == 0) {
+                unique = true;
               } else if (strcmp("utf", pos) == 0) {
                 flags |= PCRE2_UTF;
               } else if (strcmp("batch-print0", pos) == 0) {
@@ -353,6 +348,9 @@ int main(int argc, char** argv) {
   struct Token {
     const char* begin;
     const char* end;
+    bool operator==(const Token& other) const {
+      return std::equal(begin, end, other.begin, other.end);
+    }
   };
   std::vector<Token> tokens;
 
@@ -381,9 +379,9 @@ int main(int argc, char** argv) {
 
     const char* pos = &*raw_input.cbegin();
 
-    auto insert_token_and_advance = [&tokens, flip](const char*& begin,
+    auto insert_token_and_advance = [&tokens](const char*& begin,
                                                        const char* end) {
-      tokens.insert(flip ? tokens.begin() : tokens.end(), {begin, end});
+      tokens.push_back({begin, end});
       begin = end;
     };
 
@@ -576,6 +574,14 @@ int main(int argc, char** argv) {
     }
   skip_regex:
     (void)0;
+  }
+
+  if (flip) {
+    std::reverse(tokens.begin(), tokens.end());
+  }
+
+  if (unique) {
+    tokens.resize(std::unique(tokens.begin(), tokens.end()) - tokens.begin());
   }
 
   // ===========================================================================
