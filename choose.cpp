@@ -89,6 +89,8 @@ int main(int argc, char** argv) {
 "        -0, --null, --read0\n"
 "                        use null as the input separator\n"
 "                        this is the same as -r and \\x00\n"
+"        --\n"
+"                        stop option parsing\n"
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
@@ -96,11 +98,11 @@ int main(int argc, char** argv) {
 "        hist() { # copy paste this into ~/.bashrc\n"
 "        local LINE\n"
 "        # parse history lines, grep, and filter for latest unique entries\n"
-"        LINE=\"$(unset HISTTIMEFORMAT && history | sed 's/^ *[0-9]*[ *] //' |\\\n"
-"        grep -i \"$*\" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 | \\\n"
+"        LINE=\"$(unset HISTTIMEFORMAT && builtin history | sed 's/^ *[0-9]*[ *] //' |\\\n"
+"        grep -i -- \"$*\" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 |\\\n"
 "        cut -f2- | choose -p \"Select a line to run.\")\"\n"
-"        # save selection to history and run it\n"
-"        [ ! -z \"$LINE\" ] && history -s \"$LINE\" && eval \"$LINE\" ;\n"
+"        # give prompt, save selection to history, and run it\n"
+"        read -e -p \"> \" -i \"$LINE\" && builtin history -s \"$REPLY\" && eval \"$REPLY\" ;\n"
 "        }\n"
 "controls:\n"
 "         confirm selections: enter, d, or f\n"
@@ -178,6 +180,8 @@ int main(int argc, char** argv) {
   {
     // e.g. in -o stuff_here, the arg after -o should not be parsed.
     bool next_arg_reserved = false;
+    // stop parsing flags after -- is encountered
+    bool options_stopped = false;
 
     for (int i = 1; i < argc; ++i) {
       if (next_arg_reserved) {
@@ -185,7 +189,7 @@ int main(int argc, char** argv) {
         continue;
       }
 
-      if (argv[i][0] == '-') {
+      if (argv[i][0] == '-' && !options_stopped) {
         if (argv[i][1] == '\0') {
           fprintf(stderr, "dash specified without anything after it, in arg %d\n", i);
           return 1;
@@ -236,7 +240,10 @@ int main(int argc, char** argv) {
             case '-':
               // long form of flags / args
               pos += 1; // point to just after the --
-              if (strcmp("delimit", pos) == 0) {
+              if (*pos == '\0') {
+                // -- found
+                options_stopped = true;
+              } else if (strcmp("delimit", pos) == 0) {
                 bout_delimit = true;
               } else if (strcmp("flip", pos) == 0) {
                 flip = true;

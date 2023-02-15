@@ -29,11 +29,11 @@ choose --help
 hist() { # copy paste this into ~/.bashrc
 local LINE
 # parse history lines, grep, and filter for latest unique entries
-LINE="$(unset HISTTIMEFORMAT && history | sed 's/^ *[0-9]*[ *] //' |\
-grep -i "$*" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 | \
+LINE="$(unset HISTTIMEFORMAT && builtin history | sed 's/^ *[0-9]*[ *] //' |\
+grep -i -- "$*" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 |\
 cut -f2- | choose -p "Select a line to run.")"
-# save selection to history and run it
-[ ! -z "$LINE" ] && history -s "$LINE" && eval "$LINE" ;
+# give prompt, save selection to history, and run it
+read -e -p "> " -i "$LINE" && builtin history -s "$REPLY" && eval "$REPLY" ;
 }
 ```
 
