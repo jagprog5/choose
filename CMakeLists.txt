@@ -41,3 +41,22 @@ if (NO_SCROLL_BORDER)
 endif()
 
 install(TARGETS choose DESTINATION /usr/bin)
+
+# injector
+
+add_executable(choose_injector choose_injector.cpp)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(choose_injector PRIVATE -Os -fno-rtti -fno-strict-aliasing)
+endif()
+
+install(TARGETS choose_injector DESTINATION /usr/bin)
+install(PROGRAMS scripts/choose_injector_wrapper.bash DESTINATION /usr/bin)
+
+# hist
+
+add_custom_command(
+  TARGET choose
+  POST_BUILD
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMAND scripts/hist_installer.bash
+)

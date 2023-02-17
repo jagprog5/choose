@@ -7,6 +7,7 @@
 #include <cmath>
 #include <errno.h>
 #include <vector>
+#include <set>
 #include <locale.h>
 #include <cwchar>
 
@@ -69,6 +70,7 @@ int main(int argc, char** argv) {
 "                [(-p|--prompt) <prompt>]\n"
 "options:\n"
 "        -d, --delimit   add a batch separator at the end of the output\n"
+"        -e, --end       begin cursor at the bottom\n"
 "        -f, --flip      reverse the received token order\n"
 "        -i, --ignore-case\n"
 "                        make the input separator case-insensitive\n"
@@ -82,8 +84,8 @@ int main(int argc, char** argv) {
 "        -s, --sort      sort the token output based on selection order instead\n"
 "                        of input order\n"
 "        -t, --tenacious don't exit on confirmed selection\n"
-"        -u, --unique    remove duplicate input tokens. applied after --flip.\n"
-"        --utf       enable regex UTF-8\n"
+"        -u, --unique    remove duplicate input tokens. applied before --flip.\n"
+"        --utf           enable regex UTF-8\n"
 "        -y, --batch-print0\n"
 "                        use null as the batch separator\n"
 "        -z, --print0    use null as the output separator\n"
@@ -111,33 +113,30 @@ int main(int argc, char** argv) {
 "        github.com/jagprog5/choose\n";
 
     FILE *fp = popen("less", "w");
-    if (fp != NULL) {
-      if (fputs(help_text, fp) < 0) {
-        pclose(fp);
-        puts(help_text);
-        return 1;
-      }
-
-      int close_result = pclose(fp);
-      if (close_result < 0) {
-        puts(help_text);
-        fprintf(stderr, "%s\n", strerror(errno));
-        return 1;
-      }
-
-      if (close_result > 0) {
-        puts(help_text);
-        fprintf(stderr, "!!! an error was printed just before the help text above !!!\n");
-        return 1;
-      }
-
-      return 0;
-    } else {
-      // popen failed
-      puts(help_text);
-      fprintf(stderr, "%s\n", strerror(errno));
+    if (fp == NULL) {
+      perror(NULL);
+      puts(help_text); // less didn't work, try the normal way anyways
       return 1;
     }
+
+    if (fputs(help_text, fp) < 0) {
+      perror(NULL);
+      pclose(fp);
+      puts(help_text);
+      return 1;
+    }
+
+    int close_result = pclose(fp);
+    if (close_result != 0) {
+      if (close_result < 0) {
+        perror(NULL);
+      } else {
+        fprintf(stderr, "error running less");
+      }
+      puts(help_text);
+      return 1;
+    }
+    return 0;
   }
 
   if (signal(SIGINT, sig_handler) == SIG_IGN) {
@@ -154,6 +153,7 @@ int main(int argc, char** argv) {
   uint32_t flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
+  bool end = false;
   bool flip = false;
   bool unique = false;
   bool multiple_selections = false;
@@ -199,6 +199,9 @@ int main(int argc, char** argv) {
             case 'd':
               bout_delimit = true;
               break;
+            case 'e':
+              end = true;
+              break;
             case 'f':
               flip = true;
               break;
@@ -238,6 +241,8 @@ int main(int argc, char** argv) {
                 options_stopped = true;
               } else if (strcmp("delimit", pos) == 0) {
                 bout_delimit = true;
+              } else if (strcmp("end", pos) == 0) {
+                end = true;
               } else if (strcmp("flip", pos) == 0) {
                 flip = true;
               } else if (strcmp("ignore-case", pos) == 0) {
@@ -348,8 +353,8 @@ int main(int argc, char** argv) {
   struct Token {
     const char* begin;
     const char* end;
-    bool operator==(const Token& other) const {
-      return std::equal(begin, end, other.begin, other.end);
+    bool operator<(const Token& other) const {
+      return std::lexicographical_compare(begin, end, other.begin, other.end);
     }
   };
   std::vector<Token> tokens;
@@ -366,7 +371,7 @@ int main(int argc, char** argv) {
           raw_input.push_back(ch);
           break;
         case -1:
-          fprintf(stderr, "%s\n", strerror(errno));
+          perror(NULL);
           return read_ret;
         case 0:
           read_flag = false;
@@ -576,12 +581,18 @@ int main(int argc, char** argv) {
     (void)0;
   }
 
-  if (flip) {
-    std::reverse(tokens.begin(), tokens.end());
+  if (unique) {
+    std::set<Token> seen;
+    auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&seen](const Token& value) {
+        if (seen.find(value) != std::end(seen)) return true;
+        seen.insert(value);
+        return false;
+    });
+    tokens.resize(new_end - tokens.begin());
   }
 
-  if (unique) {
-    tokens.resize(std::unique(tokens.begin(), tokens.end()) - tokens.begin());
+  if (flip) {
+    std::reverse(tokens.begin(), tokens.end());
   }
 
   // ===========================================================================
@@ -606,7 +617,7 @@ int main(int argc, char** argv) {
   // required for ncurses to work after using stdin
   FILE* f = fopen("/dev/tty", "r+");
   if (f == NULL) {
-    fprintf(stderr, "%s\n", strerror(errno));
+    perror(NULL);
     return 1;
   }
   SCREEN* screen = newterm(NULL, f, f);
@@ -692,7 +703,7 @@ int main(int argc, char** argv) {
   init_pair(PAIR_SELECTED, COLOR_GREEN, COLOR_BLACK);
 
   int scroll_position = 0;
-  int selection_position = 0;
+  int selection_position = end ? (int)tokens.size() - 1 : 0;
 
   int tenacious_single_select_indicator = 0;
 
@@ -747,8 +758,9 @@ on_resize:
           fputs("decode err in prompt\n", stderr);
           return false;
         } else if (num_bytes == (size_t)-1) {
+          const char* err = strerror(errno);
           ncurses_deinit();
-          fprintf(stderr, "%s\n", strerror(errno));
+          fprintf(stderr, "%s\n", err);
           return false;
         } else if (num_bytes == (size_t)-2) {
           ncurses_deinit();
@@ -759,7 +771,6 @@ on_resize:
         return true;
       };
       if (!consume_ch()) {
-        ncurses_deinit();
         return 1;
       }
 
@@ -801,7 +812,6 @@ on_resize:
               while (ch == L' ') {
                 if (pos >= prompt_terminator) goto get_out;
                 if (!consume_ch()) {
-                  ncurses_deinit();
                   return 1;
                 }
               }

@@ -8,11 +8,17 @@ choose is a ncurses based token selector. It gives a nice terminal user interfac
 
 ![screenshot](./screenshot.png)
 
-## Installation
+## Install
 
 ```bash
 sudo apt-get install pkg-config libpcre2-dev libncursesw5-dev # 5 or greater
-cmake . && sudo cmake --build . --target install 
+cd build && cmake .. && sudo cmake --build . --target install 
+```
+
+## Uninstall
+
+```bash
+sudo scripts/uninstall.bash
 ```
 
 ## Docs
@@ -23,19 +29,7 @@ choose --help
 
 # hist
 
-`hist` is a bash function which uses `choose`. It should be added to `~/.bashrc`
-
-```bash
-hist() { # copy paste this into ~/.bashrc
-local LINE
-# parse history lines, grep, and filter for latest unique entries
-LINE="$(unset HISTTIMEFORMAT && builtin history | sed 's/^ *[0-9]*[ *] //' |\
-grep -i -- "$*" | head -n-1 | tac | cat -n | sort -uk2 | sort -nk1 |\
-cut -f2- | choose -p "Select a line to run.")"
-# give prompt, save selection to history, and run it
-read -e -p "> " -i "$LINE" && builtin history -s "$REPLY" && eval "$REPLY" ;
-}
-```
+`hist` is a bash function which uses `choose`. It is optionally installed in `~/.bashrc`
 
 It allows a previous command to be re-run,  
 like a better combination of `reverse-i-search` and `history | grep "$whatever"`.
@@ -69,7 +63,5 @@ like a better combination of `reverse-i-search` and `history | grep "$whatever"`
 hist git
 hist hello there
 ```
-
-*<sub><sup>Multiline history entries are not displayed correctly because gnu-history [doesn't](https://askubuntu.com/a/1210371) support this by default and parsing is a pain.</sup></sub>
 
 Comparison to [fzf](./fzf.md).
