@@ -36,25 +36,25 @@ like a better combination of `reverse-i-search` and `history | grep "$whatever"`
 
 ```bash
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Select a line to run.                                                                            │
+│Select an entry for input to the tty.                                                            │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
-> choose -h
-  sudo make install
-  cmake ..
-  rm -rf *
-  cd build
-  git pull
-  cd choose/
-  ls
-  cd ~/
-  clear
-  git push
-  git commit --amend
-  echo -n "this 1 is 2 a 3 test" | choose -r " [0-9] "
-  echo -n "a b c" | choose -o "," -b $'\n' " " -dmst > temp.txt
-  cat temp.txt
-  top
   git log --oneline
+  top
+  cat temp.txt
+  echo -n "a b c" | choose -o "," -b $'\n' " " -dmst > temp.txt
+  echo -n "this 1 is 2 a 3 test" | choose -r " [0-9] "
+  git commit --amend
+  git push
+  clear
+  cd ~/
+  ls
+  cd choose/
+  git pull
+  cd build
+  rm -rf *
+  cmake ..
+  sudo make install
+> choose -h
 ```
 
 ## Examples

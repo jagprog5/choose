@@ -973,7 +973,7 @@ on_resize:
 
         if (selection_order && row_selected) {
           wattron(selection_window, A_DIM);
-          mvwprintw(selection_window, y, 0, "%d", 1 + it - selections.begin());
+          mvwprintw(selection_window, y, 0, "%d", (int)(1 + it - selections.begin()));
           wattroff(selection_window, A_DIM);
         }
 
@@ -1220,7 +1220,7 @@ on_resize:
           if (invisible_only) {
             const Token& token = tokens[y + scroll_position];
             wattron(selection_window, A_DIM);
-            mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", token.end - token.begin);
+            mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", (int)(token.end - token.begin));
             wattroff(selection_window, A_DIM);
           }
           wattroff(selection_window, A_BOLD);
