@@ -409,18 +409,6 @@ int main(int argc, char** argv) {
     }
 
     /*
-     * Using the PCRE2 c library is absolutely abhorrent.
-     * It's just sooooo outdated.
-     *   - Modern practices would use templates instead of preprocessor macros,
-     *   - ovector is an implementation detail that should be abstracted away by
-     * an object, instead of the user having to manually move everything around
-     * and just KNOW what each index of the vector means
-     *
-     * I am using PCRE2 because std::regex and boost::regex both can't handle
-     * the above regex I crafted online (regex flavour not supported).
-     * Another alternative is jpcre2 (a c++ wrapper), but that one...
-     * ... actually I probably should have used that instead. anyways:
-     *
      * I'm following the example here:
      * https://www.pcre.org/current/doc/html/pcre2demo.html
      */
