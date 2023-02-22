@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <csignal>
+#include <memory>
 #include <cstdlib>
 #include <cmath>
 #include <errno.h>
@@ -60,7 +61,12 @@ int main(int argc, char** argv) {
 "                          output together is a \"batch\". if multiple batches are\n"
 "                          sent to the output (which is enabled via -t), then a\n"
 "                          batch separator is used between batches, instead of an\n"
-"usage:                    output separator.\n"
+"                          output separator.\n"
+"          \"substitution\": apply a text substitution on each token before it\n"
+"                          appears in the interface. The target inherits the same\n"
+"                          match options as the input separator. The replacement\n"
+"                          is assumed to be literal iff the input separator is.\n"
+"usage:                    \n"
 "        choose (-h|--help)\n"
 "        choose (-v|--version)\n"
 "        choose <options> [<input separator>]\n"
@@ -68,18 +74,19 @@ int main(int argc, char** argv) {
 "                [(-b|--batch-separator)\n"
 "                        <batch separator, default: <output separator>>]\n"
 "                [(-p|--prompt) <prompt>]\n"
+"                [(--sub|--substitute) <target> <replacement>]"
 "options:\n"
 "        -d, --delimit   add a batch separator at the end of the output\n"
 "        -e, --end       begin cursor at the bottom\n"
 "        -f, --flip      reverse the received token order\n"
 "        -i, --ignore-case\n"
+"        -m, --multi     allow the selection of multiple tokens\n"
 "                        make the input separator case-insensitive\n"
 "        --match         the input separator matches the tokens instead of the\n"
 "                        separation between tokens. the match and each match\n"
 "                        group is a token.\n"
-"        -m, --multi     allow the selection of multiple tokens\n"
 "        -r, --regex     use (PCRE2) regex for the input separator.\n"
-"                        DISABLED: the default input separator is a newline\n"
+"                        DISABLED: the default input separator is a newline.\n"
 "                        ENABLED: the default input separator is a regex which\n"
 "                        matches newline characters not contained in single or\n"
 "                        double quotes, excluding escaped quotes:\n"
@@ -87,7 +94,8 @@ int main(int argc, char** argv) {
 "        -s, --sort      sort the token output based on selection order instead\n"
 "                        of input order\n"
 "        -t, --tenacious don't exit on confirmed selection\n"
-"        -u, --unique    remove duplicate input tokens. applied before --flip.\n"
+"        -u, --unique    remove duplicate input tokens. applied before --flip and\n"
+"                        after --sub\n"
 "        --utf           enable regex UTF-8\n"
 "        -y, --batch-print0\n"
 "                        use null as the batch separator\n"
@@ -101,6 +109,7 @@ int main(int argc, char** argv) {
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
 "        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst -pspacebar\n"
+"        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
 "controls:\n"
 "        confirm selections: enter, d, or f\n"
 "        multiple selection: space   <-}\n"
@@ -152,8 +161,7 @@ int main(int argc, char** argv) {
   // ========================= cli arg parsing =================================
   // ===========================================================================
 
-  // FLAGS
-  uint32_t flags = PCRE2_LITERAL;
+  uint32_t match_flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
   bool end = false;
@@ -161,18 +169,20 @@ int main(int argc, char** argv) {
   bool unique = false;
   bool multiple_selections = false;
   bool match = false;
+  bool bout_delimit = false;
 
   // these options are made available since null can't be typed as a command line arg
   // there's precedent elsewhere, e.g. find -print0 -> xargs -0
   bool out_sep_null = false;
   bool bout_sep_null = false;
-  bool bout_delimit = false;
 
   // these pointers point inside one of the argv elements
   const char* in_separator = 0;
   const char* out_separator = "\n";
   const char* bout_separator = 0;
   const char* prompt = 0;
+  const char* substitution_target = 0;
+  const char* substitution_replacement = 0;
 
   {
     // e.g. in -o stuff_here, the arg after -o should not be parsed.
@@ -210,13 +220,13 @@ int main(int argc, char** argv) {
               flip = true;
               break;
             case 'i':
-              flags |= PCRE2_CASELESS;
+              match_flags |= PCRE2_CASELESS;
               break;
             case 'm':
               multiple_selections = true;
               break;
             case 'r':
-              flags &= ~PCRE2_LITERAL;
+              match_flags &= ~PCRE2_LITERAL;
               break;
             case 's':
               selection_order = true;
@@ -235,7 +245,7 @@ int main(int argc, char** argv) {
               break;
             case '0':
               in_separator = "\\x00";
-              flags &= ~PCRE2_LITERAL;
+              match_flags &= ~PCRE2_LITERAL;
               break;
             case '-':
               // long form of flags / args
@@ -250,13 +260,13 @@ int main(int argc, char** argv) {
               } else if (strcmp("flip", pos) == 0) {
                 flip = true;
               } else if (strcmp("ignore-case", pos) == 0) {
-                flags |= PCRE2_CASELESS;
+                match_flags |= PCRE2_CASELESS;
               } else if (strcmp("match", pos) == 0) {
                 match = true;
               } else if (strcmp("multi", pos) == 0) {
                 multiple_selections = true;
               } else if (strcmp("regex", pos) == 0) {
-                flags &= ~PCRE2_LITERAL;
+                match_flags &= ~PCRE2_LITERAL;
               } else if (strcmp("sort", pos) == 0) {
                 selection_order = true;
               } else if (strcmp("tenacious", pos) == 0) {
@@ -264,14 +274,14 @@ int main(int argc, char** argv) {
               } else if (strcmp("unique", pos) == 0) {
                 unique = true;
               } else if (strcmp("utf", pos) == 0) {
-                flags |= PCRE2_UTF;
+                match_flags |= PCRE2_UTF;
               } else if (strcmp("batch-print0", pos) == 0) {
                 bout_sep_null = true;
               } else if (strcmp("print0", pos) == 0) {
                 out_sep_null = true;
               } else if (strcmp("null", pos) == 0 || strcmp("read0", pos) == 0) {
                 in_separator = "\\x00";
-                flags &= ~PCRE2_LITERAL;
+                match_flags &= ~PCRE2_LITERAL;
               } else if (strcmp("output-separator", pos) == 0) {
                 // reuse the code below after putting the variables in an equivalent state
                 ch = 'o';
@@ -284,6 +294,14 @@ int main(int argc, char** argv) {
               } else if (strcmp("prompt", pos) == 0) {
                 ch = 'p';
                 pos += strlen("prompt") - 1;
+                goto parse_param;
+              } else if (strcmp("sub", pos) == 0) {
+                ch = 's';
+                pos += strlen("sub") - 1;
+                goto parse_param;
+              } else if (strcmp("substitute", pos) == 0) {
+                ch = 's';
+                pos += strlen("substitute") - 1;
                 goto parse_param;
               } else {
                 fprintf(stderr, "unknown long option in arg %d: \"%s\"\n", i, argv[i]);
@@ -301,20 +319,32 @@ int main(int argc, char** argv) {
                     "in the same arg, but it was in arg %d: \"%s\"\n", ch, i, argv[i]);
                 return 1;
               }
-              parse_param:
               // if it is only -o, then the next arg is the separator
               if (*(pos + 1) == '\0') {
-                if (i == argc - 1) {
-                  fprintf(stderr, "-%c must be followed by an arg\n", ch);
-                  return 1;
+                parse_param:
+                if (ch == 's') {
+                  if (i >= argc - 2) {
+                    fprintf(stderr, "\"%s\" must be followed by two args\n", argv[i]);
+                    return 1;
+                  }
+                  i += 2;
+                } else {
+                  if (i == argc - 1) {
+                    fprintf(stderr, "\"%s\" must be followed by an arg\n", argv[i]);
+                    return 1;
+                  }
+                  // skip next cli arg. e.g. -o --output-thing-here
+                  ++i;
                 }
-                next_arg_reserved = true;
                 if (ch == 'o') {
-                  out_separator = argv[i + 1];
+                  out_separator = argv[i];
                 } else if (ch == 'b') {
-                  bout_separator = argv[i + 1];
-                } else { // 'p'
-                  prompt = argv[i + 1];
+                  bout_separator = argv[i];
+                } else if (ch == 'p') {
+                  prompt = argv[i];
+                } else { // 's'
+                  substitution_target = argv[i - 1];
+                  substitution_replacement = argv[i];
                 }
               } else {
                 // if not, then it is specified without a space, like -ostuff
@@ -397,7 +427,7 @@ int main(int argc, char** argv) {
         return 1;
       }
       // default sep
-      if (flags & PCRE2_LITERAL) {
+      if (match_flags & PCRE2_LITERAL) {
         in_separator = "\n";
       } else {
         // https://regex101.com/r/RHyz6D/
@@ -421,12 +451,12 @@ int main(int argc, char** argv) {
       int errornumber;
       PCRE2_SIZE erroroffset;
       
-      re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, flags, &errornumber,
+      re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber,
                               &erroroffset, NULL);
       if (re == NULL) {
         PCRE2_UCHAR buffer[256];
         pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
-        fprintf(stderr, "PCRE2 compilation failed at offset %d: %s\n",
+        fprintf(stderr, "PCRE2 compilation of input separator failed at offset %d: %s\n",
                 (int)erroroffset, buffer);
         return 1;
       }
@@ -440,14 +470,16 @@ int main(int argc, char** argv) {
 
       // check the result
       if (rc == PCRE2_ERROR_NOMATCH) {
-        goto regex_done;
+        goto match_done;
       } else if (rc <= 0) {
         // < 0 is a regex error
         // = 0 means the match_data ovector wasn't big enough
         PCRE2_UCHAR buffer[256];
         pcre2_get_error_message(rc, buffer, sizeof(buffer));
-        fprintf(stderr, "Matching error: \"%s\"\n", buffer);
-        pcre2_match_data_free(match_data); // superfluous free, but good form
+        fprintf(stderr, "Matching error in input separator: \"%s\"\n", buffer);
+        // superfluous free, but good form.
+        // make valgrind output clean
+        pcre2_match_data_free(match_data);
         pcre2_code_free(re);
         return 1;
       }
@@ -456,8 +488,7 @@ int main(int argc, char** argv) {
       PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data);
       if (ovector[0] > ovector[1]) {
         fprintf(stderr,
-                "\\K was used in an assertion to set the match start after its "
-                "end.\n"
+                "In the input separator, \\K was used in an assertion to set the match start after its end.\n"
                 "From end to start the match was: %.*s\n",
                 (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
         fprintf(stderr, "Run abandoned\n");
@@ -543,19 +574,17 @@ int main(int argc, char** argv) {
         if (rc <= 0) {
           PCRE2_UCHAR buffer[256];
           pcre2_get_error_message(rc, buffer, sizeof(buffer));
-          fprintf(stderr, "Matching error: \"%s\"\n", buffer);
+          fprintf(stderr, "Matching error in input separator: \"%s\"\n", buffer);
           pcre2_match_data_free(match_data);
           pcre2_code_free(re);
           return 1;
         }
 
         if (ovector[0] > ovector[1]) {
-          fprintf(
-              stderr,
-              "\\K was used in an assertion to set the match start after its "
-              "end.\n"
-              "From end to start the match was: %.*s\n",
-              (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
+          fprintf(stderr,
+                "In the input separator, \\K was used in an assertion to set the match start after its end.\n"
+                "From end to start the match was: %.*s\n",
+                (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
           fprintf(stderr, "Run abandoned\n");
           pcre2_match_data_free(match_data);
           pcre2_code_free(re);
@@ -581,7 +610,7 @@ int main(int argc, char** argv) {
         }
       }
     }
-  regex_done:
+  match_done:
     pcre2_match_data_free(match_data);
     pcre2_code_free(re);
 
@@ -589,6 +618,81 @@ int main(int argc, char** argv) {
       // last token (anchored to end of input)
       tokens.push_back(Token{pos, &*raw_input.cend()});
     }
+  }
+
+  std::vector<std::unique_ptr<PCRE2_UCHAR[]>> substitution_buffers;
+
+  if (substitution_target) {
+    PCRE2_SIZE replacement_length = strlen(substitution_replacement);
+    PCRE2_SPTR replacement_str = (PCRE2_SPTR)substitution_replacement;
+
+    PCRE2_SPTR pattern = (PCRE2_SPTR)substitution_target;
+    int errornumber;
+    PCRE2_SIZE erroroffset;
+
+    pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber, &erroroffset, NULL);
+    if (re == NULL) {
+      PCRE2_UCHAR buffer[256];
+      pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+      fprintf(stderr, "PCRE2 compilation of substitution target failed at offset %d: %s\n",
+              (int)erroroffset, buffer);
+      
+      return 1;
+    }
+
+    pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    for (Token& t : tokens) {
+      PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
+      PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
+      uint32_t sub_flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+      sub_flags |= match_flags & PCRE2_LITERAL; // inherit literal
+
+      PCRE2_SIZE output_size = 0; // initial pass calculates length of output
+      pcre2_substitute(re,
+                          subject,
+                          subject_length,
+                          0,
+                          sub_flags,
+                          NULL,
+                          NULL,
+                          replacement_str,
+                          replacement_length,
+                          NULL,
+                          &output_size);
+      
+
+      std::unique_ptr<PCRE2_UCHAR[]> sub_out(new PCRE2_UCHAR[output_size]);
+      sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+
+      // second pass
+      int sub_rc = pcre2_substitute(re,
+                          subject,
+                          subject_length,
+                          0,
+                          sub_flags,
+                          NULL,
+                          NULL,
+                          replacement_str,
+                          replacement_length,
+                          sub_out.get(),
+                          &output_size);
+
+      if (sub_rc < 0) {
+        PCRE2_UCHAR buffer[256];
+        pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
+        fprintf(stderr, "PCRE2 substitution error: %s\n", buffer);
+        pcre2_match_data_free(match_data);
+        pcre2_code_free(re);
+        substitution_buffers.clear();
+        return 1;
+      }
+
+      t = Token{(char*)sub_out.get(), (char*)sub_out.get() + output_size};
+
+      substitution_buffers.push_back(std::move(sub_out));
+    }
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
   }
 
   if (tokens.size() == 0) {
@@ -632,19 +736,22 @@ int main(int argc, char** argv) {
   FILE* f = fopen("/dev/tty", "r+");
   if (f == NULL) {
     perror(NULL);
+    substitution_buffers.clear();
     return 1;
   }
   SCREEN* screen = newterm(NULL, f, f);
   if (screen == NULL) {
     endwin();
-    fclose(f);
+    fclose(f); // not necessary since files are closed by os, but good form
     fputs("ncurses err\n", stderr);
+    substitution_buffers.clear();
     return 1;
   }
   if (set_term(screen) == NULL) {
     endwin();
     fclose(f);
     fputs("ncurses err\n", stderr);
+    substitution_buffers.clear();
     return 1;
   }
   // enable arrow keys
@@ -656,6 +763,7 @@ int main(int argc, char** argv) {
     endwin();
     fclose(f);
     fputs("ncurses err\n", stderr);
+    substitution_buffers.clear();
     return 1;
   }
   // disable echo back of keys entered
@@ -663,6 +771,7 @@ int main(int argc, char** argv) {
     endwin();
     fclose(f);
     fputs("ncurses err\n", stderr);
+    substitution_buffers.clear();
     return 1;
   }
   // invisible cursor
@@ -677,6 +786,7 @@ int main(int argc, char** argv) {
     endwin();
     fclose(f);
     fputs("ncurses err\n", stderr);
+    substitution_buffers.clear();
     return 1;
   }
 
@@ -692,6 +802,7 @@ int main(int argc, char** argv) {
     delwin(selection_window);
     delscreen(screen);
     fclose(f);
+    substitution_buffers.clear();
     return ret != ERR;
   };
 
