@@ -74,6 +74,9 @@ int main(int argc, char** argv) {
 "        -f, --flip      reverse the received token order\n"
 "        -i, --ignore-case\n"
 "                        make the input separator case-insensitive\n"
+"        --match         the input separator matches the tokens instead of the\n"
+"                        separation between tokens. the match and each match\n"
+"                        group is a token.\n"
 "        -m, --multi     allow the selection of multiple tokens\n"
 "        -r, --regex     use (PCRE2) regex for the input separator.\n"
 "                        DISABLED: the default input separator is a newline\n"
@@ -157,6 +160,7 @@ int main(int argc, char** argv) {
   bool flip = false;
   bool unique = false;
   bool multiple_selections = false;
+  bool match = false;
 
   // these options are made available since null can't be typed as a command line arg
   // there's precedent elsewhere, e.g. find -print0 -> xargs -0
@@ -247,6 +251,8 @@ int main(int argc, char** argv) {
                 flip = true;
               } else if (strcmp("ignore-case", pos) == 0) {
                 flags |= PCRE2_CASELESS;
+              } else if (strcmp("match", pos) == 0) {
+                match = true;
               } else if (strcmp("multi", pos) == 0) {
                 multiple_selections = true;
               } else if (strcmp("regex", pos) == 0) {
@@ -384,18 +390,12 @@ int main(int argc, char** argv) {
 
     const char* pos = &*raw_input.cbegin();
 
-    auto insert_token_and_advance = [&tokens](const char*& begin,
-                                                       const char* end) {
-      tokens.push_back({begin, end});
-      begin = end;
-    };
-
-    if (raw_input.empty()) {
-      tokens.push_back(Token{NULL, NULL});
-      goto skip_regex;
-    }
-
     if (!in_separator) {
+      if (match) {
+        // this isn't needed for any mechanical reason, only that the caller isn't doing something sane.
+        fputs("the positional arg must be specified with --match.\n", stderr);
+        return 1;
+      }
       // default sep
       if (flags & PCRE2_LITERAL) {
         in_separator = "\n";
@@ -466,11 +466,24 @@ int main(int argc, char** argv) {
         return 1;
       }
 
-      // just take the entire match, [0]
-      PCRE2_SPTR substring_start = subject + ovector[0];
-      PCRE2_SIZE substring_length = ovector[1] - ovector[0];
-      insert_token_and_advance(pos, (char*)substring_start);
-      pos += substring_length;
+      if (!match) {
+        // just take the entire match, [0]
+        PCRE2_SPTR substring_start = subject + ovector[0];
+        PCRE2_SIZE substring_length = ovector[1] - ovector[0];
+        tokens.push_back(Token{pos, (char*)substring_start});
+        pos = (const char*)substring_start + substring_length;
+      } else {
+        // a token for the match and each match group 
+        for (int i = 0; i < rc; i++) {
+          PCRE2_SPTR substring_start = subject + ovector[2 * i];
+          PCRE2_SIZE substring_length = ovector[2 * i + 1] - ovector[2 * i];
+          tokens.push_back(Token{(char*)substring_start, (char*)(substring_start + substring_length)});
+          if (i == 0) {
+            pos = (const char*)substring_start + substring_length;
+          }
+        }
+      }
+
 
       // for the next matches
       uint32_t options_bits;
@@ -487,8 +500,6 @@ int main(int argc, char** argv) {
       while (1) {
         uint32_t options = 0;
         PCRE2_SIZE start_offset = ovector[1];
-        // some weird implementation details I don't quite understand
-        // again, I'm copying pasting from the example linked above
         if (ovector[0] == ovector[1]) {
           if (ovector[0] == subject_length)
             break;
@@ -551,22 +562,37 @@ int main(int argc, char** argv) {
           return 1;
         }
 
-        PCRE2_SPTR substring_start = subject + ovector[0];
-        PCRE2_SIZE substring_length = ovector[1] - ovector[0];
-        insert_token_and_advance(pos, (char*)substring_start);
-        pos += substring_length;
+        if (!match) {
+          // just take the entire match, [0]
+          PCRE2_SPTR substring_start = subject + ovector[0];
+          PCRE2_SIZE substring_length = ovector[1] - ovector[0];
+          tokens.push_back(Token{pos, (char*)substring_start});
+          pos = (const char*)substring_start + substring_length;
+        } else {
+          // a token for the match and each match group 
+          for (int i = 0; i < rc; i++) {
+            PCRE2_SPTR substring_start = subject + ovector[2 * i];
+            PCRE2_SIZE substring_length = ovector[2 * i + 1] - ovector[2 * i];
+            tokens.push_back(Token{(char*)substring_start, (char*)(substring_start + substring_length)});
+            if (i == 0) {
+              pos = (const char*)substring_start + substring_length;
+            }
+          }
+        }
       }
     }
   regex_done:
     pcre2_match_data_free(match_data);
     pcre2_code_free(re);
 
-    // last token (anchored to end of input)
-    if (pos != &*raw_input.cend()) {
-      insert_token_and_advance(pos, &*raw_input.cend());
+    if (!match) {
+      // last token (anchored to end of input)
+      tokens.push_back(Token{pos, &*raw_input.cend()});
     }
-  skip_regex:
-    (void)0;
+  }
+
+  if (tokens.size() == 0) {
+    tokens.push_back(Token{NULL, NULL});
   }
 
   if (unique) {

@@ -1,3 +1,4 @@
+// this is a program which is separate from the rest of choose.
 // sends stdin to tty, and removes trailing newline
 
 #include <sys/ioctl.h>

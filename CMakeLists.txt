@@ -9,7 +9,7 @@ endif()
 OPTION(LETTER_WRAP "Make prompts wrap by letter instead of by word" OFF)
 OPTION(NO_SCROLL_BORDER "Disable the scroll border" OFF)
 project(choose)
-add_executable(choose choose.cpp)
+add_executable(choose src/choose.cpp)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -Os -fno-rtti -fno-strict-aliasing)
@@ -44,7 +44,7 @@ install(TARGETS choose DESTINATION /usr/bin)
 
 # injector
 
-add_executable(choose_injector choose_injector.cpp)
+add_executable(choose_injector src/choose_injector.cpp)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(choose_injector PRIVATE -Os -fno-rtti -fno-strict-aliasing)
 endif()
