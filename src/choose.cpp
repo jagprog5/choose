@@ -94,6 +94,8 @@ int main(int argc, char** argv) {
 "        -s, --sort      sort the token output based on selection order instead\n"
 "                        of input order\n"
 "        -t, --tenacious don't exit on confirmed selection\n"
+"        --trailing-separator\n"
+"                        don't ignore a separator at the end of the output\n"
 "        -u, --unique    remove duplicate input tokens. applied before --flip and\n"
 "                        after --sub\n"
 "        --utf           enable regex UTF-8\n"
@@ -164,6 +166,7 @@ int main(int argc, char** argv) {
   uint32_t match_flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
+  bool trailing_separator = false;
   bool end = false;
   bool flip = false;
   bool unique = false;
@@ -271,6 +274,8 @@ int main(int argc, char** argv) {
                 selection_order = true;
               } else if (strcmp("tenacious", pos) == 0) {
                 tenacious = true;
+              } else if (strcmp("trailing-separator", pos) == 0) {
+                trailing_separator = true;
               } else if (strcmp("unique", pos) == 0) {
                 unique = true;
               } else if (strcmp("utf", pos) == 0) {
@@ -616,7 +621,9 @@ int main(int argc, char** argv) {
 
     if (!match) {
       // last token (anchored to end of input)
-      tokens.push_back(Token{pos, &*raw_input.cend()});
+      if (pos != &*raw_input.cend() || trailing_separator) {
+        tokens.push_back(Token{pos, &*raw_input.cend()});
+      }
     }
   }
 
@@ -1341,13 +1348,14 @@ on_resize:
           }
         }
 
+        if (invisible_only) {
+          const Token& token = tokens[y + scroll_position];
+          wattron(selection_window, A_DIM);
+          mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", (int)(token.end - token.begin));
+          wattroff(selection_window, A_DIM);
+        }
+
         if (row_highlighted || row_selected) {
-          if (invisible_only) {
-            const Token& token = tokens[y + scroll_position];
-            wattron(selection_window, A_DIM);
-            mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", (int)(token.end - token.begin));
-            wattroff(selection_window, A_DIM);
-          }
           wattroff(selection_window, A_BOLD);
           if (row_selected) {
             wattroff(selection_window, COLOR_PAIR(PAIR_SELECTED));
