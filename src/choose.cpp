@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
 "options:\n"
 "        -d, --delimit   add a batch separator at the end of the output\n"
 "        -e, --end       begin cursor at the bottom\n"
-"        -f, --flip      reverse the received token order\n"
+"        -f, --flip      reverse the token order just before displaying\n"
 "        -i, --ignore-case\n"
 "        -m, --multi     allow the selection of multiple tokens\n"
 "                        make the input separator case-insensitive\n"
@@ -107,8 +107,7 @@ int main(int argc, char** argv) {
 "        -t, --tenacious don't exit on confirmed selection\n"
 "        --trailing-separator\n"
 "                        don't ignore a separator at the end of the output\n"
-"        -u, --unique    remove duplicate input tokens. applied before --flip and\n"
-"                        after --sub\n"
+"        -u, --unique    remove duplicate input tokens. leaves first occurrences\n"
 "        --utf           enable regex UTF-8\n"
 "        -y, --batch-print0\n"
 "                        use null as the batch separator\n"
@@ -725,10 +724,6 @@ int main(int argc, char** argv) {
     pcre2_code_free(re);
   }
 
-  if (tokens.size() == 0) {
-    tokens.push_back(Token{NULL, NULL});
-  }
-
   if (unique) {
     std::set<Token> seen;
     auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&seen](const Token& value) {
@@ -1106,6 +1101,43 @@ on_resize:
 
   refresh();
 
+  // returns true on success, false on write failure
+  auto send_output_separator = [&](bool sep_null, const char* const sep) -> bool {
+    if (immediate_output) {
+      if (sep_null) {
+        return putchar('\0') != EOF;
+      } else {
+        return fprintf(stdout, "%s", sep) >= 0;
+      }
+    } else {
+      if (sep_null) {
+        return putchar('\0') != EOF;
+      } else {
+        char c;
+        const char* delim_iter = sep;
+        while ((c = *delim_iter++)) {
+          queued_output.push_back(c);
+        }
+        return true;
+      }
+    }
+  };
+
+  if (tokens.size() == 0) {
+    wattron(selection_window, A_DIM);
+    mvprintw(0, 0, "No tokens.");
+    int ch;
+    do {
+      ch = getch(); // wait for any exit or confirmation input
+    } while (ch != '\n' && ch != 'd' && ch != 'f' && ch != KEY_BACKSPACE && ch != 'q' && ch != 27);
+    ncurses_deinit();
+    if (bout_delimit) {
+      immediate_output = true;
+      return !send_output_separator(bout_sep_null, bout_separator);
+    }
+    return 0;
+  }
+
   while (true) {
     // =========================================================================
     // ============================= draw tui ==================================
@@ -1395,28 +1427,6 @@ on_resize:
     // =========================================================================
 
     int ch = getch();
-
-    // returns true on success, false on write failure
-    auto send_output_separator = [&](bool sep_null, const char* const sep) -> bool {
-      if (immediate_output) {
-        if (sep_null) {
-          return putchar('\0') != EOF;
-        } else {
-          return fprintf(stdout, "%s", sep) >= 0;
-        }
-      } else {
-        if (sep_null) {
-          return putchar('\0') != EOF;
-        } else {
-          char c;
-          const char* delim_iter = sep;
-          while ((c = *delim_iter++)) {
-            queued_output.push_back(c);
-          }
-          return true;
-        }
-      }
-    };
 
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
