@@ -102,10 +102,12 @@ int main(int argc, char** argv) {
 "                        matches newline characters not contained in single or\n"
 "                        double quotes, excluding escaped quotes:\n"
 "                        regex101.com/r/RHyz6D/\n"
-"        -s, --sort      sort the token output based on selection order instead\n"
+"        -s, --sort      sort each token lexicographically\n"
+"        --selection-order\n"
+"                        sort the token output based on selection order instead\n"
 "                        of input order\n"
 "        -t, --tenacious don't exit on confirmed selection\n"
-"        --trailing-separator\n"
+"        --use-delimiter\n"
 "                        don't ignore a separator at the end of the output\n"
 "        -u, --unique    remove duplicate input tokens. leaves first occurrences\n"
 "        --utf           enable regex UTF-8\n"
@@ -120,7 +122,7 @@ int main(int argc, char** argv) {
 "examples:\n"
 "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
 "        echo -n \"1A2a3\" | choose -i \"a\"\n"
-"        echo -n \"a b c\" | choose -o \",\" -b $'\\n' \" \" -dmst -pspacebar\n"
+"        echo -n \"a b c\" | choose -o, -b$'\\n' \" \" -dmt --selection-order -pspace\n"
 "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
 "controls:\n"
 "        confirm selections: enter, d, or f\n"
@@ -176,9 +178,10 @@ int main(int argc, char** argv) {
   uint32_t match_flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
-  bool trailing_separator = false;
+  bool use_input_delimiter = false;
   bool end = false;
   bool flip = false;
+  bool sort = false;
   bool unique = false;
   bool multiple_selections = false;
   bool match = false;
@@ -242,7 +245,7 @@ int main(int argc, char** argv) {
               match_flags &= ~PCRE2_LITERAL;
               break;
             case 's':
-              selection_order = true;
+              sort = true;
               break;
             case 't':
               tenacious = true;
@@ -281,11 +284,13 @@ int main(int argc, char** argv) {
               } else if (strcmp("regex", pos) == 0) {
                 match_flags &= ~PCRE2_LITERAL;
               } else if (strcmp("sort", pos) == 0) {
+                sort = true;
+              } else if (strcmp("selection-order", pos) == 0) {
                 selection_order = true;
               } else if (strcmp("tenacious", pos) == 0) {
                 tenacious = true;
-              } else if (strcmp("trailing-separator", pos) == 0) {
-                trailing_separator = true;
+              } else if (strcmp("use-delimiter", pos) == 0) {
+                use_input_delimiter = true;
               } else if (strcmp("unique", pos) == 0) {
                 unique = true;
               } else if (strcmp("utf", pos) == 0) {
@@ -406,6 +411,9 @@ int main(int argc, char** argv) {
     const char* end;
     bool operator<(const Token& other) const {
       return std::lexicographical_compare(begin, end, other.begin, other.end);
+    }
+    bool operator==(const Token& other) const {
+      return std::equal(begin, end, other.begin, other.end);
     }
   };
   std::vector<Token> tokens;
@@ -639,7 +647,7 @@ int main(int argc, char** argv) {
 
     if (!match) {
       // last token (anchored to end of input)
-      if (pos != &*raw_input.cend() || trailing_separator) {
+      if (pos != &*raw_input.cend() || use_input_delimiter) {
         tokens.push_back(Token{pos, &*raw_input.cend()});
       }
     }
@@ -724,14 +732,26 @@ int main(int argc, char** argv) {
     pcre2_code_free(re);
   }
 
+  if (sort) {
+    // use stable_sort later if comparison becomes user defined.
+    // right now sort is ok because equal elements are objectively equal.
+    // this could break unique's leaving of first occurrence
+    std::sort(tokens.begin(), tokens.end());
+  }
+
   if (unique) {
-    std::set<Token> seen;
-    auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&seen](const Token& value) {
-        if (seen.find(value) != std::end(seen)) return true;
-        seen.insert(value);
-        return false;
-    });
-    tokens.resize(new_end - tokens.begin());
+    if (sort) {
+      auto new_end = std::unique(tokens.begin(), tokens.end());
+      tokens.resize(new_end - tokens.begin());
+    } else {
+      std::set<Token> seen;
+      auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&seen](const Token& value) {
+          if (seen.find(value) != std::end(seen)) return true;
+          seen.insert(value);
+          return false;
+      });
+      tokens.resize(new_end - tokens.begin());
+    }
   }
 
   if (flip) {
