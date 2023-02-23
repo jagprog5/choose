@@ -36,8 +36,13 @@ int main(int argc, char** argv) {
   // ============================= messages ====================================
   // ===========================================================================
 
+  #define xstr(a) str(a)
+  #define str(a) #a
+
   if (argc == 2 && (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
-    return puts("1.1.0") < 0;
+    return puts("choose 1.1.0, "
+      "ncurses " xstr(NCURSES_VERSION_MAJOR) "." xstr(NCURSES_VERSION_MINOR) "." xstr(NCURSES_VERSION_PATCH) ", "
+      "pcre2 " xstr(PCRE2_MAJOR) "." xstr(PCRE2_MINOR) ) < 0;
   }
   if (argc == 2 && (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
     // respects 80 char width, and pipes the text to less to accomodate terminal height
@@ -65,7 +70,13 @@ int main(int argc, char** argv) {
 "          \"substitution\": apply a text substitution on each token before it\n"
 "                          appears in the interface. The target inherits the same\n"
 "                          match options as the input separator. The replacement\n"
-"                          is assumed to be literal iff the input separator is.\n"
+#ifdef PCRE2_SUBSTITUTE_LITERAL
+"                          is literal iff the input separator is literal.\n"
+#else
+"                          is a regex, but this will change if compiled with a \n"
+"                          newer version of pcre2 where it will instead be\n"
+"                          literal iff the input separator is literal.\n"
+#endif
 "usage:                    \n"
 "        choose (-h|--help)\n"
 "        choose (-v|--version)\n"
@@ -74,7 +85,7 @@ int main(int argc, char** argv) {
 "                [(-b|--batch-separator)\n"
 "                        <batch separator, default: <output separator>>]\n"
 "                [(-p|--prompt) <prompt>]\n"
-"                [(--sub|--substitute) <target> <replacement>]"
+"                [(--sub|--substitute) <target> <replacement>]\n"
 "options:\n"
 "        -d, --delimit   add a batch separator at the end of the output\n"
 "        -e, --end       begin cursor at the bottom\n"
@@ -471,6 +482,14 @@ int main(int argc, char** argv) {
           pcre2_match_data_create_from_pattern(re, NULL);
       PCRE2_SPTR subject = (PCRE2_SPTR) & *raw_input.cbegin();
       PCRE2_SIZE subject_length = (PCRE2_SIZE)raw_input.size();
+
+      // old pcre2 incorrectly handles empty input
+      if (PCRE2_MAJOR <= 10 && PCRE2_MINOR <= 39) {
+        if (subject == NULL and subject_length == 0) {
+          goto match_done;
+        }
+      }
+
       int rc = pcre2_match(re, subject, subject_length, 0, 0, match_data, NULL);
 
       // check the result
@@ -652,7 +671,11 @@ int main(int argc, char** argv) {
       PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
       PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
       uint32_t sub_flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-      sub_flags |= match_flags & PCRE2_LITERAL; // inherit literal
+      #ifdef PCRE2_SUBSTITUTE_LITERAL
+        if (match_flags & PCRE2_LITERAL) {
+            sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
+        }
+      #endif
 
       PCRE2_SIZE output_size = 0; // initial pass calculates length of output
       pcre2_substitute(re,
