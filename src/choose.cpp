@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
       "pcre2 " xstr(PCRE2_MAJOR) "." xstr(PCRE2_MINOR) ) < 0;
   }
   if (argc == 2 && (strcmp("-h", argv[1]) == 0 || strcmp("--help", argv[1]) == 0)) {
-    // respects 80 char width, and pipes the text to less to accomodate terminal height
+    // respects 80 char width, and pipes the text to less to accommodate terminal height
 
     const char* const help_text = ""
 "                             .     /======\\                                .    \n"
@@ -56,27 +56,6 @@ int main(int argc, char** argv) {
 "description:\n"
 "        Splits the input into tokens based on a separator, and provides a text\n"
 "        based ui for selecting which tokens are sent to the output.\n"
-"terminology:\n"
-"       \"input separator\": describes how to split the input into tokens. each\n"
-"                          token is displayed for selection in the interface.\n"
-"      \"output separator\": if multiple tokens are selected (which is enabled via\n"
-"                          -m), then an output separator is placed between each\n"
-"                          token in the output.\n"
-"       \"batch separator\": selecting multiple tokens and sending them to the\n"
-"                          output together is a \"batch\". if multiple batches are\n"
-"                          sent to the output (which is enabled via -t), then a\n"
-"                          batch separator is used between batches, instead of an\n"
-"                          output separator.\n"
-"          \"substitution\": apply a text substitution on each token before it\n"
-"                          appears in the interface. The target inherits the same\n"
-"                          match options as the input separator. The replacement\n"
-#ifdef PCRE2_SUBSTITUTE_LITERAL
-"                          is literal iff the input separator is literal.\n"
-#else
-"                          is a regex, but this will change if compiled with a \n"
-"                          newer version of pcre2 where it will instead be\n"
-"                          literal iff the input separator is literal.\n"
-#endif
 "usage:                    \n"
 "        choose (-h|--help)\n"
 "        choose (-v|--version)\n"
@@ -86,30 +65,50 @@ int main(int argc, char** argv) {
 "                        <batch separator, default: <output separator>>]\n"
 "                [(-p|--prompt) <prompt>]\n"
 "                [(--sub|--substitute) <target> <replacement>]\n"
+"                [(-f|--filter) <filter>]"
+"args:\n"
+"         input separator: describes how to split the input into tokens. each\n"
+"                          token is displayed for selection in the interface.\n"
+"        output separator: if multiple tokens are selected (which is enabled via\n"
+"                          -m), then an output separator is placed between each\n"
+"                          token in the output\n"
+"         batch separator: selecting multiple tokens and sending them to the\n"
+"                          output together is a \"batch\". if multiple batches are\n"
+"                          sent to the output (which is enabled via -t), then a\n"
+"                          batch separator is used between batches, instead of an\n"
+"                          output separator\n"
+"            substitution: apply a text substitution on each token before it\n"
+"                          appears in the interface. the target inherits the same\n"
+"                          match options as the input separator. the replacement\n"
+#ifdef PCRE2_SUBSTITUTE_LITERAL
+"                          is literal iff the input separator is literal.\n"
+#else 
+"                          is a regex, but this will change if compiled with a \n"
+"                          newer version of pcre2 where it will instead be\n"
+"                          literal iff the input separator is literal\n"
+#endif
+"                  filter: remove tokens which match. it inherits the same match\n"
+"                          match options as the input separator, and is applied\n"
+"                          after the substitution and before displaying\n"
 "options:\n"
 "        -d, --delimit   add a batch separator at the end of the output\n"
 "        -e, --end       begin cursor at the bottom\n"
-"        -f, --flip      reverse the token order just before displaying\n"
+"        --flip          reverse the token order just before displaying\n"
 "        -i, --ignore-case\n"
 "        -m, --multi     allow the selection of multiple tokens\n"
 "                        make the input separator case-insensitive\n"
 "        --match         the input separator matches the tokens instead of the\n"
 "                        separation between tokens. the match and each match\n"
-"                        group is a token.\n"
+"                        group is a token\n"
 "        -r, --regex     use (PCRE2) regex for the input separator.\n"
-"                        DISABLED: the default input separator is a newline.\n"
-"                        ENABLED: the default input separator is a regex which\n"
-"                        matches newline characters not contained in single or\n"
-"                        double quotes, excluding escaped quotes:\n"
-"                        regex101.com/r/RHyz6D/\n"
 "        -s, --sort      sort each token lexicographically\n"
 "        --selection-order\n"
 "                        sort the token output based on selection order instead\n"
 "                        of input order\n"
 "        -t, --tenacious don't exit on confirmed selection\n"
+"        -u, --unique    remove duplicate input tokens. leaves first occurrences\n"
 "        --use-delimiter\n"
 "                        don't ignore a separator at the end of the output\n"
-"        -u, --unique    remove duplicate input tokens. leaves first occurrences\n"
 "        --utf           enable regex UTF-8\n"
 "        -y, --batch-print0\n"
 "                        use null as the batch separator\n"
@@ -199,6 +198,7 @@ int main(int argc, char** argv) {
   const char* prompt = 0;
   const char* substitution_target = 0;
   const char* substitution_replacement = 0;
+  const char* filter = 0;
 
   {
     // e.g. in -o stuff_here, the arg after -o should not be parsed.
@@ -231,9 +231,6 @@ int main(int argc, char** argv) {
               break;
             case 'e':
               end = true;
-              break;
-            case 'f':
-              flip = true;
               break;
             case 'i':
               match_flags |= PCRE2_CASELESS;
@@ -323,6 +320,10 @@ int main(int argc, char** argv) {
                 ch = 's';
                 pos += strlen("substitute") - 1;
                 goto parse_param;
+              } else if (strcmp("filter", pos) == 0) {
+                ch = 'f';
+                pos += strlen("filter") - 1;
+                goto parse_param;
               } else {
                 fprintf(stderr, "unknown long option in arg %d: \"%s\"\n", i, argv[i]);
                 return 1;
@@ -333,6 +334,7 @@ int main(int argc, char** argv) {
             case 'o':
             case 'b':
             case 'p':
+            case 'f':
               if (pos != argv[i] + 1) {
                 // checking that the flag is just after the dash. e.g. -o, not -io
                 fprintf(stderr, "-%c can't be specified with other flags "
@@ -362,6 +364,8 @@ int main(int argc, char** argv) {
                   bout_separator = argv[i];
                 } else if (ch == 'p') {
                   prompt = argv[i];
+                } else if (ch == 'f') {
+                  filter = argv[i];
                 } else { // 's'
                   substitution_target = argv[i - 1];
                   substitution_replacement = argv[i];
@@ -450,15 +454,7 @@ int main(int argc, char** argv) {
         return 1;
       }
       // default sep
-      if (match_flags & PCRE2_LITERAL) {
-        in_separator = "\n";
-      } else {
-        // https://regex101.com/r/RHyz6D/
-        // the above link, but with "pattern" replaced with a newline char
-        in_separator =
-            R"(\G((?:(?:\\\\)*+\\["']|(?:\\\\)*(?!\\+['"])[^"'])*?\K(?:
-|(?:\\\\)*'(?:\\\\)*+(?:(?:\\')|(?!\\')[^'])*(?:\\\\)*'(?1)|(?:\\\\)*"(?:\\\\)*+(?:(?:\\")|(?!\\")[^"])*(?:\\\\)*"(?1))))";
-      }
+      in_separator = "\n";
     }
 
     /*
@@ -484,13 +480,15 @@ int main(int argc, char** argv) {
         return 1;
       }
 
-      // match
-      match_data =
-          pcre2_match_data_create_from_pattern(re, NULL);
+      match_data = pcre2_match_data_create_from_pattern(re, NULL);
+      if (match_data == NULL) {
+        fputs("error allocating match data.", stderr);
+        return 1;
+      }
       PCRE2_SPTR subject = (PCRE2_SPTR) & *raw_input.cbegin();
       PCRE2_SIZE subject_length = (PCRE2_SIZE)raw_input.size();
 
-      // old pcre2 incorrectly handles empty input
+      // old pcre2 incorrectly handles empty input with null ptr
       if (PCRE2_MAJOR <= 10 && PCRE2_MINOR <= 39) {
         if (subject == NULL and subject_length == 0) {
           goto match_done;
@@ -508,10 +506,6 @@ int main(int argc, char** argv) {
         PCRE2_UCHAR buffer[256];
         pcre2_get_error_message(rc, buffer, sizeof(buffer));
         fprintf(stderr, "Matching error in input separator: \"%s\"\n", buffer);
-        // superfluous free, but good form.
-        // make valgrind output clean
-        pcre2_match_data_free(match_data);
-        pcre2_code_free(re);
         return 1;
       }
 
@@ -523,8 +517,6 @@ int main(int argc, char** argv) {
                 "From end to start the match was: %.*s\n",
                 (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
         fprintf(stderr, "Run abandoned\n");
-        pcre2_match_data_free(match_data);
-        pcre2_code_free(re);
         return 1;
       }
 
@@ -606,8 +598,6 @@ int main(int argc, char** argv) {
           PCRE2_UCHAR buffer[256];
           pcre2_get_error_message(rc, buffer, sizeof(buffer));
           fprintf(stderr, "Matching error in input separator: \"%s\"\n", buffer);
-          pcre2_match_data_free(match_data);
-          pcre2_code_free(re);
           return 1;
         }
 
@@ -617,8 +607,6 @@ int main(int argc, char** argv) {
                 "From end to start the match was: %.*s\n",
                 (int)(ovector[0] - ovector[1]), (char*)(subject + ovector[1]));
           fprintf(stderr, "Run abandoned\n");
-          pcre2_match_data_free(match_data);
-          pcre2_code_free(re);
           return 1;
         }
 
@@ -674,6 +662,11 @@ int main(int argc, char** argv) {
     }
 
     pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    if (match_data == NULL) {
+      fputs("error allocating match data.", stderr);
+      return 1;
+    }
+
     for (Token& t : tokens) {
       PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
       PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
@@ -718,9 +711,6 @@ int main(int argc, char** argv) {
         PCRE2_UCHAR buffer[256];
         pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
         fprintf(stderr, "PCRE2 substitution error: %s\n", buffer);
-        pcre2_match_data_free(match_data);
-        pcre2_code_free(re);
-        substitution_buffers.clear();
         return 1;
       }
 
@@ -728,6 +718,51 @@ int main(int argc, char** argv) {
 
       substitution_buffers.push_back(std::move(sub_out));
     }
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
+  }
+
+  if (filter) {
+    PCRE2_SPTR pattern = (PCRE2_SPTR)filter;
+    int errornumber;
+    PCRE2_SIZE erroroffset;
+    pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber,
+                            &erroroffset, NULL);
+    if (re == NULL) {
+      PCRE2_UCHAR buffer[256];
+      pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+      fprintf(stderr, "PCRE2 compilation of input separator failed at offset %d: %s\n",
+              (int)erroroffset, buffer);
+      return 1;
+    }
+
+    // it seems strange to me that a match data is required...
+    // https://stackoverflow.com/q/66162670/15534181
+    pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    if (match_data == NULL) {
+      fputs("error allocating match data.", stderr);
+      return 1;
+    }
+
+    auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&](const Token& t) {
+      PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
+      PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
+      int rc = pcre2_match(re, subject, subject_length, 0, 0, match_data, NULL);
+      
+      if (rc == PCRE2_ERROR_NOMATCH) {
+        return false;
+      } else if (rc <= 0) {
+        PCRE2_UCHAR buffer[256];
+        pcre2_get_error_message(rc, buffer, sizeof(buffer));
+        fprintf(stderr, "Matching error in filter: \"%s\"\n", buffer);
+        pcre2_match_data_free(match_data);
+        pcre2_code_free(re);
+        substitution_buffers.clear();
+        exit(1);
+      }
+      return true;
+    });
+    tokens.resize(new_end - tokens.begin());
     pcre2_match_data_free(match_data);
     pcre2_code_free(re);
   }
@@ -781,22 +816,17 @@ int main(int argc, char** argv) {
   FILE* f = fopen("/dev/tty", "r+");
   if (f == NULL) {
     perror(NULL);
-    substitution_buffers.clear();
     return 1;
   }
   SCREEN* screen = newterm(NULL, f, f);
   if (screen == NULL) {
     endwin();
-    fclose(f); // not necessary since files are closed by os, but good form
     fputs("ncurses err\n", stderr);
-    substitution_buffers.clear();
     return 1;
   }
   if (set_term(screen) == NULL) {
     endwin();
-    fclose(f);
     fputs("ncurses err\n", stderr);
-    substitution_buffers.clear();
     return 1;
   }
   // enable arrow keys
@@ -806,17 +836,13 @@ int main(int argc, char** argv) {
   // pass keys directly from input without buffering
   if (cbreak() == ERR) {
     endwin();
-    fclose(f);
     fputs("ncurses err\n", stderr);
-    substitution_buffers.clear();
     return 1;
   }
   // disable echo back of keys entered
   if (noecho() == ERR) {
     endwin();
-    fclose(f);
     fputs("ncurses err\n", stderr);
-    substitution_buffers.clear();
     return 1;
   }
   // invisible cursor
@@ -829,27 +855,12 @@ int main(int argc, char** argv) {
   // get mouse events right away
   if (mouseinterval(0) == ERR) {
     endwin();
-    fclose(f);
     fputs("ncurses err\n", stderr);
-    substitution_buffers.clear();
     return 1;
   }
 
   WINDOW* prompt_window = 0;
   WINDOW* selection_window = 0;
-
-  // this should be called before exiting after this point
-  // (to clean up resources and restore terminal settings)
-  // returns false if the output is still going to the screen and not stdout
-  auto ncurses_deinit = [&]() {
-    auto ret = endwin(); // it's ok to call endwin after endwin. it's idempotent
-    delwin(prompt_window); // calling delwin is fine even if null
-    delwin(selection_window);
-    delscreen(screen);
-    fclose(f);
-    substitution_buffers.clear();
-    return ret != ERR;
-  };
 
   /*
    * the doc says that the mousemask must be set to enable mouse control,
@@ -924,16 +935,16 @@ on_resize:
         size_t num_bytes = std::mbrtowc(&ch, pos, prompt_terminator - pos, &ps);
         if (num_bytes == 0) {
           // will never happen, since prompt_terminator points to the first null
-          ncurses_deinit();
+          endwin();
           fputs("decode err in prompt\n", stderr);
           return false;
         } else if (num_bytes == (size_t)-1) {
           const char* err = strerror(errno);
-          ncurses_deinit();
+          endwin();
           fprintf(stderr, "%s\n", err);
           return false;
         } else if (num_bytes == (size_t)-2) {
-          ncurses_deinit();
+          endwin();
           fputs("incomplete multibyte in prompt\n", stderr);
           return false;
         }
@@ -1043,14 +1054,14 @@ on_resize:
 
   if (prompt_window) {
     if (delwin(prompt_window) == ERR) {
-      ncurses_deinit();
+      endwin();
       fputs("ncurses err\n", stderr);
       return 1;
     }
   }
   if (selection_window) {
     if (delwin(selection_window) == ERR) {
-      ncurses_deinit();
+      endwin();
       fputs("ncurses err\n", stderr);
       return 1;
     }
@@ -1059,7 +1070,7 @@ on_resize:
   if (prompt) {
     prompt_window = newwin(prompt_rows, num_columns, 0, 0);
     if (!prompt_window) {
-      ncurses_deinit();
+      endwin();
       fputs("ncurses err\n", stderr);
       return 1;
     }
@@ -1071,7 +1082,7 @@ on_resize:
 
   selection_window = newwin(selection_rows, num_columns, prompt_rows, 0);
   if (!selection_window) {
-    ncurses_deinit();
+    endwin();
     fputs("ncurses err\n", stderr);
     return 1;
   }
@@ -1150,7 +1161,9 @@ on_resize:
     do {
       ch = getch(); // wait for any exit or confirmation input
     } while (ch != '\n' && ch != 'd' && ch != 'f' && ch != KEY_BACKSPACE && ch != 'q' && ch != 27);
-    ncurses_deinit();
+    if (endwin() == ERR) {
+      return 1;
+    }
     if (bout_delimit) {
       immediate_output = true;
       return !send_output_separator(bout_sep_null, bout_separator);
@@ -1450,7 +1463,7 @@ on_resize:
 
     if (sigint_occured != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
     cleanup_exit:
-      if (!ncurses_deinit()) {
+      if (endwin() == ERR) {
         // send_output_separator (below) might not work,
         // since ncurses is still capturing the output
         fputs("endwin err\n", stderr);
@@ -1524,7 +1537,6 @@ on_resize:
       if (immediate_output) {
         if (endwin() == ERR) {
           // this would be bad since text is going to the window instead of stdout
-          ncurses_deinit();
           fputs("endwin err\n", stderr);
           return 1;
         }
@@ -1535,7 +1547,7 @@ on_resize:
       static bool first_output = true;
       if (!first_output) {
         if (!send_output_separator(bout_sep_null, bout_separator)) {
-          ncurses_deinit();
+          endwin();
           fputs("stdout err\n", stderr);
           return 1;
         }
@@ -1548,7 +1560,7 @@ on_resize:
         while (iter != token.end) {
           if (immediate_output) {
             if (fputc(*iter, stdout) == EOF) {
-              ncurses_deinit();
+              endwin();
               fputs("stdout err\n", stderr);
               return 1;
             }
@@ -1561,7 +1573,7 @@ on_resize:
         // e.g. a|b|c
         if (&s != &*selections.crbegin()) {
           if (!send_output_separator(out_sep_null, out_separator)) {
-            ncurses_deinit();
+            endwin();
             fputs("stdout err\n", stderr);
             return 1;
           }
@@ -1570,7 +1582,7 @@ on_resize:
 
       if (immediate_output) {
         if (fflush(stdout) == EOF) {
-          ncurses_deinit();
+          endwin();
           fputs("stdout err\n", stderr);
           return 1;
         }
