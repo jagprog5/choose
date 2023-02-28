@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
   #define str(a) #a
 
   if (argc == 2 && (strcmp("-v", argv[1]) == 0 || strcmp("--version", argv[1]) == 0)) {
-    return puts("choose 1.1.0, "
+    return puts("choose 0.0.0, "
       "ncurses " xstr(NCURSES_VERSION_MAJOR) "." xstr(NCURSES_VERSION_MINOR) "." xstr(NCURSES_VERSION_PATCH) ", "
       "pcre2 " xstr(PCRE2_MAJOR) "." xstr(PCRE2_MINOR) ) < 0;
   }
@@ -65,7 +65,11 @@ int main(int argc, char** argv) {
 "                        <batch separator, default: <output separator>>]\n"
 "                [(-p|--prompt) <prompt>]\n"
 "                [(--sub|--substitute) <target> <replacement>]\n"
-"                [(-f|--filter) <filter>]"
+"                [(-f|--filter) <filter>]\n"
+"                [(--rm|--remove) <target>]\n"
+"order of operations:\n"
+"        the operations --substitute, --sort, --filter, and --unique are applied\n"
+"        in the order they are stated\n"
 "args:\n"
 "         input separator: describes how to split the input into tokens. each\n"
 "                          token is displayed for selection in the interface.\n"
@@ -87,9 +91,9 @@ int main(int argc, char** argv) {
 "                          newer version of pcre2 where it will instead be\n"
 "                          literal iff the input separator is literal\n"
 #endif
-"                  filter: remove tokens which match. it inherits the same match\n"
-"                          match options as the input separator, and is applied\n"
-"                          after the substitution and before displaying\n"
+"                  filter: remove tokens that don't match. it inherits the same\n"
+"                          match options as the input separator\n"
+"                  remove: this is the inverse of --filter\n"
 "options:\n"
 "        -d, --delimit   add a batch separator at the end of the output\n"
 "        -e, --end       begin cursor at the bottom\n"
@@ -174,14 +178,23 @@ int main(int argc, char** argv) {
   // ========================= cli arg parsing =================================
   // ===========================================================================
 
+  // store the args that apply in the order that they appear
+  struct OrderedOp {
+    enum Type { SUB, SORT, FILTER, RM, UNIQUE };
+    Type type;
+    // args may be unset depending on op type
+    const char* arg0 = 0;
+    const char* arg1 = 0;
+  };
+
+  std::vector<OrderedOp> ordered_ops;
+
   uint32_t match_flags = PCRE2_LITERAL;
   bool selection_order = false;
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
   bool flip = false;
-  bool sort = false;
-  bool unique = false;
   bool multiple_selections = false;
   bool match = false;
   bool bout_delimit = false;
@@ -196,22 +209,12 @@ int main(int argc, char** argv) {
   const char* out_separator = "\n";
   const char* bout_separator = 0;
   const char* prompt = 0;
-  const char* substitution_target = 0;
-  const char* substitution_replacement = 0;
-  const char* filter = 0;
 
   {
-    // e.g. in -o stuff_here, the arg after -o should not be parsed.
-    bool next_arg_reserved = false;
     // stop parsing flags after -- is encountered
     bool options_stopped = false;
 
     for (int i = 1; i < argc; ++i) {
-      if (next_arg_reserved) {
-        next_arg_reserved = false;
-        continue;
-      }
-
       if (argv[i][0] == '-' && !options_stopped) {
         if (argv[i][1] == '\0') {
           fprintf(stderr, "dash specified without anything after it, in arg %d\n", i);
@@ -242,13 +245,13 @@ int main(int argc, char** argv) {
               match_flags &= ~PCRE2_LITERAL;
               break;
             case 's':
-              sort = true;
+              ordered_ops.push_back(OrderedOp{OrderedOp::SORT});
               break;
             case 't':
               tenacious = true;
               break;
             case 'u':
-              unique = true;
+              ordered_ops.push_back(OrderedOp{OrderedOp::UNIQUE});
               break;
             case 'y':
               bout_sep_null = true;
@@ -281,7 +284,7 @@ int main(int argc, char** argv) {
               } else if (strcmp("regex", pos) == 0) {
                 match_flags &= ~PCRE2_LITERAL;
               } else if (strcmp("sort", pos) == 0) {
-                sort = true;
+                ordered_ops.push_back(OrderedOp{OrderedOp::SORT});
               } else if (strcmp("selection-order", pos) == 0) {
                 selection_order = true;
               } else if (strcmp("tenacious", pos) == 0) {
@@ -289,7 +292,7 @@ int main(int argc, char** argv) {
               } else if (strcmp("use-delimiter", pos) == 0) {
                 use_input_delimiter = true;
               } else if (strcmp("unique", pos) == 0) {
-                unique = true;
+                ordered_ops.push_back(OrderedOp{OrderedOp::UNIQUE});
               } else if (strcmp("utf", pos) == 0) {
                 match_flags |= PCRE2_UTF;
               } else if (strcmp("batch-print0", pos) == 0) {
@@ -323,6 +326,14 @@ int main(int argc, char** argv) {
               } else if (strcmp("filter", pos) == 0) {
                 ch = 'f';
                 pos += strlen("filter") - 1;
+                goto parse_param;
+              } else if (strcmp("rm", pos) == 0) {
+                ch = 'r';
+                pos += strlen("rm") - 1;
+                goto parse_param;
+              } else if (strcmp("remove", pos) == 0) {
+                ch = 'r';
+                pos += strlen("remove") - 1;
                 goto parse_param;
               } else {
                 fprintf(stderr, "unknown long option in arg %d: \"%s\"\n", i, argv[i]);
@@ -365,10 +376,11 @@ int main(int argc, char** argv) {
                 } else if (ch == 'p') {
                   prompt = argv[i];
                 } else if (ch == 'f') {
-                  filter = argv[i];
+                  ordered_ops.push_back(OrderedOp{OrderedOp::FILTER, argv[i]});
+                } else if (ch == 'r') {
+                  ordered_ops.push_back(OrderedOp{OrderedOp::RM, argv[i]});
                 } else { // 's'
-                  substitution_target = argv[i - 1];
-                  substitution_replacement = argv[i];
+                  ordered_ops.push_back(OrderedOp{OrderedOp::SUB, argv[i - 1], argv[i]});
                 }
               } else {
                 // if not, then it is specified without a space, like -ostuff
@@ -642,151 +654,183 @@ int main(int argc, char** argv) {
   }
 
   std::vector<std::unique_ptr<PCRE2_UCHAR[]>> substitution_buffers;
+  substitution_buffers.resize(tokens.size());
 
-  if (substitution_target) {
-    PCRE2_SIZE replacement_length = strlen(substitution_replacement);
-    PCRE2_SPTR replacement_str = (PCRE2_SPTR)substitution_replacement;
+  // apply each of the ordered ops
+  auto op_pos = ordered_ops.begin();
+  while (op_pos != ordered_ops.end()) {
+    const OrderedOp& op = *op_pos;
+    switch (op.type) {
+      case OrderedOp::SUB:
+        {
+          auto substitution_buffers_pos = substitution_buffers.begin();
+          PCRE2_SIZE replacement_length = strlen(op.arg1);
+          PCRE2_SPTR replacement_str = (PCRE2_SPTR)op.arg1;
 
-    PCRE2_SPTR pattern = (PCRE2_SPTR)substitution_target;
-    int errornumber;
-    PCRE2_SIZE erroroffset;
+          PCRE2_SPTR pattern = (PCRE2_SPTR)op.arg0;
+          int errornumber;
+          PCRE2_SIZE erroroffset;
 
-    pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber, &erroroffset, NULL);
-    if (re == NULL) {
-      PCRE2_UCHAR buffer[256];
-      pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
-      fprintf(stderr, "PCRE2 compilation of substitution target failed at offset %d: %s\n",
-              (int)erroroffset, buffer);
-      
-      return 1;
-    }
+          pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber, &erroroffset, NULL);
+          if (re == NULL) {
+            PCRE2_UCHAR buffer[256];
+            pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+            fprintf(stderr, "PCRE2 compilation of substitution target failed at offset %d: %s\n",
+                    (int)erroroffset, buffer);
+            
+            return 1;
+          }
 
-    pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
-    if (match_data == NULL) {
-      fputs("error allocating match data.", stderr);
-      return 1;
-    }
+          pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+          if (match_data == NULL) {
+            fputs("error allocating match data.", stderr);
+            return 1;
+          }
 
-    for (Token& t : tokens) {
-      PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
-      PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
-      uint32_t sub_flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-      #ifdef PCRE2_SUBSTITUTE_LITERAL
-        if (match_flags & PCRE2_LITERAL) {
-            sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
+          for (Token& t : tokens) {
+            PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
+            PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
+            uint32_t sub_flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+            #ifdef PCRE2_SUBSTITUTE_LITERAL
+              if (match_flags & PCRE2_LITERAL) {
+                  sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
+              }
+            #endif
+
+            PCRE2_SIZE output_size = 0; // initial pass calculates length of output
+            pcre2_substitute(re,
+                                subject,
+                                subject_length,
+                                0,
+                                sub_flags,
+                                NULL,
+                                NULL,
+                                replacement_str,
+                                replacement_length,
+                                NULL,
+                                &output_size);
+            
+
+            std::unique_ptr<PCRE2_UCHAR[]> sub_out(new PCRE2_UCHAR[output_size]);
+            sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+
+            // second pass
+            int sub_rc = pcre2_substitute(re,
+                                subject,
+                                subject_length,
+                                0,
+                                sub_flags,
+                                NULL,
+                                NULL,
+                                replacement_str,
+                                replacement_length,
+                                sub_out.get(),
+                                &output_size);
+
+            if (sub_rc < 0) {
+              PCRE2_UCHAR buffer[256];
+              pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
+              fprintf(stderr, "PCRE2 substitution error: %s\n", buffer);
+              return 1;
+            }
+
+            t = Token{(char*)sub_out.get(), (char*)sub_out.get() + output_size};
+            *substitution_buffers_pos++ = std::move(sub_out);
+          }
+          pcre2_match_data_free(match_data);
+          pcre2_code_free(re);
         }
-      #endif
+        break;
+      case OrderedOp::FILTER:
+      case OrderedOp::RM:
+        {
+          PCRE2_SPTR pattern = (PCRE2_SPTR)op.arg0;
+          int errornumber;
+          PCRE2_SIZE erroroffset;
+          pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber,
+                                  &erroroffset, NULL);
+          if (re == NULL) {
+            PCRE2_UCHAR buffer[256];
+            pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+            fprintf(stderr, "PCRE2 compilation of input separator failed at offset %d: %s\n",
+                    (int)erroroffset, buffer);
+            return 1;
+          }
 
-      PCRE2_SIZE output_size = 0; // initial pass calculates length of output
-      pcre2_substitute(re,
-                          subject,
-                          subject_length,
-                          0,
-                          sub_flags,
-                          NULL,
-                          NULL,
-                          replacement_str,
-                          replacement_length,
-                          NULL,
-                          &output_size);
-      
+          // it seems strange to me that a match data is required...
+          // https://stackoverflow.com/q/66162670/15534181
+          pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+          if (match_data == NULL) {
+            fputs("error allocating match data.", stderr);
+            return 1;
+          }
 
-      std::unique_ptr<PCRE2_UCHAR[]> sub_out(new PCRE2_UCHAR[output_size]);
-      sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-
-      // second pass
-      int sub_rc = pcre2_substitute(re,
-                          subject,
-                          subject_length,
-                          0,
-                          sub_flags,
-                          NULL,
-                          NULL,
-                          replacement_str,
-                          replacement_length,
-                          sub_out.get(),
-                          &output_size);
-
-      if (sub_rc < 0) {
-        PCRE2_UCHAR buffer[256];
-        pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
-        fprintf(stderr, "PCRE2 substitution error: %s\n", buffer);
-        return 1;
-      }
-
-      t = Token{(char*)sub_out.get(), (char*)sub_out.get() + output_size};
-
-      substitution_buffers.push_back(std::move(sub_out));
+          auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&](const Token& t) {
+            PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
+            PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
+            int rc = pcre2_match(re, subject, subject_length, 0, 0, match_data, NULL);
+            
+            if (rc == PCRE2_ERROR_NOMATCH) {
+              return op.type != OrderedOp::RM;
+            } else if (rc <= 0) {
+              PCRE2_UCHAR buffer[256];
+              pcre2_get_error_message(rc, buffer, sizeof(buffer));
+              fprintf(stderr, "Matching error in filter: \"%s\"\n", buffer);
+              pcre2_match_data_free(match_data);
+              pcre2_code_free(re);
+              substitution_buffers.clear();
+              exit(1);
+            }
+            return op.type == OrderedOp::RM;
+          });
+          tokens.resize(new_end - tokens.begin());
+          pcre2_match_data_free(match_data);
+          pcre2_code_free(re);
+        }
+        break;
+      case OrderedOp::SORT:
+        // use stable_sort later if comparison becomes user defined.
+        // right now sort is ok because equal elements are objectively equal.
+        // this could break unique's leaving of first occurrence
+        std::sort(tokens.begin(), tokens.end());
+        break;
+      case OrderedOp::UNIQUE:
+        {
+          bool is_sorted = false;
+          for (auto rit = std::make_reverse_iterator(op_pos); rit != ordered_ops.rend(); ++rit) {
+            const OrderedOp& previous_op = *rit;
+            switch (previous_op.type) {
+              case OrderedOp::SORT:
+                is_sorted = true;
+                break;
+              case OrderedOp::SUB:
+                is_sorted = false;
+                break;
+              case OrderedOp::UNIQUE:
+              case OrderedOp::FILTER:
+              case OrderedOp::RM:
+                continue;
+                break;
+            }
+          }
+          if (is_sorted) {
+            auto new_end = std::unique(tokens.begin(), tokens.end());
+            tokens.resize(new_end - tokens.begin());
+          } else {
+            std::set<Token> seen;
+            auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&seen](const Token& value) {
+                if (seen.find(value) != std::end(seen)) return true;
+                seen.insert(value);
+                return false;
+            });
+            tokens.resize(new_end - tokens.begin());
+          }
+        }
+        break;
+      default:
+        break;
     }
-    pcre2_match_data_free(match_data);
-    pcre2_code_free(re);
-  }
-
-  if (filter) {
-    PCRE2_SPTR pattern = (PCRE2_SPTR)filter;
-    int errornumber;
-    PCRE2_SIZE erroroffset;
-    pcre2_code* re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, match_flags, &errornumber,
-                            &erroroffset, NULL);
-    if (re == NULL) {
-      PCRE2_UCHAR buffer[256];
-      pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
-      fprintf(stderr, "PCRE2 compilation of input separator failed at offset %d: %s\n",
-              (int)erroroffset, buffer);
-      return 1;
-    }
-
-    // it seems strange to me that a match data is required...
-    // https://stackoverflow.com/q/66162670/15534181
-    pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
-    if (match_data == NULL) {
-      fputs("error allocating match data.", stderr);
-      return 1;
-    }
-
-    auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&](const Token& t) {
-      PCRE2_SPTR subject = (PCRE2_SPTR)t.begin;
-      PCRE2_SIZE subject_length = (PCRE2_SIZE)(t.end - t.begin);
-      int rc = pcre2_match(re, subject, subject_length, 0, 0, match_data, NULL);
-      
-      if (rc == PCRE2_ERROR_NOMATCH) {
-        return false;
-      } else if (rc <= 0) {
-        PCRE2_UCHAR buffer[256];
-        pcre2_get_error_message(rc, buffer, sizeof(buffer));
-        fprintf(stderr, "Matching error in filter: \"%s\"\n", buffer);
-        pcre2_match_data_free(match_data);
-        pcre2_code_free(re);
-        substitution_buffers.clear();
-        exit(1);
-      }
-      return true;
-    });
-    tokens.resize(new_end - tokens.begin());
-    pcre2_match_data_free(match_data);
-    pcre2_code_free(re);
-  }
-
-  if (sort) {
-    // use stable_sort later if comparison becomes user defined.
-    // right now sort is ok because equal elements are objectively equal.
-    // this could break unique's leaving of first occurrence
-    std::sort(tokens.begin(), tokens.end());
-  }
-
-  if (unique) {
-    if (sort) {
-      auto new_end = std::unique(tokens.begin(), tokens.end());
-      tokens.resize(new_end - tokens.begin());
-    } else {
-      std::set<Token> seen;
-      auto new_end = std::remove_if(tokens.begin(), tokens.end(), [&seen](const Token& value) {
-          if (seen.find(value) != std::end(seen)) return true;
-          seen.insert(value);
-          return false;
-      });
-      tokens.resize(new_end - tokens.begin());
-    }
+    ++op_pos;
   }
 
   if (flip) {
