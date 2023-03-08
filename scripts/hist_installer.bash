@@ -6,6 +6,11 @@ if [[ ! -f ~/.bashrc ]] ; then
     exit
 fi
 
+if [ "$EUID" -ne 0 ]
+  then echo "Please run installer as root"
+  exit
+fi
+
 read -p "Install hist (y/n)? " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]
@@ -14,7 +19,7 @@ then
     exit
 fi
 
-USER_HOME=$(getent passwd $SUDO_USER | cut -d: -f6)
+USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 LINE="[ -f ~/.choose.bash ] && source ~/.choose.bash"
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
