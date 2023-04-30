@@ -1,0 +1,6 @@
+fix immediate output of tenacious mode, tui flicker
+--output and --take
+
+callout group for index of token on input
+callout group for index of token on output
+tests

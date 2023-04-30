@@ -1,0 +1,4 @@
+BasedOnStyle: Chromium
+ColumnLimit: 10000
+PointerAlignment: Left
+Standard: c++17

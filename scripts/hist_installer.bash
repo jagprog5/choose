@@ -19,6 +19,7 @@ then
     exit
 fi
 
+# https://stackoverflow.com/a/7359006/15534181
 USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 LINE="[ -f ~/.choose.bash ] && source ~/.choose.bash"
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )

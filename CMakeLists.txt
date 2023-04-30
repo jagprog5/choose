@@ -6,14 +6,13 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-OPTION(LETTER_WRAP "Make prompts wrap by letter instead of by word" OFF)
 OPTION(NO_SCROLL_BORDER "Disable the scroll border" OFF)
+option(BUILD_TESTING "Build tests" OFF)
 project(choose)
-add_executable(choose src/choose.cpp)
+add_executable(choose src/main.cpp)
+target_include_directories(choose PRIVATE src)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -Os -fno-rtti -fno-strict-aliasing)
-endif()
+target_compile_options(choose PRIVATE -Wall -Wextra -Wpedantic -Os -fno-rtti -fno-strict-aliasing)
 
 set(CURSES_NEED_NCURSES TRUE)
 set(CURSES_NEED_WIDE TRUE)
@@ -28,12 +27,6 @@ pkg_check_modules(PCRE REQUIRED libpcre2-8)
 target_include_directories(choose PRIVATE ${PCRE_INCLUDEDIR})
 target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES})
 
-if (LETTER_WRAP)
-  target_compile_definitions(choose PRIVATE
-    CHOOSE_PROMPT_LETTER_WRAP
-  )
-endif()
-
 if (NO_SCROLL_BORDER)
   target_compile_definitions(choose PRIVATE
     CHOOSE_NO_SCROLL_BORDER
@@ -44,7 +37,7 @@ install(TARGETS choose DESTINATION /usr/bin)
 
 # injector
 
-add_executable(choose_injector src/choose_injector.cpp)
+add_executable(choose_injector scripts/choose_injector.cpp)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(choose_injector PRIVATE -Os -fno-rtti -fno-strict-aliasing)
 endif()
@@ -60,3 +53,21 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   COMMAND scripts/hist_installer.bash
 )
+
+if(BUILD_TESTING)
+
+  set(BOOST_MIN_VERSION "1.63.0")
+  find_package(Boost REQUIRED COMPONENTS unit_test_framework)
+  add_executable(test src/test.cpp)
+  target_include_directories(test PRIVATE src)
+  target_compile_options(test PRIVATE -Wall -Wextra -O0 -g)
+  target_link_libraries(test PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
+
+  target_include_directories(test PRIVATE ${CURSES_INCLUDE_DIRS})
+  target_link_libraries(test PRIVATE ${CURSES_LIBRARIES})
+  target_compile_options(test PRIVATE ${CURSES_CFLAGS})
+
+  target_include_directories(test PRIVATE ${PCRE_INCLUDEDIR})
+  target_link_libraries(test PRIVATE ${PCRE_LIBRARIES})
+
+endif()
