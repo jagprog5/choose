@@ -131,12 +131,19 @@ BOOST_AUTO_TEST_CASE(test_bytes_required) {
 }
 
 BOOST_AUTO_TEST_CASE(test_decrement_until_not_separating_multibyte) {
+  // valgrind was giving a false positive here regarding use of garbage memory
+  // within boost test, fixed it by writing the tests in a specific way, var "r"
   const char none[] = { continuation, continuation };
-  const char* pos = &*std::crbegin(none);
-  BOOST_REQUIRE_EQUAL(choose::str::utf8::decrement_until_not_separating_multibyte(pos, none, &*std::cend(none)), pos);
-  const char* end = &*std::cend(none);
-  BOOST_REQUIRE_EQUAL(choose::str::utf8::decrement_until_not_separating_multibyte(end, none, &*std::cend(none)), end);
-
+  {
+    const char* pos = &*std::crbegin(none);
+    bool r = choose::str::utf8::decrement_until_not_separating_multibyte(pos, none, &*std::cend(none)) == pos;
+    BOOST_REQUIRE(r);
+  }
+  {
+    const char* end = &*std::cend(none);
+    bool r = choose::str::utf8::decrement_until_not_separating_multibyte(end, none, &*std::cend(none)) == end;
+    BOOST_REQUIRE(r);
+  }
   const char vals[] = { continuation, one, continuation };
   const char* on_it = vals + 1;
   BOOST_REQUIRE_EQUAL(choose::str::utf8::decrement_until_not_separating_multibyte(on_it, vals, &*std::cend(vals)), on_it);
