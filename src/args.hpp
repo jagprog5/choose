@@ -1,6 +1,7 @@
 #pragma once
 #include <errno.h>
 #include <getopt.h>
+#include <unistd.h>
 #include <cassert>
 #include <cstring>
 #include <variant>
@@ -64,6 +65,7 @@ struct Arguments {
   typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
   // max indicates unset
   typename std::vector<int>::size_type out = std::numeric_limits<decltype(out)>::max();
+  // skip the interface
   bool out_set() const { return out != std::numeric_limits<decltype(out)>::max(); }
 
   // max indicates unset
@@ -83,14 +85,19 @@ struct Arguments {
   // primary is either the input separator if match = false, or the match target otherwise
   regex::code primary = 0;
 
-  // a special case which doesn't require storing any of the tokens,
+  // testing purposes. if null, uses stdin and stdout.
+  // if not null, files must be closed by the callee
+  FILE* input;
+  FILE* output;
+
+  // a subset of out_set() which doesn't require storing any of the tokens.
   // instead just send straight to the output
   bool is_direct_output() const {
     return out_set() && !sort && !unique && !flip;
   }
 
   // a subset of is_direct_output() which allows for simplified logic and avoids
-  // a copy of the input 
+  // a copy of the input
   bool is_basic() const {
     bool has_modifying_op = false;
     for (const auto& op : ordered_ops) {
@@ -382,10 +389,12 @@ void print_help_message() {
 // https://stackoverflow.com/a/69177115
 #define OPTIONAL_ARGUMENT_IS_PRESENT ((optarg == NULL && optind < argc && argv[optind][0] != '-') ? (bool)(optarg = argv[optind++]) : (optarg != NULL))
 
-// this function may call exit
-Arguments handle_args(int argc, char* const* argv) {
+// this function may call exit. input and output is for testing purposes; if
+// unspecified, uses stdin and stdout, otherwise must be managed be the callee
+// (e.g. fclose)
+Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL) {
   UncompiledCodes uncompiled_output;
-  Arguments output;
+  Arguments ret;
   bool arg_has_errors = false;
   bool bout_separator_set = false;
   while (1) {
@@ -456,24 +465,24 @@ Arguments handle_args(int argc, char* const* argv) {
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("retain-limit", name) == 0) {
             long v;
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(output.retain_limit)>::max(), &arg_has_errors, name, argc, argv);
-            output.retain_limit = v;
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.retain_limit)>::max(), &arg_has_errors, name, argc, argv);
+            ret.retain_limit = v;
           } else if (strcmp("in", name) == 0) {
             long v;
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(output.in)>::max(), &arg_has_errors, name, argc, argv);
-            output.in = v;
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
+            ret.in = v;
           } else if (strcmp("max-lookbehind", name) == 0) {
             long v;
             parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
-            output.max_lookbehind = v;
+            ret.max_lookbehind = v;
           } else if (strcmp("min-read", name) == 0) {
             long v;
             parse_ul(optarg, &v, 1, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
-            output.min_read = v;
+            ret.min_read = v;
           } else if (strcmp("out", name) == 0) {
             long v;
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(output.out)>::max() - 1, &arg_has_errors, name, argc, argv);
-            output.out = v;
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);
+            ret.out = v;
           } else if (strcmp("in-index", name) == 0) {
             UncompiledOrderedOp op;
             op.type = UncompiledOrderedOp::INPUT_INDEX;
@@ -525,25 +534,25 @@ Arguments handle_args(int argc, char* const* argv) {
           if (strcmp("out", name) == 0) {
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
               long v;
-              parse_ul(optarg, &v, 0, std::numeric_limits<decltype(output.out)>::max() - 1, &arg_has_errors, name, argc, argv);
-              output.out = v;
+              parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);
+              ret.out = v;
             } else {
-              output.out = std::numeric_limits<decltype(output.out)>::max() - 1;
+              ret.out = std::numeric_limits<decltype(ret.out)>::max() - 1;
             }
           } else if (strcmp("flip", name) == 0) {
-            output.flip = true;
+            ret.flip = true;
           } else if (strcmp("match", name) == 0) {
-            output.match = true;
+            ret.match = true;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
           } else if (strcmp("sort-reverse", name) == 0) {
-            output.sort = true;
-            output.sort_reverse = true;
+            ret.sort = true;
+            ret.sort_reverse = true;
           } else if (strcmp("selection-order", name) == 0) {
-            output.selection_order = true;
+            ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
-            output.tenacious = true;
+            ret.tenacious = true;
           } else if (strcmp("in-index", name) == 0) {
             UncompiledOrderedOp op;
             op.type = UncompiledOrderedOp::INPUT_INDEX;
@@ -579,7 +588,7 @@ Arguments handle_args(int argc, char* const* argv) {
             }
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("use-delimiter", name) == 0) {
-            output.use_input_delimiter = true;
+            ret.use_input_delimiter = true;
           } else if (strcmp("utf", name) == 0) {
             uncompiled_output.re_options |= PCRE2_UTF;
           } else if (strcmp("utf-allow-invalid", name) == 0) {
@@ -613,22 +622,22 @@ Arguments handle_args(int argc, char* const* argv) {
         print_help_message();
         break;
       case 'd':
-        output.bout_no_delimit = true;
+        ret.bout_no_delimit = true;
         break;
       case 'e':
-        output.end = true;
+        ret.end = true;
         break;
       case 'i':
         uncompiled_output.re_options |= PCRE2_CASELESS;
         break;
       case 'm':
-        output.multiple_selections = true;
+        ret.multiple_selections = true;
         break;
       case 'r':
         uncompiled_output.re_options &= ~PCRE2_LITERAL;
         break;
       case 's':
-        output.sort = true;
+        ret.sort = true;
         break;
       case 't':
         if (OPTIONAL_ARGUMENT_IS_PRESENT) {
@@ -636,22 +645,22 @@ Arguments handle_args(int argc, char* const* argv) {
             ++optarg;
           }
           long v;
-          parse_ul(optarg, &v, 0, std::numeric_limits<decltype(output.in)>::max(), &arg_has_errors, "take", argc, argv);
-          output.in = v;
+          parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, "take", argc, argv);
+          ret.in = v;
         }
-        output.out = std::numeric_limits<decltype(output.out)>::max() - 1;
+        ret.out = std::numeric_limits<decltype(ret.out)>::max() - 1;
         break;
       case 'u':
-        output.unique = true;
+        ret.unique = true;
         break;
       case 'y':
         // these options are made available since null can't be typed as a command line arg
         // there's precedent elsewhere, e.g. find -print0 -> xargs -0
-        output.bout_separator = {'\0'};
+        ret.bout_separator = {'\0'};
         bout_separator_set = true;
         break;
       case 'z':
-        output.out_separator = {'\0'};
+        ret.out_separator = {'\0'};
         break;
       case '0':
         uncompiled_output.primary = "\\x00";
@@ -659,17 +668,17 @@ Arguments handle_args(int argc, char* const* argv) {
         break;
       case 'o': {
         size_t len = std::strlen(optarg);
-        output.out_separator.resize(len);
-        std::memcpy(output.out_separator.data(), optarg, len * sizeof(char));
+        ret.out_separator.resize(len);
+        std::memcpy(ret.out_separator.data(), optarg, len * sizeof(char));
       } break;
       case 'b': {
         size_t len = std::strlen(optarg);
-        output.bout_separator.resize(len);
-        std::memcpy(output.bout_separator.data(), optarg, len * sizeof(char));
+        ret.bout_separator.resize(len);
+        std::memcpy(ret.bout_separator.data(), optarg, len * sizeof(char));
         bout_separator_set = true;
       } break;
       case 'p':
-        output.prompt = optarg;
+        ret.prompt = optarg;
         break;
       case 'f':
         UncompiledOrderedOp op;
@@ -681,11 +690,11 @@ Arguments handle_args(int argc, char* const* argv) {
   }
 
   if (!bout_separator_set) {
-    output.bout_separator = output.out_separator;
+    ret.bout_separator = ret.out_separator;
   }
 
   if (!uncompiled_output.primary) {
-    if (output.match) {
+    if (ret.match) {
       // this isn't needed for any mechanical reason, only that the caller isn't doing something sane.
       arg_error_preamble(argc, argv);
       fputs("the positional arg must be specified with --match\n", stderr);
@@ -699,13 +708,26 @@ Arguments handle_args(int argc, char* const* argv) {
     exit(EXIT_FAILURE);
   }
 
-  if (isatty(fileno(stdin))) {
-    print_help_message();
+  if (input) {
+    ret.input = input;
+  } else {
+    ret.input = stdin;
+  }
+
+  if (output) {
+    ret.output = output;
+  } else {
+    ret.output = stdout;
+  }
+
+  if (isatty(fileno(ret.input))) {
+    int exit_code = puts("Try 'choose --help' for more information.") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    exit(exit_code);
   }
 
   // compile the arguments now that the entire context has been obtained
-  uncompiled_output.compile(output);
-  return output;
+  uncompiled_output.compile(ret);
+  return ret;
 }
 
 }  // namespace choose

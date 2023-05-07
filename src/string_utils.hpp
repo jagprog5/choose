@@ -3,23 +3,25 @@
 #include <algorithm>
 #include <cstring>
 #include <cwchar>
+#include <cwctype>
 #include <iostream>
-#include <vector>
 #include <optional>
+#include <vector>
 
 namespace choose {
 
 namespace str {
 
 // gives a method for displaying non-printing ascii characters in the interface
-// returns null if an escape sequence it not needed
-const char* get_escape_sequence(wchar_t ch) {
+// returns null if there isn't a sequence
+template<typename charT>
+const char* get_escape_sequence(charT ch) {
   // the escape sequence will first be this:
   // https://en.wikipedia.org/wiki/Escape_sequences_in_C#Table_of_escape_sequences
   // and if it doesn't exist there, then it takes the letters here:
   // https://flaviocopes.com/non-printable-ascii-characters/
   switch (ch) {
-    case L'\0':
+    case 0:
       return "\\0";
       break;
     case 1:
@@ -40,25 +42,25 @@ const char* get_escape_sequence(wchar_t ch) {
     case 6:
       return "ACK";
       break;
-    case L'\a':
+    case 7:
       return "\\a";
       break;
-    case L'\b':
+    case 8:
       return "\\b";
       break;
-    case L'\t':
+    case 9:
       return "\\t";
       break;
-    case L'\n':
+    case 10:
       return "\\n";
       break;
-    case L'\v':
+    case 11:
       return "\\v";
       break;
-    case L'\f':
+    case 12:
       return "\\f";
       break;
-    case L'\r':
+    case 13:
       return "\\r";
       break;
     case 14:
@@ -121,75 +123,6 @@ const char* get_escape_sequence(wchar_t ch) {
   }
 }
 
-bool visible(wchar_t ch) {
-  // handling null is not necessary in this function because of the context that
-  // it is used. context 1: in the interface, if a line only contains characters
-  // that are not visibly printed, then the line is displayed in a special way.
-  // in this case null is handled by the get_escape_sequence. context 2: in the
-  // prompt word wrapping, the prompt itself is null terminating
-  switch (ch) {
-    // https://invisible-characters.com/#:~:text=Invisible%20Unicode%20characters%3F,%2B2800%20BRAILLE%20PATTERN%20BLANK).
-    case L'\t':    // 0009
-    case L' ':     // 0020
-    case L' ':     // 00a0
-    case L'­':     // 00ad
-    case L'͏':      // 034f
-    case L'؜':    // 061c
-    case L'ᅟ':    // 115f
-    case L'ᅠ':     // 1160
-    case L'឴':      // 17b4
-    case L'឵':      // 17b5
-    case L'᠎':   // 180e
-    case L' ':     // 2000
-    case L' ':     // 2001
-    case L' ':     // 2002
-    case L' ':     // 2003
-    case L' ':     // 2004
-    case L' ':     // 2005
-    case L' ':     // 2006
-    case L' ':     // 2007
-    case L' ':     // 2008
-    case L' ':     // 2009
-    case L' ':     // 200a
-    case L'​':   // 200b
-    case L'‌':   // 200c
-    case L'‍':   // 200d
-    case L'‎':   // 200e
-    case L'‏':   // 200f
-    case L' ':     // 202f
-    case L' ':     // 205f
-    case L'⁠':   // 2060
-    case L'⁡':   // 2061
-    case L'⁢':   // 2062
-    case L'⁣':   // 2063
-    case L'⁤':   // 2064
-    case L'⁫':   // 206b
-    case L'⁬':   // 206c
-    case L'⁭':   // 206d
-    case L'⁮':   // 206e
-    case L'⁯':   // 206f
-    case L'　':    // 3000
-    case L'⠀':     // 2800
-    case L'ㅤ':    // 3164
-    case L'﻿':   // feff
-    case L'ﾠ':     // ffa0
-    case L'𝅙':     // 1d159
-    case L'𝅳':  // 1d173
-    case L'𝅴':  // 1d174
-    case L'𝅵':  // 1d175
-    case L'𝅶':  // 1d176
-    case L'𝅷':  // 1d177
-    case L'𝅸':  // 1d178
-    case L'𝅹':  // 1d179
-    case L'𝅺':  // 1d17a
-      return false;
-      break;
-    default:
-      return true;
-      break;
-  }
-}
-
 template <typename T>
 void append_to_buffer(std::vector<T>& buf, const T* begin, const T* end) {
   buf.resize(buf.size() + (end - begin));
@@ -231,7 +164,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
     };
 
     auto remove_trailing_invisible = [](std::vector<wchar_t>& str) {
-      while (str.size() > 0 && !visible(*str.rbegin())) {
+      while (str.size() > 0 && std::iswspace(*str.rbegin())) {
         str.pop_back();
       }
     };
@@ -253,16 +186,16 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
       available_width -= ch_width;
 
       // there is not enough space to insert ch into this line
-      // != 0 check so a single character should never wrap
+      // > 0 check so a single character should never wrap
       if (available_width < 0 && ret.rbegin()->size() > 0) {
         available_width = INITIAL_AVAILABLE_WIDTH - ch_width;
-        bool next_character_visible = visible(ch);
-        bool previous_character_visible = visible(*ret.rbegin()->rbegin());
+        bool next_character_visible = !std::iswspace(ch);
+        bool previous_character_visible = !std::iswspace(*ret.rbegin()->rbegin());
         bool wrap_separates_word = next_character_visible && previous_character_visible;
 
         // remove the leading white space by reading and dropping the input
         // if there was nothing except whitespace then abort the wrap
-        while (!visible(ch)) {
+        while (std::iswspace(ch)) {
           if (pos >= prompt_terminator) {
             remove_trailing_invisible(*ret.rbegin());
             goto get_out;
@@ -275,7 +208,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
         // if the line entirely contained whitespace then clear and reuse line
         bool has_visible = false;
         for (auto elem : *ret.rbegin()) {
-          if (visible(elem)) {
+          if (!std::iswspace(elem)) {
             has_visible = true;
             break;
           }
@@ -293,7 +226,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
           if (wrap_separates_word) {
             // find the last visible character in the string
             auto pos = last_line.end() - 1;
-            while (pos >= last_line.begin() && visible(*pos)) {
+            while (pos >= last_line.begin() && !std::iswspace(*pos)) {
               --pos;
             }
 
@@ -320,39 +253,39 @@ get_out:
   return ret;
 }
 
-void write_stdout(const char* begin, const char* end) {
+void write_f(FILE* f, const char* begin, const char* end) {
   size_t size = end - begin;
-  if (fwrite(begin, sizeof(char), size, stdout) != size) {
+  if (fwrite(begin, sizeof(char), size, f) != size) {
     throw std::runtime_error("output err");
   }
 }
 
-void write_stdout(const std::vector<char>& v) {
-  write_stdout(&*v.cbegin(), &*v.cend());
+void write_f(FILE* f, const std::vector<char>& v) {
+  write_f(f, &*v.cbegin(), &*v.cend());
 }
 
 // choose either outputs to stdout, or it queues up all the output and sends it later
-void write_optional_buffer(std::optional<std::vector<char>>& output, const std::vector<char>& in) {
+void write_optional_buffer(FILE* f, std::optional<std::vector<char>>& output, const std::vector<char>& in) {
   if (output) {
     std::vector<char>& v = *output;
     append_to_buffer(v, &*in.cbegin(), &*in.cend());
   } else {
-    write_stdout(in);
+    write_f(f, in);
   }
 }
 
 // write the queued up output
-void finish_optional_buffer(const std::optional<std::vector<char>>& output) {
+void finish_optional_buffer(FILE* f, const std::optional<std::vector<char>>& output) {
   if (output) {
     const std::vector<char>& q = *output;
-    write_stdout(q);
+    write_f(f, q);
   }
 }
 
 // writes the ascii representation of value into v, separated by a space, at the beginning or end
 void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
   size_t extension = value == 0 ? 1 : (size_t(std::log10(value)) + 1);
-  extension += 1; // +1 for space
+  extension += 1;  // +1 for space
   size_t new_size = v.size() + extension;
   v.resize(new_size);
   if (align_before) {
@@ -368,7 +301,7 @@ void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
   } else {
     char* ptr = &*v.end() - extension;
     *ptr++ = ' ';
-    if (extension > 2) { // aka value > 9
+    if (extension > 2) {  // aka value > 9
       sprintf(ptr, "%zu", value / 10);
     }
     // overwrite the null written by sprintf
@@ -428,7 +361,8 @@ const char* find_last_non_continuation(const char* begin, const char* end) {
 // returns a negative value on error
 int bytes_required(const char* begin, const char* end) {
   const char* pos = find_last_non_continuation(begin, end);
-  if (pos == NULL) return -1;
+  if (pos == NULL)
+    return -1;
   return length(*pos) - (end - pos);
 }
 

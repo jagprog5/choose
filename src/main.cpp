@@ -1,5 +1,5 @@
 #include <errno.h>
-#include <locale.h>
+#include <locale>
 #include <unistd.h>
 #include <cmath>
 #include <csignal>
@@ -185,8 +185,8 @@ struct UIState {
 
     if (args.tenacious) {
       selections.clear();
-      if (os.output_is_stdout()) {
-        if (fflush(stdout) == EOF) {
+      if (!os.uses_buffer()) {
+        if (fflush(args.output) == EOF) {
           throw std::runtime_error("output err");
         }
       }
@@ -342,7 +342,7 @@ struct UIState {
             // null char was decoded. this is perfectly valid
             num_bytes = 1;  // keep going
           } else if (num_bytes == (size_t)-1) {
-            // this sets errno, but we can try?? to keep going
+            // this sets errno, but we can keep going
             num_bytes = 1;
             char_is_invalid = true;
           } else if (num_bytes == (size_t)-2) {
@@ -375,7 +375,7 @@ struct UIState {
               mvwaddwstr(selection_window, y, x, ch);
             }
             x += len;
-            if (choose::str::visible(ch[0])) {
+            if (!std::iswspace(ch[0])) {
               invisible_only = false;
             }
           }
@@ -432,29 +432,24 @@ struct UIState {
 int main(int argc, char* const* argv) {
   setlocale(LC_ALL, "");  // for utf8
   choose::Arguments args = choose::handle_args(argc, argv);
-  std::vector<choose::Token> tokens = choose::create_tokens(args);
+  std::vector<choose::Token> tokens;
+  try {
+    tokens = choose::create_tokens(args);
+  } catch (const choose::termination_request&) {
+    exit(EXIT_SUCCESS);
+  }
+
   if (signal(SIGINT, sigint_handler) == SIG_IGN) {
     signal(SIGINT, SIG_IGN);
   }
 
-  // argument that skips the interface
-  if (args.out_set()) {
-    choose::TokenOutputStream tos(args);
-    auto pos = tokens.begin();
-    while (pos != tokens.end() && args.out-- > 0) {
-      tos.write_output(*pos++);
-    }
-    tos.finish_output();
-    return EXIT_SUCCESS;
-  }
-
   UIState state{
-      std::move(args),               //
-      std::move(tokens),             //
-      (bool)isatty(fileno(stdout)),  //
-      choose::BatchOutputStream(     //
-          state.args,                //
-          // queue up stdout and send it at the end if the output if to the shell
+      std::move(args),                    //
+      std::move(tokens),                  //
+      (bool)isatty(fileno(args.output)),  //
+      choose::BatchOutputStream(          //
+          state.args,                     //
+          // queue up output and send it at the end if the output if to the shell
           state.args.tenacious && state.output_is_tty ? std::optional(std::vector<char>()) : std::nullopt  //
           ),
   };
