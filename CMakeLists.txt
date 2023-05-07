@@ -55,8 +55,9 @@ add_custom_command(
 )
 
 if(BUILD_TESTING)
-
   set(BOOST_MIN_VERSION "1.63.0")
+  # valgrind indicates mem leak within boost when using shared lib
+  set(Boost_USE_STATIC_LIBS ON)
   find_package(Boost REQUIRED COMPONENTS unit_test_framework)
   add_executable(test src/test.cpp)
   target_include_directories(test PRIVATE src)

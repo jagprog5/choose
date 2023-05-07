@@ -1,8 +1,8 @@
 #include <errno.h>
-#include <locale>
 #include <unistd.h>
 #include <cmath>
 #include <csignal>
+#include <locale>
 #include "args.hpp"
 #include "ncurses_wrapper.hpp"
 #include "string_utils.hpp"
@@ -87,9 +87,13 @@ struct UIState {
   void on_resize() {
   again:
     getmaxyx(stdscr, num_rows, num_columns);
-    if (num_rows < (args.prompt ? 2 : 1) || num_columns < 1) {
+    int min_num_rows = 1;
+    if (args.prompt)
+      ++min_num_rows;
+    if (num_rows < min_num_rows || num_columns < 1) {
       // too small to be functional. lock out everything until it's big enough
-      if (num_rows > 0 || num_columns > 0) {
+      if (num_rows > 0 && num_columns > 0) {
+        clear();
         mvprintw(0, 0, "too small!");
       }
       int ch;
@@ -157,6 +161,10 @@ struct UIState {
   }
 
   void handle_confirmation_input() {
+    if (tokens.empty()) {
+      choose::nc::endwin();
+      return;
+    }
     if (args.tenacious) {
       if (output_is_tty) {
         // output is being queued up, not being sent right now
@@ -244,6 +252,8 @@ struct UIState {
       }
     } else if (ch == '\n' || ch == 'd' || ch == 'f') {
       handle_confirmation_input();
+      if (tokens.empty())
+        return false;
       return args.tenacious;
     } else {
       // ========================== movement commands ==========================
@@ -289,136 +299,140 @@ struct UIState {
 
   void draw_tui() {
     werase(selection_window);
-    int selection_text_space = selections.size() == 0 || !args.selection_order ? 0 : int(std::log10(selections.size())) + 1;
 
-    for (int y = 0; y < selection_rows; ++y) {
-      // =============================== draw line =============================
+    if (tokens.empty()) {
+      wattron(selection_window, A_DIM);
+      const char* no_tokens_msg = "No tokens.";
+      mvwprintw(selection_window, selection_rows / 2, num_columns / 2 - strlen(no_tokens_msg) / 2, "No tokens.");
+      wattroff(selection_window, A_DIM);
+      goto get_out;
+    }
 
-      int current_row = y + scroll_position;
-      if (current_row >= 0 && current_row < (int)tokens.size()) {
-        bool row_highlighted = current_row == selection_position;
-        auto it = std::find(selections.cbegin(), selections.cend(), current_row);
-        bool row_selected = it != selections.cend();
+    {
+      int selection_text_space = selections.size() == 0 || !args.selection_order ? 0 : int(std::log10(selections.size())) + 1;
 
-        if (args.selection_order && row_selected) {
-          wattron(selection_window, A_DIM);
-          mvwprintw(selection_window, y, 0, "%d", (int)(1 + it - selections.begin()));
-          wattroff(selection_window, A_DIM);
-        }
+      for (int y = 0; y < selection_rows; ++y) {
+        // =============================== draw line =============================
 
-        bool line_is_highlighted = row_highlighted || row_selected;
-        if (line_is_highlighted) {
-          wattron(selection_window, A_BOLD);
-          if (row_highlighted) {
-            mvwaddch(selection_window, y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
-          }
-          if (row_selected) {
-            wattron(selection_window, COLOR_PAIR(PAIR_SELECTED));
-          }
-        }
+        int current_row = y + scroll_position;
+        if (current_row >= 0 && current_row < (int)tokens.size()) {
+          bool row_highlighted = current_row == selection_position;
+          auto it = std::find(selections.cbegin(), selections.cend(), current_row);
+          bool row_selected = it != selections.cend();
 
-        // 2 leaves a space for the indicator '>' and a single space
-        const int INITIAL_X = selection_text_space + 2;
-        int x = INITIAL_X;
-        auto pos = &*tokens[y + scroll_position].buffer.cbegin();
-        auto end = &*tokens[y + scroll_position].buffer.cend();
-
-        // ============================ draw token =============================
-
-        // if the token only contains chars which are not drawn visibly
-        bool invisible_only = true;
-        std::mbstate_t ps = std::mbstate_t();  // text decode state gets reset per token
-        while (pos < end) {
-          // a wchar_t string of length 1 for ncurses drawing
-          // (only at [0] is set)
-          wchar_t ch[2];
-          ch[1] = L'\0';
-
-          const char* escape_sequence = 0;  // draw non printing ascii via escape sequence
-          bool char_is_invalid = false;     // decode error is represented by ?
-
-          size_t num_bytes = std::mbrtowc(&ch[0], pos, end - pos, &ps);
-          if (num_bytes == 0) {
-            // null char was decoded. this is perfectly valid
-            num_bytes = 1;  // keep going
-          } else if (num_bytes == (size_t)-1) {
-            // this sets errno, but we can keep going
-            num_bytes = 1;
-            char_is_invalid = true;
-          } else if (num_bytes == (size_t)-2) {
-            // the remaining bytes in the token do not complete a character
-            num_bytes = end - pos;  // go to the end
-            char_is_invalid = true;
-          }
-
-          pos += num_bytes;
-
-          if (char_is_invalid) {
-            escape_sequence = "?";
-          } else {
-            escape_sequence = choose::str::get_escape_sequence(ch[0]);
-          }
-
-          // the printing functions handle bound checking
-          if (escape_sequence) {
-            int len = strlen(escape_sequence);
-            if (x + len <= num_columns) {  // check if drawing the char would wrap
-              wattron(selection_window, A_DIM);
-              mvwaddstr(selection_window, y, x, escape_sequence);
-              wattroff(selection_window, A_DIM);
-            }
-            x += len;
-            invisible_only = false;
-          } else {
-            int len = wcwidth(ch[0]);
-            if (x + len <= num_columns) {
-              mvwaddwstr(selection_window, y, x, ch);
-            }
-            x += len;
-            if (!std::iswspace(ch[0])) {
-              invisible_only = false;
-            }
-          }
-          // draw ... at the right side of the screen if the x exceeds the width for this line
-          if (x > num_columns) {
+          if (args.selection_order && row_selected) {
             wattron(selection_window, A_DIM);
-            mvwaddstr(selection_window, y, num_columns - 3, "...");
+            mvwprintw(selection_window, y, 0, "%d", (int)(1 + it - selections.begin()));
             wattroff(selection_window, A_DIM);
-            break;  // cancel printing the rest of the token
           }
-        }
 
-        if (invisible_only) {
-          const choose::Token& token = tokens[y + scroll_position];
-          wattron(selection_window, A_DIM);
-          mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", (int)(token.buffer.end() - token.buffer.begin()));
-          wattroff(selection_window, A_DIM);
-        }
+          bool line_is_highlighted = row_highlighted || row_selected;
+          if (line_is_highlighted) {
+            wattron(selection_window, A_BOLD);
+            if (row_highlighted) {
+              mvwaddch(selection_window, y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
+            }
+            if (row_selected) {
+              wattron(selection_window, COLOR_PAIR(PAIR_SELECTED));
+            }
+          }
 
-        if (line_is_highlighted) {
-          wattroff(selection_window, A_BOLD);
-          if (row_selected) {
-            wattroff(selection_window, COLOR_PAIR(PAIR_SELECTED));
+          // 2 leaves a space for the indicator '>' and a single space
+          const int INITIAL_X = selection_text_space + 2;
+          int x = INITIAL_X;
+          auto pos = &*tokens[y + scroll_position].buffer.cbegin();
+          auto end = &*tokens[y + scroll_position].buffer.cend();
+
+          // ============================ draw token =============================
+
+          // if the token only contains chars which are not drawn visibly
+          bool invisible_only = true;
+          std::mbstate_t ps = std::mbstate_t();  // text decode state gets reset per token
+          while (pos < end) {
+            // a wchar_t string of length 1 for ncurses drawing
+            // (only at [0] is set)
+            wchar_t ch[2];
+            ch[1] = L'\0';
+
+            const char* escape_sequence = 0;  // draw non printing ascii via escape sequence
+            bool char_is_invalid = false;     // decode error is represented by ?
+
+            size_t num_bytes = std::mbrtowc(&ch[0], pos, end - pos, &ps);
+            if (num_bytes == 0) {
+              // null char was decoded. this is perfectly valid
+              num_bytes = 1;  // keep going
+            } else if (num_bytes == (size_t)-1) {
+              // this sets errno, but we can keep going
+              num_bytes = 1;
+              char_is_invalid = true;
+            } else if (num_bytes == (size_t)-2) {
+              // the remaining bytes in the token do not complete a character
+              num_bytes = end - pos;  // go to the end
+              char_is_invalid = true;
+            }
+
+            pos += num_bytes;
+
+            if (char_is_invalid) {
+              escape_sequence = "?";
+            } else {
+              escape_sequence = choose::str::get_escape_sequence(ch[0]);
+            }
+
+            // the printing functions handle bound checking
+            if (escape_sequence) {
+              int len = strlen(escape_sequence);
+              if (x + len <= num_columns) {  // check if drawing the char would wrap
+                wattron(selection_window, A_DIM);
+                mvwaddstr(selection_window, y, x, escape_sequence);
+                wattroff(selection_window, A_DIM);
+              }
+              x += len;
+              invisible_only = false;
+            } else {
+              int len = wcwidth(ch[0]);
+              if (x + len <= num_columns) {
+                mvwaddwstr(selection_window, y, x, ch);
+              }
+              x += len;
+              if (!std::iswspace(ch[0])) {
+                invisible_only = false;
+              }
+            }
+            // draw ... at the right side of the screen if the x exceeds the width for this line
+            if (x > num_columns) {
+              wattron(selection_window, A_DIM);
+              mvwaddstr(selection_window, y, num_columns - 3, "...");
+              wattroff(selection_window, A_DIM);
+              break;  // cancel printing the rest of the token
+            }
+          }
+
+          if (invisible_only) {
+            const choose::Token& token = tokens[y + scroll_position];
+            wattron(selection_window, A_DIM);
+            mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", (int)(token.buffer.end() - token.buffer.begin()));
+            wattroff(selection_window, A_DIM);
+          }
+
+          if (line_is_highlighted) {
+            wattroff(selection_window, A_BOLD);
+            if (row_selected) {
+              wattroff(selection_window, COLOR_PAIR(PAIR_SELECTED));
+            }
           }
         }
       }
-    }
 
+    }  // scope
+
+  get_out:
     wnoutrefresh(prompt_window);  // fine even if null
     wnoutrefresh(selection_window);
     doupdate();
   }
 
   void loop() {
-    if (tokens.size() == 0) {
-      mvprintw(0, 0, "No tokens.");
-      int ch;
-      do {
-        ch = getch();  // wait for any exit or confirmation input
-      } while (ch != '\n' && ch != 'd' && ch != 'f' && ch != KEY_BACKSPACE && ch != 'q' && ch != 27 && !sigint_occurred);
-      choose::nc::endwin();
-      return;
-    }
     on_resize();
     while (true) {
       draw_tui();
@@ -504,12 +518,12 @@ int main(int argc, char* const* argv) {
 
     state.loop();
   } catch (...) {
-  // a note on ncurses:
-  //  - endwin() must be called before program exit. it must not be called twice
-  //    or else the terminal prompt gets put at the bottom)
-  //  - either endwin() or reset_prog_mode() must be called before putting to
-  //    stdout or stderr (or else it goes to the ncurses screen instead)
-  if (!isendwin()) {
+    // a note on ncurses:
+    //  - endwin() must be called before program exit. it must not be called twice
+    //    or else the terminal prompt gets put at the bottom)
+    //  - either endwin() or reset_prog_mode() must be called before putting to
+    //    stdout or stderr (or else it goes to the ncurses screen instead)
+    if (!isendwin()) {
       endwin();
     }
     throw;
