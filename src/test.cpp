@@ -287,7 +287,7 @@ BOOST_AUTO_TEST_CASE(simple) {
 }
 
 BOOST_AUTO_TEST_CASE(simple_basic_output) {
-  // see args.is_basic(); also tests separators 
+  // see args.is_basic(); also tests separators
   choose_output out = run_choose("first\nsecond\nthird", {"--output-separator", " ", "--batch-separator=\n", "-t"});
   choose_output correct_output{to_vec("first second third\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -319,212 +319,185 @@ BOOST_AUTO_TEST_CASE(sort_reverse) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-// BOOST_FIXTURE_TEST_CASE(unique, WriterFixture) {
-//     fputs("this\nis\nis\na\na\ntest", writer);
-//     close_fixture();
-//     auto tokens = create_tokens({"choose", "--unique"});
-//     BOOST_REQUIRE(tokens_equal(tokens, {"this", "is", "a", "test"}));
-// }
+BOOST_AUTO_TEST_CASE(unique) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique"});
+  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(sort_reverse_and_unique, WriterFixture) {
-//     fputs("this\nis\nis\na\na\ntest", writer);
-//     close_fixture();
-//     auto tokens = create_tokens({"choose", "--unique", "--sort-reverse"});
-//     BOOST_REQUIRE(tokens_equal(tokens, {"this", "test", "is", "a"}));
-// }
+BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--sort-reverse"});
+  choose_output correct_output{std::vector<choose::Token>{"this", "test", "is", "a"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(in_limit, WriterFixture) {
-//     fputs("d\nc\nb\na", writer);
-//     close_fixture();
-//     auto tokens = create_tokens({"choose", "--in=3", "--sort"});
-//     BOOST_REQUIRE(tokens_equal(tokens, {"b", "c", "d"}));
-// }
+BOOST_AUTO_TEST_CASE(in_limit) {
+  choose_output out = run_choose("d\nc\nb\na", {"--in=3", "--sort"});
+  choose_output correct_output{std::vector<choose::Token>{"b", "c", "d"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(ordered_ops, WriterFixture) {
-//   fputs("this\nis\nrra\ntest", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "-r", "--sub", "is", "rr", "--rm", "test", "--filter", "rr$"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"thrr", "rr"}));
-// }
+BOOST_AUTO_TEST_CASE(ordered_ops) {
+  choose_output out = run_choose("this\nis\nrra\ntest", {"-r", "--sub", "is", "rr", "--rm", "test", "--filter", "rr$"});
+  choose_output correct_output{std::vector<choose::Token>{"thrr", "rr"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(index_ops, WriterFixture) {
-//   fputs("every\nother\nword\nis\nremoved\n5\n6\n7\n8\n9\n10", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "-r", "--in-index=after", "-f", "[02468]$", "--sub", "(.*) [0-9]+", "$1", "--out-index"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"0 every", "1 word", "2 removed", "3 6", "4 8", "5 10"}));
-// }
+BOOST_AUTO_TEST_CASE(index_ops) {
+  choose_output out = run_choose("every\nother\nword\nis\nremoved\n5\n6\n7\n8\n9\n10", {"-r", "--in-index=after", "-f", "[02468]$", "--sub", "(.*) [0-9]+", "$1", "--out-index"});
+  choose_output correct_output{std::vector<choose::Token>{"0 every", "1 word", "2 removed", "3 6", "4 8", "5 10"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// // these next tests are fine grained checks on create_tokens logic
+BOOST_AUTO_TEST_CASE(check_empty_input) {
+  choose_output out = run_choose("", {"-t"});
+  choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(check_empty_input, WriterFixture) {
-//   close_fixture();
-//   auto tokens = create_tokens({"choose"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {}));
-// }
+BOOST_AUTO_TEST_CASE(check_match_with_groups) {
+  choose_output out = run_choose("abcde", {"-r", "--min-read=1", "--match", "b(c)(d)"});
+  choose_output correct_output{std::vector<choose::Token>{"bcd", "c", "d"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(check_match_with_groups, WriterFixture) {
-//   fputs("abcde", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "-r", "--min-read=1", "--match", "b(c)(d)"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"bcd", "c", "d"}));
-// }
+BOOST_AUTO_TEST_CASE(check_no_match_lookbehind_retained) {
+  // if there is no match, then the input is discarded but it keep enough for the lookbehind
+  choose_output out = run_choose("aaabbbccc", {"--min-read=3", "-r", "--match", "(?<=aaa)bbb"});
+  choose_output correct_output{std::vector<choose::Token>{"bbb"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// // if there is no match, then the input is discarded but it keep enough for the lookbehind
-// BOOST_FIXTURE_TEST_CASE(check_no_match_lookbehind_retained, WriterFixture) {
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--min-read=3", "-r", "--match", "(?<=aaa)bbb"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"bbb"}));
-// }
+BOOST_AUTO_TEST_CASE(check_partial_match_lookbehind_retained) {
+  choose_output out = run_choose("aaabbbccc", {"--min-read=4", "-r", "--match", "(?<=aaa)bbb"});
+  choose_output correct_output{std::vector<choose::Token>{"bbb"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(check_partial_match_lookbehind_retained, WriterFixture) {
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--min-read=4", "-r", "--match", "(?<=aaa)bbb"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"bbb"}));
-// }
+BOOST_AUTO_TEST_CASE(check_no_separator_lookbehind_retained) {
+  choose_output out = run_choose("aaabbbccc", {"--min-read=3", "-r", "(?<=aaa)bbb"});
+  choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(check_no_separator_lookbehind_retained, WriterFixture) {
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--min-read=3", "-r", "(?<=aaa)bbb"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"aaa", "ccc"}));
-// }
+BOOST_AUTO_TEST_CASE(check_partial_separator_lookbehind_retained) {
+  choose_output out = run_choose("aaabbbccc", {"--min-read=4", "-r", "(?<=aaa)bbb"});
+  choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(check_partial_separator_lookbehind_retained, WriterFixture) {
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--min-read=4", "-r", "(?<=aaa)bbb"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"aaa", "ccc"}));
-// }
+BOOST_AUTO_TEST_CASE(separator_no_match) {
+  choose_output out = run_choose("aaabbbccc", {"zzzz", "--min-read=1"});
+  choose_output correct_output{std::vector<choose::Token>{"aaabbbccc"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(separator_no_match, WriterFixture) {
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "zzzz"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"aaabbbccc"}));
-// }
+BOOST_AUTO_TEST_CASE(empty_separator) {
+  // important since PCRE2_NOTEMPTY is used to prevent infinite loop; ensures progress
+  choose_output out = run_choose("aaabbbccc", {""});
+  choose_output correct_output{std::vector<choose::Token>{"aaabbbccc"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(empty_separator, WriterFixture) {
-//   // important since PCRE2_NOTEMPTY is used to prevent infinite loop
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", ""});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"aaabbbccc"}));
-// }
+BOOST_AUTO_TEST_CASE(empty_match_target) {
+  choose_output out = run_choose("aaabbbccc", {"--match", ""});
+  choose_output correct_output{std::vector<choose::Token>{}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(empty_match_target, WriterFixture) {
-//   fputs("aaabbbccc", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--match", ""});
-//   BOOST_REQUIRE(tokens_equal(tokens, {}));
-// }
+BOOST_AUTO_TEST_CASE(input_is_separator) {
+  choose_output out = run_choose("\n", {});
+  choose_output correct_output{std::vector<choose::Token>{""}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(input_is_separator, WriterFixture) {
-//   fputs("\n", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {""}));
-// }
+BOOST_AUTO_TEST_CASE(input_is_separator_use_delimit) {
+  choose_output out = run_choose("\n", {"--use-delimiter"});
+  choose_output correct_output{std::vector<choose::Token>{"", ""}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(input_is_separator_use_delimit, WriterFixture) {
-//   fputs("\n", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--use-delimiter"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"", ""}));
-// }
+BOOST_AUTO_TEST_CASE(check_shrink_excess) {
+  // creates a large subject but resizes internal buffer to remove the bytes that weren't written to
+  choose_output out = run_choose("12345", {"", "--min-read=10000"});
+  choose_output correct_output{std::vector<choose::Token>{"12345"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(check_shrink_excess, WriterFixture) {
-//   // creates a large subject but resizes to remove the bytes that weren't written to.
-//   fputs("12345", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "", "--min-read=10000"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"12345"}));
-// }
+BOOST_AUTO_TEST_CASE(no_multiline) {
+  choose_output out = run_choose("this\nis\na\ntest", {"-r", "--match", "^t"});
+  choose_output correct_output{std::vector<choose::Token>{"t"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(no_multiline, WriterFixture) {
-//   fputs("this\nis\na\ntest", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "-r", "--match", "^t"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"t"}));
-// }
+BOOST_AUTO_TEST_CASE(yes_multiline) {
+  choose_output out = run_choose("this\nis\na\ntest", {"-r", "--multiline", "--match", "^t"});
+  choose_output correct_output{std::vector<choose::Token>{"t", "t"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(yes_multiline, WriterFixture) {
-//   fputs("this\nis\na\ntest", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--multiline", "--match", "^t"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"t", "t"}));
-// }
+BOOST_AUTO_TEST_CASE(begin_of_string) {
+  // I found it surprising that \\A gives a lookbehind of 1. given the
+  // preexisting logic, I expected that the buffer would be removed up to but
+  // not including the t, making it the beginning of the line again. but the
+  // lookbehind of 1 allows characters to be retained, so it is correctly
+  // recognized as not the beginning of the string.
+  choose_output out = run_choose("uaaat", {"-r", "--match", "--min-read=1", "\\A[ut]"});
+  choose_output correct_output{std::vector<choose::Token>{"u"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(begin_of_string, WriterFixture) {
-//   // I found it surprising that \\A gives a lookbehind of 1. given the
-//   // preexisting logic, I expected that the buffer would be removed up to but
-//   // not including the t, making it the beginning of the line again. but the
-//   // lookbehind of 1 allows characters to be retained, so it is correctly
-//   // recognized as not the beginning of the string.
-//   fputs("uaaat", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "-r", "--match", "--min-read=1", "\\A[ut]"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"u"}));
-// }
+BOOST_AUTO_TEST_CASE(end_of_string) {
+  choose_output out = run_choose("uaaat", {"-r", "--match", "--min-read=6", "[ut]\\Z"});
+  choose_output correct_output{std::vector<choose::Token>{"t"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(end_of_string, WriterFixture) {
-//   fputs("uaaat\n", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "-r", "--match", "--min-read=6", "[ut]\\Z"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"t"}));
-// }
+BOOST_AUTO_TEST_CASE(retain_limit_match) {
+  // safety bounds on parasitic matching
+  choose_output out = run_choose("1234", {"-r", "--match", "1234", "--min-read=1", "--retain-limit=3"});
+  choose_output correct_output{std::vector<choose::Token>{}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(retain_limit_match, WriterFixture) {
-//   fputs("1234", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--match", "1234", "--min-read=1", "--retain-limit=3"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {}));
-// }
+BOOST_AUTO_TEST_CASE(retain_limit_separator) {
+  // leading aaaa is to check that the offset is used correctly when the retain limit is hit
+  choose_output out = run_choose("aaaa1234567", {"1234567", "--min-read=3", "--retain-limit=3"});
+  choose_output correct_output{std::vector<choose::Token>{"aaaa1234567"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(retain_limit_separator, WriterFixture) {
-//   // leading aaaa is to check that the offset is used correctly when the retain limit is hit
-//   fputs("aaaa1234567", writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "1234567", "--min-read=3", "--retain-limit=3"});
-//   BOOST_REQUIRE(tokens_equal(tokens, { "aaaa1234567" }));
-// }
+BOOST_AUTO_TEST_CASE(complete_utf8) {
+  // checks that the last utf8 char is completed before sending it to pcre2
+  const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
+  choose_output out = run_choose(ch, {"--min-read=1", "--utf"});
+  choose_output correct_output{std::vector<choose::Token>{ch}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(complete_utf8, WriterFixture) {
-//   // checks that the last utf8 byte is completed before sending it to pcre2
-//   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
-//   fputs(ch, writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--min-read=1", "--utf"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {ch}));
-// }
+BOOST_AUTO_TEST_CASE(utf8_lookback_separates_multibyte) {
+  const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
+  // lookbehind of 4 bytes, reading >=1 character at a time
+  // the lookbehind must be correctly decremented to include the 0xE6 byte
+  const char pattern[] = {'(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
+  choose_output out = run_choose(ch, {"-r", "--max-lookbehind=1", "--min-read=1", "--utf", "--match", pattern});
+  choose_output correct_output{std::vector<choose::Token>{"st"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(utf8_lookback_separates_multibyte, WriterFixture) {
-//   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
-//   fputs(ch, writer);
-//   close_fixture();
-//   // lookbehind of 4 bytes, reading >=1 character at a time
-//   // the lookbehind must be correctly decremented to include the 0xE6 byte
-//   const char pattern[] = {'(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
-//   auto tokens = create_tokens({"choose", "-r", "--max-lookbehind=1", "--min-read=1", "--utf", "--match", pattern});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"st"}));
-// }
+BOOST_AUTO_TEST_CASE(invalid_utf8) {
+  const char ch[] = {(char)0xFF, (char)0b11000000, (char)0b10000000, (char)0b10000000, 't', 'e', 's', 't', 0};
+  choose_output out = run_choose(ch, {"-r", "--min-read=1", "--utf-allow-invalid", "--match", "test"});
+  choose_output correct_output{std::vector<choose::Token>{"test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_FIXTURE_TEST_CASE(invalid_utf8, WriterFixture) {
-//   const char ch[] = {(char)0xFF, (char)0b11000000, (char)0b10000000, (char)0b10000000, 't', 'e', 's', 't', 0};
-//   fputs(ch, writer);
-//   close_fixture();
-//   auto tokens = create_tokens({"choose", "--min-read=1", "--utf-allow-invalid", "--match", "test"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {"test"}));
-// }
-
-// BOOST_FIXTURE_TEST_CASE(invalid_utf8_bytes_still_retained, WriterFixture) {
-//   const char ch[] = {'t', 'e', 's', 't', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
-//   fputs(ch, writer);
-//   close_fixture();
-//   const char result[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
-//   auto tokens = create_tokens({"choose", "--min-read=1", "--utf-allow-invalid", result, "--match"});
-//   BOOST_REQUIRE(tokens_equal(tokens, {result}));
-// }
+BOOST_AUTO_TEST_CASE(invalid_utf8_bytes_still_retained) {
+  const char ch[] = {'t', 'e', 's', 't', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
+  const char result[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
+  choose_output out = run_choose(ch, {"--min-read=1", "--utf-allow-invalid", result, "--match"});
+  choose_output correct_output{std::vector<choose::Token>{result}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -35,16 +35,6 @@ endif()
 
 install(TARGETS choose DESTINATION /usr/bin)
 
-# injector
-
-add_executable(choose_injector scripts/choose_injector.cpp)
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(choose_injector PRIVATE -Os -fno-rtti -fno-strict-aliasing)
-endif()
-
-install(TARGETS choose_injector DESTINATION /usr/bin)
-install(PROGRAMS scripts/choose_injector_wrapper.bash DESTINATION /usr/bin)
-
 # hist
 
 add_custom_command(

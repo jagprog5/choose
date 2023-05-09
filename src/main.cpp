@@ -128,10 +128,6 @@ struct UIState {
       selection_window = choose::nc::newwin(selection_rows, num_columns, selection_window_y, 0);
       if (args.prompt) {
         prompt_window = choose::nc::newwin(prompt_rows, num_columns, prompt_window_y, 0);
-        box(prompt_window, 0, 0);
-        for (size_t i = 0; i < prompt_lines.size(); ++i) {
-          mvwaddwstr(prompt_window, 1 + i, 1, &*prompt_lines[i].begin());
-        }
       }
     } else {
       choose::nc::wresize(selection_window, selection_rows, num_columns);
