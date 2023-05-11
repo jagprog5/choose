@@ -196,7 +196,7 @@ void parse_ul(const char* str, long* out, unsigned long min_inclusive, unsigned 
 
 // this function exits
 void print_version_message() {
-  int exit_code = puts("choose 0.0.0, "
+  int exit_code = puts("choose 0.1.0, "
     "ncurses " choose_xstr(NCURSES_VERSION_MAJOR) "." choose_xstr(NCURSES_VERSION_MINOR) "." choose_xstr(NCURSES_VERSION_PATCH) ", "
     "pcre2 " choose_xstr(PCRE2_MAJOR) "." choose_xstr(PCRE2_MINOR)) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
   exit(exit_code);
