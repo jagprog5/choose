@@ -164,7 +164,7 @@ Match get_match(const char* subject, const match_data& match_data, const char* i
   return Match(subject + ovector[0], subject + ovector[1], identification);
 }
 
-// T is a handler lambda bool(Match), which is called with the match and each match group
+// T is a handler lambda bool(const Match& or Match&&), which is called with the match and each match group
 // the handler should return true iff no other groups should be processed
 // rc is the return value from regex::match
 // returns true iff no other matches or groups should be processed

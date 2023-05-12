@@ -500,4 +500,9 @@ BOOST_AUTO_TEST_CASE(invalid_utf8_bytes_still_retained) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(match_start_after_end) {
+  // \K can be used to set a match beginning after its end. this is guarded for
+  BOOST_REQUIRE_THROW(run_choose("This is a test string.", {"-r", "--match", "test(?=...\\K)"}), std::runtime_error);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
