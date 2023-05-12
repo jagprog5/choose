@@ -339,9 +339,8 @@ void print_help_message() {
       "controls:\n"
       "        confirm selections: enter, d, or f\n"
       "                      exit: q, backspace, escape\n"
-      "        multiple selection: space   <-}\n"
-      "         invert selections: i       <-} enabled with -m\n"
-      "          clear selections: c       <-}\n"
+      "        multiple selection: space   <-- enabled with --multi\n"
+      "          clear selections: c\n"
       "                 scrolling: arrow/page up/down, home/end, "
 #ifdef BUTTON5_PRESSED
       "mouse scroll, "

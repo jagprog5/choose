@@ -69,6 +69,15 @@ It supports lookarounds / full pcre2 syntax, and can match against patterns in t
 echo "aaabbbccc" | choose -r --match "(?<=aaa)bbb(...)" -t
 ```
 
+## Stream Editing
+
+sed-like behaviour can be done like this:
+
+```bash
+# like sed 's/a/b/g'
+echo -n "abcdabcde" | choose $'' --sub a b --out --no-delimit
+```
+
 ## Documentation
 
 ```bash
