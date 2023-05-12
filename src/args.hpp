@@ -92,9 +92,7 @@ struct Arguments {
 
   // a subset of out_set() which doesn't require storing any of the tokens.
   // instead just send straight to the output
-  bool is_direct_output() const {
-    return out_set() && !sort && !unique && !flip;
-  }
+  bool is_direct_output() const { return out_set() && !sort && !unique && !flip; }
 
   // a subset of is_direct_output() which allows for simplified logic and avoids
   // a copy of the input
