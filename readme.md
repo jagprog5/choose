@@ -1,4 +1,5 @@
 [![Tests](https://github.com/jagprog5/choose/actions/workflows/tests.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/tests.yml)
+[![Fuzz](https://github.com/jagprog5/choose/actions/workflows/oss-fuzz.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/oss-fuzz.yml)
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
