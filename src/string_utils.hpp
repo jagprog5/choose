@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
@@ -14,7 +15,7 @@ namespace str {
 
 // gives a method for displaying non-printing ascii characters in the interface
 // returns null if there isn't a sequence
-template<typename charT>
+template <typename charT>
 const char* get_escape_sequence(charT ch) {
   // the escape sequence will first be this:
   // https://en.wikipedia.org/wiki/Escape_sequences_in_C#Table_of_escape_sequences
