@@ -1,9 +1,11 @@
 #pragma once
-#include <errno.h>
 #include <getopt.h>
 #include <unistd.h>
 #include <cassert>
+#include <cerrno>
+#include <csignal>
 #include <cstring>
+#include <limits>
 #include <variant>
 #include <vector>
 
@@ -43,7 +45,7 @@ using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
 
-#define RETAIN_LIMIT_DEFAULT 65536
+constexpr ptrdiff_t RETAIN_LIMIT_DEFAULT = 65536;
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
@@ -66,15 +68,21 @@ struct Arguments {
   // max indicates unset
   typename std::vector<int>::size_type out = std::numeric_limits<decltype(out)>::max();
   // skip the interface
-  bool out_set() const { return out != std::numeric_limits<decltype(out)>::max(); }
+  bool out_set() const {  //
+    return out != std::numeric_limits<decltype(out)>::max();
+  }
 
   // max indicates unset
   uint32_t max_lookbehind = std::numeric_limits<uint32_t>::max();
-  bool max_lookbehind_set() const { return max_lookbehind != std::numeric_limits<uint32_t>::max(); }
+  bool max_lookbehind_set() const {  //
+    return max_lookbehind != std::numeric_limits<uint32_t>::max();
+  }
 
   // max indicates unset. can't be 0
   uint32_t min_read = std::numeric_limits<uint32_t>::max();
-  bool min_read_set() const { return min_read != std::numeric_limits<uint32_t>::max(); }
+  bool min_read_set() const {  //
+    return min_read != std::numeric_limits<uint32_t>::max();
+  }
 
   ptrdiff_t retain_limit = RETAIN_LIMIT_DEFAULT;
 
@@ -87,12 +95,14 @@ struct Arguments {
 
   // testing purposes. if null, uses stdin and stdout.
   // if not null, files must be closed by the callee
-  FILE* input;
-  FILE* output;
+  FILE* input = 0;
+  FILE* output = 0;
 
   // a subset of out_set() which doesn't require storing any of the tokens.
   // instead just send straight to the output
-  bool is_direct_output() const { return out_set() && !sort && !unique && !flip; }
+  bool is_direct_output() const {  //
+    return out_set() && !sort && !unique && !flip;
+  }
 
   // a subset of is_direct_output() which allows for simplified logic and avoids
   // a copy of the input
@@ -119,17 +129,21 @@ struct UncompiledOrderedOp {
 
   OrderedOp compile(uint32_t options) const {
     if (type == INPUT_INDEX || type == OUTPUT_INDEX) {
-      return IndexOp(type == INPUT_INDEX ? IndexOp::INPUT : IndexOp::OUTPUT, arg0 ? IndexOp::BEFORE : IndexOp::AFTER);
+      return IndexOp(type == INPUT_INDEX ? IndexOp::INPUT : IndexOp::OUTPUT,  //
+                     arg0 ? IndexOp::BEFORE : IndexOp::AFTER);
     }
 
     auto id = [this]() {
       if (this->type == SUBSTITUTE) {
         return "substitute";
-      } else if (this->type == REMOVE) {
+      }
+      if (this->type == REMOVE) {
         return "remove";
-      } else if (this->type == FILTER) {
+      }
+      if (this->type == FILTER) {
         return "filter";
-      } else {
+      }
+      {
         return "?";  // will never happen in the context this is used
       }
     };
@@ -664,11 +678,13 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         uncompiled_output.re_options &= ~PCRE2_LITERAL;
         break;
       case 'o': {
+        // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'o' in opt string
         size_t len = std::strlen(optarg);
         ret.out_separator.resize(len);
         std::memcpy(ret.out_separator.data(), optarg, len * sizeof(char));
       } break;
       case 'b': {
+        // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'b' in opt string
         size_t len = std::strlen(optarg);
         ret.bout_separator.resize(len);
         std::memcpy(ret.bout_separator.data(), optarg, len * sizeof(char));

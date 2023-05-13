@@ -420,14 +420,20 @@ int main(int argc, char* const* argv) {
     signal(SIGINT, SIG_IGN);
   }
 
+  bool output_is_tty = isatty(fileno(args.output));
+  // queue up output and send it at the end if the output is to the shell
+  std::optional<std::vector<char>> stream_output = {};
+  if (args.tenacious && output_is_tty) {
+    stream_output = std::vector<char>();
+  }
+
   UIState state{
-      std::move(args),                    //
-      std::move(tokens),                  //
-      (bool)isatty(fileno(args.output)),  //
-      choose::BatchOutputStream(          //
-          state.args,                     //
-          // queue up output and send it at the end if the output if to the shell
-          state.args.tenacious && state.output_is_tty ? std::optional(std::vector<char>()) : std::nullopt  //
+      std::move(args),    //
+      std::move(tokens),  //
+      output_is_tty,
+      choose::BatchOutputStream(    //
+          state.args,               //
+          std::move(stream_output)  //
           ),
   };
 

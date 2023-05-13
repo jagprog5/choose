@@ -13,6 +13,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           style: file
+          extra-args: -std=c++17
+          tidy-checks: boost-*,\
+            bugprone-*,\
+            performance-*,\
+            readability-*,\
+            portability-*,\
+            clang-analyzer-*,\
+            cppcoreguidelines-*,\
+            -readability-implicit-bool-conversion,\
+            -readability-named-parameter,\
+            -cppcoreguidelines-macro-usage
 
       - name: Fail fast?!
         if: steps.linter.outputs.checks-failed > 0
