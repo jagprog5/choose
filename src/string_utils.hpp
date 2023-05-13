@@ -134,8 +134,7 @@ void append_to_buffer(std::vector<T>& buf, const T* begin, const T* end) {
 // convert the prompt to a vector of wide char null terminating strings
 std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int num_columns) {
   std::vector<std::vector<wchar_t>> ret;
-  std::mbstate_t ps;  // text decode context
-  memset(&ps, 0, sizeof(ps));
+  std::mbstate_t ps = std::mbstate_t();
 
   const char* prompt_terminator = prompt;
   // prompt_terminator points to the position of the null terminator in the prompt
@@ -149,15 +148,12 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
   const int INITIAL_AVAILABLE_WIDTH = num_columns;
   int available_width = INITIAL_AVAILABLE_WIDTH;
   while (pos < prompt_terminator) {
-    wchar_t ch;
+    wchar_t ch;  // NOLINT initialized by get_ch()
 
     // read from the prompt to produce a wide char, placed in ch. returns false on decode err
     auto get_ch = [&]() -> bool {
       size_t num_bytes = std::mbrtowc(&ch, pos, prompt_terminator - pos, &ps);
-      if (num_bytes == 0) {
-        // will never happen, since no null precedes prompt_terminator
-        return false;
-      } else if (num_bytes == (size_t)-1 || num_bytes == (size_t)-2) {
+      if (num_bytes == 0 || num_bytes == (size_t)-1 || num_bytes == (size_t)-2) {
         return false;
       }
       pos += num_bytes;
@@ -165,7 +161,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
     };
 
     auto remove_trailing_invisible = [](std::vector<wchar_t>& str) {
-      while (str.size() > 0 && std::iswspace(*str.rbegin())) {
+      while (!str.empty() && std::iswspace(*str.rbegin())) {
         str.pop_back();
       }
     };
@@ -187,8 +183,9 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
       available_width -= ch_width;
 
       // there is not enough space to insert ch into this line
-      // > 0 check so a single character should never wrap
-      if (available_width < 0 && ret.rbegin()->size() > 0) {
+      // not empty check so a single character should never wrap,
+      // also precondition required for previous_character_visible
+      if (available_width < 0 && !ret.rbegin()->empty()) {
         available_width = INITIAL_AVAILABLE_WIDTH - ch_width;
         bool next_character_visible = !std::iswspace(ch);
         bool previous_character_visible = !std::iswspace(*ret.rbegin()->rbegin());
@@ -242,6 +239,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
               last_line.resize(pos - last_line.begin());
             }
           }
+          remove_trailing_invisible(last_line);
           last_line.push_back(L'\0');
         }
       }
@@ -298,7 +296,7 @@ void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
     }
     sprintf(&*v.begin(), "%zu", value);
     // overwrite the null written by sprintf
-    *(v.begin() + extension - 1) = ' ';
+    *(v.begin() + (ptrdiff_t)(extension - 1)) = ' ';
   } else {
     char* ptr = &*v.end() - extension;
     *ptr++ = ' ';
@@ -306,7 +304,8 @@ void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
       sprintf(ptr, "%zu", value / 10);
     }
     // overwrite the null written by sprintf
-    *v.rbegin() = value % 10 + '0';
+    // NOLINTNEXTLINE narrowing to char is ok for value in range [0-9]
+    *v.rbegin() = (char)(value % 10) + '0';
   }
 }
 
@@ -362,19 +361,22 @@ const char* find_last_non_continuation(const char* begin, const char* end) {
 // returns a negative value on error
 int bytes_required(const char* begin, const char* end) {
   const char* pos = find_last_non_continuation(begin, end);
-  if (pos == NULL)
+  if (pos == NULL) {
     return -1;
-  return length(*pos) - (end - pos);
+  }
+  return length(*pos) - (int)(end - pos);
 }
 
-// returns pos on error (no change)
-// assumes that the end is a complete multibyte
+// pos is in range [begin,end).
+// pos might be decremented till begin. begin is an inclusive lower bound.
+// it is assumed that end is the completion of a multibyte -> if pos is end, then end is returned.
+// if an error occurs, then the return value is somewhere in range [begin, pos]
 const char* decrement_until_not_separating_multibyte(const char* pos, const char* begin, const char* end) {
   if (pos == end) {
     return pos;
   }
 
-  auto ret = find_last_non_continuation(begin, pos + 1);
+  const char* ret = find_last_non_continuation(begin, pos + 1);
   if (ret == NULL) {
     return pos;
   }

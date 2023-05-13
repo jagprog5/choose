@@ -8,7 +8,6 @@
 #include "string_utils.hpp"
 #include "token.hpp"
 
-// signal flag set from SIGINT. used in ncurses input
 volatile sig_atomic_t sigint_occurred = 0;
 void sigint_handler(int) {
   sigint_occurred = 1;
@@ -23,8 +22,8 @@ struct UIState {
 
   // ncurses
   static constexpr int PAIR_SELECTED = 1;
-  WINDOW* prompt_window = 0;
-  WINDOW* selection_window = 0;
+  choose::nc::window prompt_window = 0;
+  choose::nc::window selection_window = 0;
 
   // the line offset of elements in the tui
   int scroll_position = 0;
@@ -89,15 +88,16 @@ struct UIState {
   again:
     getmaxyx(stdscr, num_rows, num_columns);
     int min_num_rows = 1;
-    if (args.prompt)
+    if (args.prompt) {
       ++min_num_rows;
+    }
     if (num_rows < min_num_rows || num_columns < 1) {
       // too small to be functional. lock out everything until it's big enough
       if (num_rows > 0 && num_columns > 0) {
         clear();
         mvprintw(0, 0, "too small!");
       }
-      int ch;
+      int ch;  // NOLINT init by getch()
       do {
         ch = getch();
       } while (ch != KEY_RESIZE);
@@ -108,7 +108,7 @@ struct UIState {
       prompt_lines = choose::str::create_prompt_lines(args.prompt, num_columns - 2);
     }
 
-    prompt_rows = args.prompt ? prompt_lines.size() + 2 : 0;
+    prompt_rows = args.prompt ? (int)prompt_lines.size() + 2 : 0;
     selection_rows = num_rows - prompt_rows;
 
     if (selection_rows <= 0) {
@@ -125,10 +125,10 @@ struct UIState {
 
     if (first_time) {
       selection_window = choose::nc::newwin(selection_rows, num_columns, selection_window_y, 0);
-      keypad(selection_window, true);
+      keypad(selection_window.get(), true);
       // as opposed to: nodelay(stdscr, false) // make getch block
       // a very large timeout still allows sigint to be effective immediately
-      wtimeout(selection_window, std::numeric_limits<int>::max());
+      wtimeout(selection_window.get(), std::numeric_limits<int>::max());
       if (args.prompt) {
         prompt_window = choose::nc::newwin(prompt_rows, num_columns, prompt_window_y, 0);
       }
@@ -142,12 +142,12 @@ struct UIState {
     }
 
     if (prompt_window) {
-      werase(prompt_window);
-      box(prompt_window, 0, 0);
+      werase(prompt_window.get());
+      box(prompt_window.get(), 0, 0);
       for (size_t i = 0; i < prompt_lines.size(); ++i) {
-        mvwaddwstr(prompt_window, 1 + i, 1, &*prompt_lines[i].begin());
+        mvwaddwstr(prompt_window.get(), 1 + i, 1, &*prompt_lines[i].begin());
       }
-      wrefresh(prompt_window);
+      wrefresh(prompt_window.get());
     }
 
     // this scroll constraint only comes into effect when resizing:
@@ -177,7 +177,7 @@ struct UIState {
       choose::nc::endwin();
     }
 
-    if (selections.size() == 0) {
+    if (selections.empty()) {
       ++tenacious_single_select_indicator;
       selections.push_back(selection_position);
     }
@@ -205,7 +205,7 @@ struct UIState {
 
   // returns true if the tui loop should continue, false if it should break
   bool handle_user_input() {
-    int ch = wgetch(selection_window);  // implicit wrefresh here
+    int ch = wgetch(selection_window.get());  // implicit wrefresh here
     if (sigint_occurred != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
       choose::nc::endwin();
       os.finish_output();
@@ -223,8 +223,9 @@ struct UIState {
       }
     } else if (ch == '\n' || ch == 'd' || ch == 'f') {
       handle_confirmation_input();
-      if (tokens.empty())
+      if (tokens.empty()) {
         return false;
+      }
       return args.tenacious;
     } else {
       // ========================== movement commands ==========================
@@ -269,17 +270,17 @@ struct UIState {
   }
 
   void draw_tui() {
-    werase(selection_window);
+    werase(selection_window.get());
 
     if (tokens.empty()) {
-      wattron(selection_window, A_DIM);
+      wattron(selection_window.get(), A_DIM);
       const char* no_tokens_msg = "No tokens.";
-      mvwprintw(selection_window, selection_rows / 2, num_columns / 2 - strlen(no_tokens_msg) / 2, "No tokens.");
-      wattroff(selection_window, A_DIM);
+      mvwprintw(selection_window.get(), selection_rows / 2, num_columns / 2 - (int)strlen(no_tokens_msg) / 2, "No tokens.");
+      wattroff(selection_window.get(), A_DIM);
       return;
     }
 
-    int selection_text_space = selections.size() == 0 || !args.selection_order ? 0 : int(std::log10(selections.size())) + 1;
+    int selection_text_space = selections.empty() || !args.selection_order ? 0 : int(std::log10(selections.size())) + 1;
 
     for (int y = 0; y < selection_rows; ++y) {
       // =============================== draw line =============================
@@ -291,27 +292,27 @@ struct UIState {
         bool row_selected = it != selections.cend();
 
         if (args.selection_order && row_selected) {
-          wattron(selection_window, A_DIM);
-          mvwprintw(selection_window, y, 0, "%d", (int)(1 + it - selections.begin()));
-          wattroff(selection_window, A_DIM);
+          wattron(selection_window.get(), A_DIM);
+          mvwprintw(selection_window.get(), y, 0, "%d", (int)(1 + it - selections.begin()));
+          wattroff(selection_window.get(), A_DIM);
         }
 
         bool line_is_highlighted = row_highlighted || row_selected;
         if (line_is_highlighted) {
-          wattron(selection_window, A_BOLD);
+          wattron(selection_window.get(), A_BOLD);
           if (row_highlighted) {
-            mvwaddch(selection_window, y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
+            mvwaddch(selection_window.get(), y, selection_text_space, tenacious_single_select_indicator & 0b1 ? '}' : '>');
           }
           if (row_selected) {
-            wattron(selection_window, COLOR_PAIR(PAIR_SELECTED));
+            wattron(selection_window.get(), COLOR_PAIR(PAIR_SELECTED));
           }
         }
 
         // 2 leaves a space for the indicator '>' and a single space
         const int INITIAL_X = selection_text_space + 2;
         int x = INITIAL_X;
-        auto pos = &*tokens[y + scroll_position].buffer.cbegin();
-        auto end = &*tokens[y + scroll_position].buffer.cend();
+        const char* pos = &*tokens[y + scroll_position].buffer.cbegin();
+        const char* end = &*tokens[y + scroll_position].buffer.cend();
 
         // ============================ draw token =============================
 
@@ -351,18 +352,18 @@ struct UIState {
 
           // the printing functions handle bound checking
           if (escape_sequence) {
-            int len = strlen(escape_sequence);
+            int len = (int)strlen(escape_sequence);
             if (x + len <= num_columns) {  // check if drawing the char would wrap
-              wattron(selection_window, A_DIM);
-              mvwaddstr(selection_window, y, x, escape_sequence);
-              wattroff(selection_window, A_DIM);
+              wattron(selection_window.get(), A_DIM);
+              mvwaddstr(selection_window.get(), y, x, escape_sequence);
+              wattroff(selection_window.get(), A_DIM);
             }
             x += len;
             invisible_only = false;
           } else {
             int len = wcwidth(ch[0]);
             if (x + len <= num_columns) {
-              mvwaddwstr(selection_window, y, x, ch);
+              mvwaddwstr(selection_window.get(), y, x, ch);
             }
             x += len;
             if (!std::iswspace(ch[0])) {
@@ -371,24 +372,24 @@ struct UIState {
           }
           // draw ... at the right side of the screen if the x exceeds the width for this line
           if (x > num_columns) {
-            wattron(selection_window, A_DIM);
-            mvwaddstr(selection_window, y, num_columns - 3, "...");
-            wattroff(selection_window, A_DIM);
+            wattron(selection_window.get(), A_DIM);
+            mvwaddstr(selection_window.get(), y, num_columns - 3, "...");
+            wattroff(selection_window.get(), A_DIM);
             break;  // cancel printing the rest of the token
           }
         }
 
         if (invisible_only) {
           const choose::Token& token = tokens[y + scroll_position];
-          wattron(selection_window, A_DIM);
-          mvwprintw(selection_window, y, INITIAL_X, "\\s{%d bytes}", (int)(token.buffer.end() - token.buffer.begin()));
-          wattroff(selection_window, A_DIM);
+          wattron(selection_window.get(), A_DIM);
+          mvwprintw(selection_window.get(), y, INITIAL_X, "\\s{%d bytes}", (int)(token.buffer.end() - token.buffer.begin()));
+          wattroff(selection_window.get(), A_DIM);
         }
 
         if (line_is_highlighted) {
-          wattroff(selection_window, A_BOLD);
+          wattroff(selection_window.get(), A_BOLD);
           if (row_selected) {
-            wattroff(selection_window, COLOR_PAIR(PAIR_SELECTED));
+            wattroff(selection_window.get(), COLOR_PAIR(PAIR_SELECTED));
           }
         }
       }
@@ -406,6 +407,7 @@ struct UIState {
   }
 };
 
+// NOLINTNEXTLINE exceptions are correctly handled
 int main(int argc, char* const* argv) {
   setlocale(LC_ALL, "");  // for utf8
   choose::Arguments args = choose::handle_args(argc, argv);
@@ -413,7 +415,7 @@ int main(int argc, char* const* argv) {
   try {
     tokens = choose::create_tokens(args);
   } catch (const choose::termination_request&) {
-    exit(EXIT_SUCCESS);
+    return EXIT_SUCCESS;
   }
 
   if (signal(SIGINT, sigint_handler) == SIG_IGN) {
@@ -428,9 +430,9 @@ int main(int argc, char* const* argv) {
   }
 
   UIState state{
-      std::move(args),    //
-      std::move(tokens),  //
-      output_is_tty,
+      std::move(args),              //
+      std::move(tokens),            //
+      output_is_tty,                //
       choose::BatchOutputStream(    //
           state.args,               //
           std::move(stream_output)  //
@@ -439,35 +441,19 @@ int main(int argc, char* const* argv) {
 
   // https://stackoverflow.com/a/44884859/15534181
   // required for ncurses to work after using stdin
-  FILE* f = fopen("/dev/tty", "r+");
+  choose::file f = choose::file(fopen("/dev/tty", "r+"));
   if (!f) {
     perror(NULL);
     return EXIT_FAILURE;
   }
 
   try {
-    SCREEN* screen = choose::nc::newterm(NULL, f, f);
-    set_term(screen);
+    choose::nc::screen screen = choose::nc::newterm(NULL, f, f);
+    set_term(screen.get());
 
     choose::nc::cbreak();  // pass keys directly from input without buffering
     choose::nc::noecho();
     curs_set(0);  // invisible cursor
-    // get mouse events right away
-    mouseinterval(0);
-
-    /*
-     * the doc says that the mousemask must be set to enable mouse control,
-     * however, it seems to work even without calling the function
-     *
-     * calling the function makes the left mouse button captured, which prevents a
-     * user from selecting and copying text
-     *
-     * so with no benefit and a small downside, I leave this commented out
-     *
-     * // #ifdef BUTTON5_PRESSED
-     * //   mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
-     * // #endif
-     */
 
     // I don't handle ERR for anything color or attribute related since
     // the application still works, even on failure (just without color)
@@ -491,7 +477,7 @@ int main(int argc, char* const* argv) {
     if (!isendwin()) {
       endwin();
     }
-    throw;
+    return EXIT_FAILURE;
   }
   return sigint_occurred ? 128 + 2 : EXIT_SUCCESS;
 }

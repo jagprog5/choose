@@ -123,7 +123,7 @@ namespace {
 struct UncompiledOrderedOp {
   enum Type { SUBSTITUTE, FILTER, REMOVE, INPUT_INDEX, OUTPUT_INDEX };
   Type type;
-  // arg0 or arg1 might be left uninitialized based on the type
+  // arg0 or arg1 might be set to null (and not used) based on the type
   const char* arg0;
   const char* arg1;
 
@@ -176,7 +176,7 @@ struct UncompiledCodes {
 };
 
 void arg_error_preamble(int argc, char* const* argv) {
-  const char* me;
+  const char* me;  // NOLINT initialized below
   if (argc > 0 && argv && *argv) {
     me = *argv;
   } else {
@@ -190,7 +190,7 @@ void arg_error_preamble(int argc, char* const* argv) {
 // out will still be written to but should not be used
 void parse_ul(const char* str, long* out, unsigned long min_inclusive, unsigned long max_inclusive, bool* arg_has_errors, const char* name, int argc, char* const* argv) {
   // based off https://stackoverflow.com/a/14176593/15534181
-  char* temp;
+  char* temp;  // NOLINT initialized by strtol
   errno = 0;
   // atoi/atol gives UB for value out of range
   // strtoul is trash and doesn't handle negative values in a sane way
@@ -457,8 +457,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
     };
     int c = getopt_long(argc, argv, "-vho:b:p:f:t::rdeimrsuyz0", long_options, &option_index);
-    if (c == -1)
+    if (c == -1) {
       break;  // end of args
+    }
 
     switch (c) {
       default:
@@ -470,32 +471,30 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         if (optarg) {
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
-            UncompiledOrderedOp op;
-            op.type = UncompiledOrderedOp::REMOVE;
-            op.arg0 = optarg;
+            UncompiledOrderedOp op{UncompiledOrderedOp::REMOVE, optarg, NULL};
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("retain-limit", name) == 0) {
-            long v;
+            long v;  // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.retain_limit)>::max(), &arg_has_errors, name, argc, argv);
             ret.retain_limit = v;
           } else if (strcmp("in", name) == 0) {
-            long v;
+            long v;  // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
             ret.in = v;
           } else if (strcmp("max-lookbehind", name) == 0) {
-            long v;
+            long v;  // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.max_lookbehind = v;
           } else if (strcmp("min-read", name) == 0) {
-            long v;
+            long v;  // NOLINT
             parse_ul(optarg, &v, 1, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.min_read = v;
           } else if (strcmp("out", name) == 0) {
-            long v;
+            long v;  // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.out = v;
           } else if (strcmp("in-index", name) == 0) {
-            UncompiledOrderedOp op;
+            UncompiledOrderedOp op;  // NOLINT
             op.type = UncompiledOrderedOp::INPUT_INDEX;
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
               op.arg0 = (const char*)1;
@@ -506,9 +505,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               fprintf(stderr, "alignment must be \"before\" or \"after\"\n");
               arg_has_errors = true;
             }
+            op.arg1 = NULL;
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("out-index", name) == 0) {
-            UncompiledOrderedOp op;
+            UncompiledOrderedOp op;  // NOLINT
             op.type = UncompiledOrderedOp::OUTPUT_INDEX;
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
               op.arg0 = (const char*)1;
@@ -519,6 +519,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               fprintf(stderr, "alignment must be \"before\" or \"after\"\n");
               arg_has_errors = true;
             }
+            op.arg1 = NULL;
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("sub", name) == 0 || strcmp("substitute", name) == 0) {
             // special handing here since getopt doesn't normally support multiple arguments
@@ -529,7 +530,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               arg_has_errors = true;
             } else {
               ++optind;
-              UncompiledOrderedOp op;
+              UncompiledOrderedOp op;  // NOLINT
               op.type = UncompiledOrderedOp::SUBSTITUTE;
               op.arg0 = argv[optind - 2];
               op.arg1 = argv[optind - 1];
@@ -544,7 +545,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           // long option without argument or with optional argument
           if (strcmp("out", name) == 0) {
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              long v;
+              long v;  // NOLINT
               parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);
               ret.out = v;
             } else {
@@ -565,7 +566,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("in-index", name) == 0) {
-            UncompiledOrderedOp op;
+            UncompiledOrderedOp op;  // NOLINT
             op.type = UncompiledOrderedOp::INPUT_INDEX;
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
               if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
@@ -580,9 +581,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             } else {
               op.arg0 = (const char*)1;  // default = before
             }
+            op.arg1 = NULL;
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("out-index", name) == 0) {
-            UncompiledOrderedOp op;
+            UncompiledOrderedOp op;  // NOLINT
             op.type = UncompiledOrderedOp::OUTPUT_INDEX;
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
               if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
@@ -597,6 +599,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             } else {
               op.arg0 = (const char*)1;  // default = before
             }
+            op.arg1 = NULL;
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("use-delimiter", name) == 0) {
             ret.use_input_delimiter = true;
@@ -655,7 +658,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           if (*optarg == '=') {
             ++optarg;
           }
-          long v;
+          long v;  // NOLINT
           parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, "take", argc, argv);
           ret.in = v;
         }
@@ -694,9 +697,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         ret.prompt = optarg;
         break;
       case 'f':
-        UncompiledOrderedOp op;
-        op.type = UncompiledOrderedOp::FILTER;
-        op.arg0 = optarg;
+        UncompiledOrderedOp op{UncompiledOrderedOp::FILTER, optarg, NULL};
         uncompiled_output.ordered_ops.push_back(op);
         break;
     }

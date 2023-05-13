@@ -6,8 +6,9 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-OPTION(NO_SCROLL_BORDER "Disable the scroll border" OFF)
+option(NO_SCROLL_BORDER "Disable the scroll border" OFF)
 option(BUILD_TESTING "Build tests" OFF)
+option(CODE_COVERAGE "Create coverage stats. Requires BUILD_TESTING. Invoke with make cov-show" OFF)
 project(choose)
 add_executable(choose src/main.cpp)
 target_include_directories(choose PRIVATE src)
@@ -49,16 +50,53 @@ if(BUILD_TESTING)
   # valgrind indicates mem leak within boost when using shared lib
   set(Boost_USE_STATIC_LIBS ON)
   find_package(Boost REQUIRED COMPONENTS unit_test_framework)
-  add_executable(test src/test.cpp)
-  target_include_directories(test PRIVATE src)
-  target_compile_options(test PRIVATE -Wall -Wextra -O0 -g)
-  target_link_libraries(test PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
+  
+  add_executable(unit_tests src/test.cpp)
+  target_include_directories(unit_tests PRIVATE src)
+  target_compile_options(unit_tests PRIVATE -Wall -Wextra -O0 -g -fno-rtti -fno-strict-aliasing)
 
-  target_include_directories(test PRIVATE ${CURSES_INCLUDE_DIRS})
-  target_link_libraries(test PRIVATE ${CURSES_LIBRARIES})
-  target_compile_options(test PRIVATE ${CURSES_CFLAGS})
+  target_include_directories(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_HEADER_NAME})
+  target_link_libraries(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
 
-  target_include_directories(test PRIVATE ${PCRE_INCLUDEDIR})
-  target_link_libraries(test PRIVATE ${PCRE_LIBRARIES})
+  target_include_directories(unit_tests PRIVATE ${CURSES_INCLUDE_DIRS})
+  target_link_libraries(unit_tests PRIVATE ${CURSES_LIBRARIES})
+  target_compile_options(unit_tests PRIVATE ${CURSES_CFLAGS})
 
+  target_include_directories(unit_tests PRIVATE ${PCRE_INCLUDEDIR})
+  target_link_libraries(unit_tests PRIVATE ${PCRE_LIBRARIES})
+
+  enable_testing()
+  add_test(COMMAND ./unit_tests)
+
+  if (CODE_COVERAGE)
+    target_compile_options(unit_tests PRIVATE --coverage)
+    target_link_libraries(unit_tests PRIVATE --coverage)
+
+    add_custom_target(cov-clean
+      COMMAND find "${CMAKE_CURRENT_BINARY_DIR}" -type f -name '*.gcda' -delete
+      COMMAND rm -f "${CMAKE_CURRENT_BINARY_DIR}/coverage.info"
+      COMMAND rm -f "${CMAKE_CURRENT_BINARY_DIR}/*.png"
+      COMMAND find "${CMAKE_CURRENT_BINARY_DIR}" -type f -name '*.html' -delete
+      COMMAND rm -f "${CMAKE_CURRENT_BINARY_DIR}/gcov.css"
+    )
+
+    # used to make cov-proc run the tests if they haven't yet been run
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/unit_tests.dir/src/test.cpp.gcda
+      DEPENDS unit_tests
+      COMMAND ctest -j "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+
+    add_custom_target(cov-proc
+      # the tests must be run before the coverage can be processed
+      DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/unit_tests.dir/src/test.cpp.gcda
+      COMMAND lcov --capture --directory "${CMAKE_CURRENT_SOURCE_DIR}" --base-directory "${CMAKE_CURRENT_SOURCE_DIR}/src" --no-external --output-file "${CMAKE_CURRENT_BINARY_DIR}/coverage.info"
+    )
+
+    add_custom_target(cov-show
+      DEPENDS cov-proc
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMAND genhtml coverage.info
+      COMMAND sensible-browser index.html
+    )
+  endif()
 endif()

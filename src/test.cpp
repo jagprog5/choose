@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE choose_test_module
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 #include "args.hpp"
+#include "ncurses_wrapper.hpp"
 #include "token.hpp"
 
 using namespace choose;
@@ -68,9 +69,37 @@ BOOST_AUTO_TEST_CASE(full_empty_many) {
   BOOST_REQUIRE(std::wcscmp(ret[4].data(), L"555") == 0);
 }
 
+BOOST_AUTO_TEST_CASE(newlines) {
+  auto ret = choose::str::create_prompt_lines("this\nis\n\na\ntest", 80);
+  BOOST_REQUIRE_EQUAL(ret.size(), 5);
+  BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"this") == 0);
+  BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"is") == 0);
+  BOOST_REQUIRE(std::wcscmp(ret[2].data(), L"") == 0);
+  BOOST_REQUIRE(std::wcscmp(ret[3].data(), L"a") == 0);
+  BOOST_REQUIRE(std::wcscmp(ret[4].data(), L"test") == 0);
+}
+
+BOOST_AUTO_TEST_CASE(zero_width_char_ignored) {
+  const char ch[] = {'h', (char)0xEF, (char)0xBB, (char)0xBF, 'i', 0};
+  auto ret = choose::str::create_prompt_lines(ch, 80);
+  BOOST_REQUIRE_EQUAL(ret.size(), 1);
+  BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"hi") == 0);
+}
+
+BOOST_AUTO_TEST_CASE(word_boundary_with_leading_spaces) {
+  auto ret = choose::str::create_prompt_lines("  word", 4);
+  BOOST_REQUIRE_EQUAL(ret.size(), 2);
+  BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"") == 0);
+  BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"word") == 0);
+}
+
 BOOST_AUTO_TEST_CASE(invalid_utf8) {
   const char ch[] = {(char)0b11100000, '\0'};
   BOOST_CHECK_THROW(choose::str::create_prompt_lines(ch, 80), std::runtime_error);
+
+  // a second place this happens, when consuming leading whitespace during wrap
+  const char ch2[] = {'t', ' ', (char)0b11100000, '\0'};
+  BOOST_CHECK_THROW(choose::str::create_prompt_lines(ch2, 1), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(wide_utf8) {
@@ -88,11 +117,11 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(other_string_utils_test_suite)
 
-char continuation = 0b10000000;
-char one = 0b00000000;
-char two = 0b11000000;
-char three = 0b11100000;
-char four = 0b11110000;
+char continuation = (char)0b10000000;
+char one = (char)0b00000000;
+char two = (char)0b11000000;
+char three = (char)0b11100000;
+char four = (char)0b11110000;
 
 BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
   const char empty[] = {};
@@ -103,6 +132,8 @@ BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
   BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(limit, std::end(limit)) == 0);
   const char not_limit[] = {'a', continuation, continuation, continuation};
   BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(not_limit, std::end(not_limit)) == not_limit);
+  const char more[] = {'a', 'b', 'c', continuation, continuation, continuation};
+  BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(more, std::end(more)) == more + 2);
 }
 
 BOOST_AUTO_TEST_CASE(test_bytes_required) {
@@ -121,7 +152,7 @@ BOOST_AUTO_TEST_CASE(test_bytes_required) {
     std::vector<char> tester{*pos};
     for (int i = 0; i < 3; ++i) {
       tester.push_back(continuation);
-      int required = 4 - tester.size() - (pos - vals);
+      int required = 4 - (int)tester.size() - (int)(pos - vals);
       BOOST_REQUIRE_EQUAL(choose::str::utf8::bytes_required(&*tester.cbegin(), &*tester.cend()), required);
     }
     ++pos;
@@ -154,8 +185,9 @@ struct choose_output {
   std::variant<std::vector<char>, std::vector<choose::Token>> o;
 
   bool operator==(const choose_output& other) const {
-    if (o.index() != other.o.index())
+    if (o.index() != other.o.index()) {
       return false;
+    }
     if (const std::vector<char>* first_intermediate = std::get_if<std::vector<char>>(&o)) {
       const std::vector<char>& first = *first_intermediate;
       const std::vector<char>& second = std::get<std::vector<char>>(other.o);
@@ -217,8 +249,14 @@ std::vector<char> to_vec(const char* s) {
   return {s, s + strlen(s)};
 }
 
+extern int optreset;
+
+struct str_destroyer {
+  void operator()(char* s) { free(s); }  // NOLINT
+};
+
 // runs choose with the given stdin and arguments
-choose_output run_choose(const std::vector<char> input, const std::vector<const char*>& argv) {
+choose_output run_choose(const std::vector<char>& input, const std::vector<const char*>& argv) {
   // resetting getopt global state
   // https://github.com/dnsdb/dnsdbq/commit/efa68c0499c3b5b4a1238318345e5e466a7fd99f
 #ifdef linux
@@ -232,45 +270,50 @@ choose_output run_choose(const std::vector<char> input, const std::vector<const 
   pipe(input_pipe);
   int output_pipe[2];
   pipe(output_pipe);
-  FILE* input_writer = fdopen(input_pipe[1], "w");
-  FILE* input_reader = fdopen(input_pipe[0], "r");
-  FILE* output_writer = fdopen(output_pipe[1], "w");
-  FILE* output_reader = fdopen(output_pipe[0], "r");
+  auto input_writer = choose::file(fdopen(input_pipe[1], "w"));
+  auto input_reader = choose::file(fdopen(input_pipe[0], "r"));
+  auto output_writer = choose::file(fdopen(output_pipe[1], "w"));
+  auto output_reader = choose::file(fdopen(output_pipe[0], "r"));
 
-  std::vector<char*> argv_non_const;
-  argv_non_const.push_back(strdup("/tester/path/to/choose"));
+  using duped_str = std::unique_ptr<char, str_destroyer>;
+  std::vector<duped_str> duped_args;
+  duped_args.push_back(duped_str(strdup("/tester/path/to/choose")));
   for (const char* p : argv) {
     // getopt might?? modify argv, making a copy just in case.
-    argv_non_const.push_back(strdup(p));
+    duped_args.push_back(duped_str(strdup(p)));
   }
 
-  str::write_f(input_writer, input);
-  fclose(input_writer);
+  // duped_args owns a copy of the arguments. argv_non_const just views them
+  // this copy is done since get_opt might? modify the args. the arg is non const
+  std::vector<char*> argv_non_const;
+  argv_non_const.resize(duped_args.size());
+  typename std::vector<duped_str>::const_iterator from_pos = duped_args.cbegin();
+  typename std::vector<char*>::iterator to_pos = argv_non_const.begin();
+  while (from_pos != duped_args.end()) {
+    *to_pos++ = from_pos++->get();
+  }
 
-  auto args = choose::handle_args(argv_non_const.size(), argv_non_const.data(), input_reader, output_writer);
+  str::write_f(input_writer.get(), input);
+  input_writer.reset();
+
+  auto args = choose::handle_args((int)argv_non_const.size(), argv_non_const.data(), input_reader.get(), output_writer.get());
   choose_output ret;
   try {
     ret.o = choose::create_tokens(args);
-    fclose(output_writer);
+    output_writer.reset();
   } catch (const choose::termination_request&) {
-    fclose(output_writer);
+    output_writer.reset();
     std::vector<char> out;
     static constexpr size_t BUF_SIZE = 1024;
     char buf[BUF_SIZE];
-    size_t bytes_read;
+    size_t bytes_read;  // NOLINT
     do {
-      bytes_read = fread(buf, sizeof(char), BUF_SIZE, output_reader);
+      bytes_read = fread(buf, sizeof(char), BUF_SIZE, output_reader.get());
       str::append_to_buffer(out, buf, std::begin(buf) + bytes_read);
     } while (bytes_read == BUF_SIZE);
     ret.o = std::move(out);
   }
 
-  for (char* p : argv_non_const) {
-    free(p);
-  }
-
-  fclose(input_reader);
-  fclose(output_reader);
   return ret;
 }
 
@@ -290,6 +333,30 @@ BOOST_AUTO_TEST_CASE(simple_basic_output) {
   // see args.is_basic(); also tests separators
   choose_output out = run_choose("first\nsecond\nthird", {"--output-separator", " ", "--batch-separator=\n", "-t"});
   choose_output correct_output{to_vec("first second third\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(basic_output_rm_filter) {
+  choose_output out = run_choose("first\nsecond\nthird", {"--in=2", "-t"});
+  choose_output correct_output{to_vec("first\nsecond\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(basic_output_in_limit) {
+  choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--rm=second", "--filter=first", "-t"});
+  choose_output correct_output{to_vec("first\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(zero_in_limit) {
+  choose_output out = run_choose("anything", {"--in=0", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(zero_in_out_limit) {
+  choose_output out = run_choose("anything", {"--in=0", "--out=0"});
+  choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -337,9 +404,27 @@ BOOST_AUTO_TEST_CASE(in_limit) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(flip) {
+  choose_output out = run_choose("a\nb\nc\nd", {"--flip", "-t"});
+  choose_output correct_output{to_vec("d\nc\nb\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(direct_but_not_basic_limit) {
+  choose_output out = run_choose("a\nb\nc", {"--rm=b", "-t=2"});
+  choose_output correct_output{to_vec("a\nc\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(ordered_ops) {
   choose_output out = run_choose("this\nis\nrra\ntest", {"-r", "--sub", "is", "rr", "--rm", "test", "--filter", "rr$"});
   choose_output correct_output{std::vector<choose::Token>{"thrr", "rr"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(literal_sub) {
+  choose_output out = run_choose("literal substitution", {"--sub", "literal", "good"});
+  choose_output correct_output{std::vector<choose::Token>{"good substitution"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -358,6 +443,12 @@ BOOST_AUTO_TEST_CASE(check_empty_input) {
 BOOST_AUTO_TEST_CASE(check_match_with_groups) {
   choose_output out = run_choose("abcde", {"-r", "--min-read=1", "--match", "b(c)(d)"});
   choose_output correct_output{std::vector<choose::Token>{"bcd", "c", "d"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(check_match_with_groups_limit) {
+  choose_output out = run_choose("abcde", {"-r", "--min-read=1", "--match", "b(c)(d)", "--in=2"});
+  choose_output correct_output{std::vector<choose::Token>{"bcd", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -492,12 +583,9 @@ BOOST_AUTO_TEST_CASE(invalid_utf8) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(invalid_utf8_bytes_still_retained) {
-  const char ch[] = {'t', 'e', 's', 't', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
-  const char result[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
-  choose_output out = run_choose(ch, {"--min-read=1", "--utf-allow-invalid", result, "--match"});
-  choose_output correct_output{std::vector<choose::Token>{result}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
+BOOST_AUTO_TEST_CASE(ensure_completed_utf8_multibytes_gives_err) {
+  const char ch[] = {(char)0b10000000, 0};
+  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "--min-read=1"}), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(match_start_after_end) {

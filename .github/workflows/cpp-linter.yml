@@ -7,6 +7,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - run: sudo apt-get install -y libboost-test-dev
+      - run: cd build && cmake .. -DBUILD_TESTING=true -DCMAKE_EXPORT_COMPILE_COMMANDS=true
+        # export the database for cpp-lint so it can find boost
       - uses: cpp-linter/cpp-linter-action@v2
         id: linter
         env:
@@ -14,6 +17,7 @@ jobs:
         with:
           style: file
           extra-args: -std=c++17
+          database: build
           tidy-checks: boost-*,\
             bugprone-*,\
             performance-*,\
@@ -23,7 +27,20 @@ jobs:
             cppcoreguidelines-*,\
             -readability-implicit-bool-conversion,\
             -readability-named-parameter,\
-            -cppcoreguidelines-macro-usage
+            -readability-magic-numbers,\
+            -readability-else-after-return,\
+            -readability-function-cognitive-complexity,\
+            -cppcoreguidelines-avoid-magic-numbers,\
+            -cppcoreguidelines-macro-usage,\
+            -cppcoreguidelines-pro-bounds-pointer-arithmetic,\
+            -cppcoreguidelines-pro-type-cstyle-cast,\
+            -cppcoreguidelines-avoid-c-arrays,\
+            -cppcoreguidelines-pro-bounds-array-to-pointer-decay,\
+            -cppcoreguidelines-pro-bounds-constant-array-index,\
+            -cppcoreguidelines-avoid-non-const-global-variables,\
+            -cppcoreguidelines-owning-memory,\
+            -cppcoreguidelines-avoid-goto,\
+            -cppcoreguidelines-pro-type-vararg
 
       - name: Fail fast?!
         if: steps.linter.outputs.checks-failed > 0
