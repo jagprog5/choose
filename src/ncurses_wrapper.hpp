@@ -1,14 +1,32 @@
 #pragma once
 
 #include <ncursesw/curses.h>
+#include <memory>
 #include <stdexcept>
 
 namespace choose {
 
-namespace nc {
+struct file_destroyer {
+  void operator()(FILE* f) { fclose(f); }
+};
 
+using file = std::unique_ptr<FILE, file_destroyer>;
+
+namespace nc {
 // choose mostly propagates errors through exceptions
 // if a ncurses call fails, instead of checking for ERR, it just throws
+
+struct window_destroyer {
+  void operator()(WINDOW* w) { delwin(w); }
+};
+
+using window = std::unique_ptr<WINDOW, window_destroyer>;
+
+struct screen_destroyer {
+  void operator()(SCREEN* w) { delscreen(w); }
+};
+
+using screen = std::unique_ptr<SCREEN, screen_destroyer>;
 
 void endwin() {
   if (::endwin() == ERR) {
@@ -16,22 +34,22 @@ void endwin() {
   }
 }
 
-WINDOW* newwin(int nlines, int ncols, int begin_y, int begin_x) {
-  WINDOW* ret = ::newwin(nlines, ncols, begin_y, begin_x);
+window newwin(int nlines, int ncols, int begin_y, int begin_x) {
+  auto ret = window(::newwin(nlines, ncols, begin_y, begin_x));
   if (!ret) {
     throw std::runtime_error("ncurses error");
   }
   return ret;
 }
 
-void wresize(WINDOW* w, int nlines, int ncols) {
-  if (::wresize(w, nlines, ncols) == ERR) {
+void wresize(const window& w, int nlines, int ncols) {
+  if (::wresize(w.get(), nlines, ncols) == ERR) {
     throw std::runtime_error("ncurses error");
   }
 }
 
-void mvwin(WINDOW* w, int nlines, int ncols) {
-  if (::mvwin(w, nlines, ncols) == ERR) {
+void mvwin(const window& w, int nlines, int ncols) {
+  if (::mvwin(w.get(), nlines, ncols) == ERR) {
     throw std::runtime_error("ncurses error");
   }
 }
@@ -42,8 +60,8 @@ void reset_prog_mode() {
   }
 }
 
-SCREEN* newterm(char* type, FILE* outfd, FILE* infd) {
-  SCREEN* ret = ::newterm(type, outfd, infd);
+screen newterm(char* type, const file& outfd, const file& infd) {
+  auto ret = screen(::newterm(type, outfd.get(), infd.get()));
   if (!ret) {
     throw std::runtime_error("ncurses error");
   }

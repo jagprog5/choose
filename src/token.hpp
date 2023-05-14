@@ -117,6 +117,7 @@ size_t get_n_bytes(FILE* f, size_t n, char* out) {
     if (feof(f)) {
       return read_ret;
     } else {
+      // no need to check ferror here, since we never read zero elements
       const char* err_string = strerror(errno);
       throw std::runtime_error(err_string);
     }
@@ -140,7 +141,7 @@ struct ProcessTokenContext {
   std::function<bool(indirect)> seen_check;
   std::optional<TokenOutputStream> direct_output;
   // out_count is the number of tokens that have been written to the output.
-  // if direct_output isn't set, then this value will mirror output.size()
+  // if args.direct_output() isn't set, then this value will mirror output.size()
   decltype(args.out) out_count;
 };
 
@@ -191,7 +192,7 @@ bool process_token(Token&& t, ProcessTokenContext& context) {
   if (!context.args.sort) {
     context.output.push_back(std::move(t));
     if (context.args.unique) {
-      // if unique, duplicate are remove
+      // if unique, duplicate removed
       if (!context.seen_check(context.output.size() - 1)) {
         context.output.pop_back();
         return false;
@@ -249,9 +250,15 @@ void basic_process_token(const char* begin, const char* end, ProcessTokenContext
 // and then throws a termination_request exception, which the callee should handle.
 std::vector<Token> create_tokens(choose::Arguments& args) {
   std::vector<Token> output;
-  // edge case on process_token logic. it processes the token, then checks if the limit is hit.
-  if (args.in == 0 || args.out == 0)
+  // edge case on process_token logic. it processes the token, increments, then checks if the limit is hit.
+  if (args.out == 0) {
+    throw termination_request();
+  }
+
+  // same reason as above, but for basic_process_token
+  if (args.in == 0) {
     return output;
+  }
 
   bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
@@ -331,9 +338,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     }
 
     if (input_done) {
-      // required to make end anchors like \Z match at the end of the input.
-      // Although this is clearly document, to me this is a quirk of PCRE2 that
-      // doesn't make sense
+      // required to make end anchors like \Z match at the end of the input
       match_options &= ~PCRE2_PARTIAL_HARD;
     }
 

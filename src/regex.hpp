@@ -25,8 +25,8 @@ using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
 code compile(const char* pattern, uint32_t options, const char* identification) {
-  int error_number;
-  PCRE2_SIZE error_offset;
+  int error_number;         // NOLINT
+  PCRE2_SIZE error_offset;  // NOLINT
   pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, options, &error_number, &error_offset, NULL);
   if (re == NULL) {
     PCRE2_UCHAR buffer[256];
@@ -75,19 +75,19 @@ int match(const code& re,  //
 }
 
 uint32_t options(const code& c) {
-  uint32_t options;
+  uint32_t options;  // NOLINT
   pcre2_pattern_info(c.get(), PCRE2_INFO_ALLOPTIONS, &options);
   return options;
 }
 
 uint32_t max_lookbehind_size(const code& c) {
-  uint32_t out;
+  uint32_t out;  // NOLINT
   pcre2_pattern_info(c.get(), PCRE2_INFO_MAXLOOKBEHIND, &out);
   return out;
 }
 
 uint32_t min_match_length(const code& c) {
-  uint32_t out;
+  uint32_t out;  // NOLINT
   pcre2_pattern_info(c.get(), PCRE2_INFO_MINLENGTH, &out);
   return out;
 }
