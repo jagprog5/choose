@@ -397,6 +397,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
         if (!is_match) {
           str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, new_subject_begin);
+          if ((int)token_being_built.buffer.size() > args.retain_limit) {
+            // the line of text is really really long.
+            // grep's handling of this case is implementation defined.
+            token_being_built.buffer.clear();
+          }
         }
 
         // account for lookbehind bytes to retain prior to the match
@@ -409,16 +414,18 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = str::utf8::decrement_until_not_separating_multibyte(new_subject_begin, &*subject.cbegin(), &*subject.cend());
         }
 
-        if (&*subject.end() - new_subject_begin >= args.retain_limit) {
+        start_offset = new_subject_begin_cp - new_subject_begin;
+        subject.erase(subject.begin(), typename std::vector<char>::const_iterator(new_subject_begin));
+
+        if ((int)subject.size() > args.retain_limit) {
           // the partial match length has exceeded the limit. count as a no match
           if (!is_match) {
-            str::append_to_buffer(token_being_built.buffer, new_subject_begin_cp, &*subject.end());
+            // typical behaviour on match failure is to append the subject to the token being built.
+            // however, since the token_being_built would also reach this limit, it is discarded as well
+            token_being_built.buffer.clear();
           }
           subject.clear();
           start_offset = 0;
-        } else {
-          start_offset = new_subject_begin_cp - new_subject_begin;
-          subject.erase(subject.begin(), typename std::vector<char>::const_iterator(new_subject_begin));
         }
       } else {
         // there was no match and there is no more input

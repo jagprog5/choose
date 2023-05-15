@@ -45,7 +45,7 @@ using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
 
-constexpr ptrdiff_t RETAIN_LIMIT_DEFAULT = 65536;
+constexpr ptrdiff_t RETAIN_LIMIT_DEFAULT = 32768;
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
@@ -308,11 +308,14 @@ void print_help_message() {
       "        -r, --regex\n"
       "                use PCRE2 regex for the input separator.\n"
       "        --retain-limit <# bytes, default: " choose_xstr(RETAIN_LIMIT_DEFAULT) ">\n"
-      "                if a match is greedy (e.g. \".*\"), the match buffer would\n"
-      "                increase to hold the entire input as it tries to complete\n"
-      "                the match. this limit sets a maximum on the buffer size retained\n"
-      "                between iterations of the token creation logic. reaching this\n"
-      "                limit results in a match failure\n"
+      "                this ensures that the memory usage is bounded in the event of\n"
+      "                parasitic matching. if a match is greedy (e.g. \".*\"), then the\n"
+      "                match buffer would increase to hold the entire input as it tries\n"
+      "                to complete the match. reaching this limit results in a match\n"
+      "                failure. similarly, if the match for a separator would never\n"
+      "                match (e.g. $''), then the limit of the size of the token being\n"
+      "                built is also subject to this limit. reaching this limit results\n"
+      "                in the token's content thus far being discarded.\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --selection-order\n"
@@ -716,6 +719,19 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
     // default sep
     uncompiled_output.primary = "\n";
+  }
+
+  // give failure on dangerous args
+  if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
+    arg_error_preamble(argc, argv);
+    fputs("A non-matchable separator will discard the token thus far when the retain limit is hit.\n", stderr);
+    arg_has_errors = true;
+  }
+
+  if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
+    arg_error_preamble(argc, argv);
+    fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
+    arg_has_errors = true;
   }
 
   if (arg_has_errors) {
