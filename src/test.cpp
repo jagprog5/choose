@@ -483,14 +483,8 @@ BOOST_AUTO_TEST_CASE(separator_no_match) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(empty_separator) {
-  // important since PCRE2_NOTEMPTY is used to prevent infinite loop; ensures progress
-  choose_output out = run_choose("aaabbbccc", {""});
-  choose_output correct_output{std::vector<choose::Token>{"aaabbbccc"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 BOOST_AUTO_TEST_CASE(empty_match_target) {
+  // important since PCRE2_NOTEMPTY is used to prevent infinite loop; ensures progress
   choose_output out = run_choose("aaabbbccc", {"--match", ""});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -510,7 +504,7 @@ BOOST_AUTO_TEST_CASE(input_is_separator_use_delimit) {
 
 BOOST_AUTO_TEST_CASE(check_shrink_excess) {
   // creates a large subject but resizes internal buffer to remove the bytes that weren't written to
-  choose_output out = run_choose("12345", {"", "--min-read=10000"});
+  choose_output out = run_choose("12345", {"zzzz", "--min-read=10000"});
   choose_output correct_output{std::vector<choose::Token>{"12345"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -545,16 +539,21 @@ BOOST_AUTO_TEST_CASE(end_of_string) {
 }
 
 BOOST_AUTO_TEST_CASE(retain_limit_match) {
-  // safety bounds on parasitic matching
-  choose_output out = run_choose("1234", {"-r", "--match", "1234", "--min-read=1", "--retain-limit=3"});
+  // safety bounds on parasitic matching. match failure
+  choose_output out = run_choose("1234", {"--match", "1234", "--min-read=1", "--retain-limit=2"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(retain_limit_separator) {
-  // leading aaaa is to check that the offset is used correctly when the retain limit is hit
-  choose_output out = run_choose("aaaa1234567", {"1234567", "--min-read=3", "--retain-limit=3"});
-  choose_output correct_output{std::vector<choose::Token>{"aaaa1234567"}};
+  choose_output out = run_choose("aaa1234aaa", {"1234", "--min-read=1", "--retain-limit=2"});
+  choose_output correct_output{std::vector<choose::Token>{"a"}};  // end of last token within retain limit
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(retain_limit_very_long_line) {
+  choose_output out = run_choose("1234\n1234\n12\n12\n", {"--min-read=1", "--retain-limit=2"});
+  choose_output correct_output{std::vector<choose::Token>{"4", "4", "12", "12"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
