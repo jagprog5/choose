@@ -532,9 +532,21 @@ BOOST_AUTO_TEST_CASE(begin_of_string) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(begin_of_line) {
+  choose_output out = run_choose("abcd\nefgh", {"-r", "--multiline", "--match", "^."});
+  choose_output correct_output{std::vector<choose::Token>{"a", "e"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(end_of_string) {
   choose_output out = run_choose("uaaat", {"-r", "--match", "--min-read=6", "[ut]\\Z"});
   choose_output correct_output{std::vector<choose::Token>{"t"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(end_of_line) {
+  choose_output out = run_choose("abcd\nefgh", {"-r", "--multiline", ".$"});
+  choose_output correct_output{std::vector<choose::Token>{"abc", "\nefg"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

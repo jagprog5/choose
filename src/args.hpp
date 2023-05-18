@@ -85,6 +85,7 @@ struct Arguments {
   }
 
   ptrdiff_t retain_limit = RETAIN_LIMIT_DEFAULT;
+  const char* locale = "";
 
   std::vector<char> out_separator = {'\n'};
   std::vector<char> bout_separator;
@@ -231,7 +232,7 @@ void print_help_message() {
       "        Splits the input into tokens, and provides a tui for selecting which\n"
       "        tokens are sent to the output.\n"
       "positional argument:\n"
-      "        <input separator, default '\\n'>\n"
+      "        <input separator, default: '\\n'>\n"
       "                describes how to split the input into tokens. each token is\n"
       "                displayed for selection in the interface.\n"
       "messages:\n"
@@ -284,6 +285,7 @@ void print_help_message() {
       "                make the input separator case-insensitive\n"
       "        --in <# tokens>\n"
       "                stop reading the input once n tokens have been finalized\n"
+      "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
       "        --multiline\n"
@@ -351,6 +353,8 @@ void print_help_message() {
       "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
+      "        # some options are only available via prefix\n"
+      "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
       "controls:\n"
       "        confirm selections: enter, d, or f\n"
       "                      exit: q, backspace, escape\n"
@@ -431,10 +435,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"max-lookbehind", required_argument, NULL, 0},
         {"min-read", required_argument, NULL, 0},
         {"in", required_argument, NULL, 0},
-        {"out", optional_argument, NULL, 0},
-        {"take", optional_argument, NULL, 't'},
         {"in-index", optional_argument, NULL, 0},
+        {"locale", required_argument, NULL, 0},
+        {"out", optional_argument, NULL, 0},
         {"out-index", optional_argument, NULL, 0},
+        {"take", optional_argument, NULL, 't'},
         // options
         {"no-delimit", no_argument, NULL, 'd'},
         {"end", no_argument, NULL, 'e'},
@@ -539,6 +544,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               op.arg1 = argv[optind - 1];
               uncompiled_output.ordered_ops.push_back(op);
             }
+          } else if (strcmp("locale", name) == 0) {
+            ret.locale = optarg;
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);

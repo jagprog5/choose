@@ -409,8 +409,8 @@ struct UIState {
 
 // NOLINTNEXTLINE exceptions are correctly handled
 int main(int argc, char* const* argv) {
-  setlocale(LC_ALL, "");  // for utf8
   choose::Arguments args = choose::handle_args(argc, argv);
+  setlocale(LC_ALL, args.locale);
   std::vector<choose::Token> tokens;
   try {
     tokens = choose::create_tokens(args);

@@ -4,23 +4,10 @@
 
 # choose
 
-choose is a grep-like utility for creating selection dialogs.
-
-## Speed
-
-Its speed is slower but comparable to [pcre2grep](https://www.pcre.org/current/doc/html/pcre2grep.html), which uses the same regex engine but has different functionality:
-
-```bash
-# speed test. download 370000 words
-wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
-time (cat words_alpha.txt | grep "test" > out.txt)          # 0.005s
-time (cat words_alpha.txt | pcre2grep "test" > out.txt)     # 0.019s
-time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.055s
-```
-
+A grep-like utility for creating selection dialogs.
 ## Dialogs
 
-choose can create selection dialogs (when `--out` and `-t` aren't specified):
+Here is an example of a simple dialog:
 
 ```bash
 echo $'here\nis\neach\noption' | choose -p "Pick a word! ☺"
@@ -34,15 +21,6 @@ echo $'here\nis\neach\noption' | choose -p "Pick a word! ☺"
   each
   option
 ```
-
-## Ordered Ops
-
-choose can do transformations in a specified order. This prints every other word:
-
-```bash
-echo -n 'every other word is printed here' | choose ' ' -r --out --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'
-```
-
 ## Character Visibility
 
 Control characters and whitespaces are printed in a visible way within the UI:
@@ -57,6 +35,32 @@ $\textcolor{lightblue}{\textsf{> }}\textcolor{gray}{\backslash\textsf{0}\backsla
 $\hspace{1em}\textcolor{lightblue}{\textsf{cool text}}\textcolor{gray}{\textsf{STXETX}}$  
 $\hspace{1em}\textcolor{gray}{\backslash\textsf{s\\{3 bytes\\}}}$
 
+## Delimiters
+
+Unlike grep, an arbitrary delimiter can be chosen to separate the input into tokens:
+
+```bash
+echo -n "this 1 is 2 a 3 test" | choose -r " [0-9] "
+```
+## Ordered Ops
+
+choose can do transformations in a specified order. This prints every other word:
+
+```bash
+echo -n 'every other word is printed here' | choose ' ' -r --out --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'
+```
+
+## Speed
+
+For a simple grep case, its speed is slower but comparable to [pcre2grep](https://www.pcre.org/current/doc/html/pcre2grep.html), which uses the same regex engine but has different functionality:
+
+```bash
+# speed test. download 370000 words
+wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
+time (cat words_alpha.txt | grep "test" > out.txt)          # 0.005s
+time (cat words_alpha.txt | pcre2grep "test" > out.txt)     # 0.019s
+time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.055s
+```
 ## Ordering and Uniqueness
 
 This command separates each token by "aaa", and filters for unique elements, and sorts them:
@@ -64,7 +68,6 @@ This command separates each token by "aaa", and filters for unique elements, and
 ```bash
 echo -n "thisaaaisaaaisaaatestaaatestaaa" | choose aaa -ust
 ```
-
 ## Regex
 
 It supports lookarounds / full pcre2 syntax, and can match against patterns in text:
@@ -72,26 +75,22 @@ It supports lookarounds / full pcre2 syntax, and can match against patterns in t
 ```bash
 echo "aaabbbccc" | choose -r --match "(?<=aaa)bbb(...)" -t
 ```
-
 ## Documentation
 
 ```bash
 choose --help
 ```
-
 # Install
 
 ```bash
 sudo apt-get install pkg-config libpcre2-dev libncursesw5-dev # 5 or greater
 cd build && cmake .. && sudo cmake --build . --target install # optionally -DBUILD_TESTING=true
 ```
-
 # Uninstall
 
 ```bash
 sudo scripts/uninstall.bash
 ```
-
 # hist
 
 `hist` is a bash function which uses `choose`. During installation, there is an
@@ -119,7 +118,6 @@ It allows a previous command to be re-run, like a better combination of `reverse
 │Select a line to edit then run.                                                 │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
-
 ## Examples
 
 ```bash

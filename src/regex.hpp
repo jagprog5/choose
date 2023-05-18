@@ -42,7 +42,6 @@ code compile(const char* pattern, uint32_t options, const char* identification) 
   return code(re);
 }
 
-// this function may call exit
 match_data create_match_data(const code& code) {
   pcre2_match_data* data = pcre2_match_data_create_from_pattern(code.get(), NULL);
   if (data == NULL) {
@@ -51,7 +50,6 @@ match_data create_match_data(const code& code) {
   return match_data(data);
 }
 
-// this function may call exit
 // returns -1 if partial matching was specified in match_options and the subject is a partial match.
 // returns 0 if there are no matches, else 1 + the number of groups
 int match(const code& re,  //
@@ -96,7 +94,6 @@ uint32_t min_match_length(const code& c) {
   return out;
 }
 
-// this function may call exit
 // replacement is null terminating
 std::vector<char> substitute_global(const code& re,  //
                                     const char* subject,
