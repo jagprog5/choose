@@ -1,4 +1,7 @@
 #!/bin/bash
+
+PATH="$PATH:$HOME/.choose"
+
 hist() {
   if [ -z "$VISUAL" ] && [ -z "$EDITOR" ]; then
     echo "Error. Please set the VISUAL or EDITOR variable appropriately."

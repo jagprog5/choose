@@ -4,7 +4,7 @@
 
 # choose
 
-A grep-like utility for creating selection dialogs.
+choose is a stream manipulation tool for creating selection dialogs.
 ## Dialogs
 
 Here is an example of a simple dialog:
@@ -23,7 +23,7 @@ echo $'here\nis\neach\noption' | choose -p "Pick a word! 📋❗"
 ```
 ## Character Visibility
 
-Control characters and whitespaces are printed in a visible way within the UI:
+Control characters and whitespace lines are printed in a visible way within the UI:
 
 ```bash
 echo -en '\0\n\tcool text\x2\x3\t   ' | choose $'\t'
@@ -52,10 +52,10 @@ echo -n 'every other word is printed here' | choose ' ' -r --out --in-index=afte
 
 ## Ordering and Uniqueness
 
-This command separates each token by "aaa", and filters for unique elements, and sorts them:
+This command separates each token by "===", filters for unique elements, and sorts them:
 
 ```bash
-echo -n "thisaaaisaaaisaaatestaaatestaaa" | choose aaa -ust
+echo -n "this===is===is===test===test===" | choose === -ust -o $'\n=-=\n'
 ```
 ## Regex
 
@@ -83,17 +83,17 @@ choose --help
 # Install
 
 ```bash
-sudo apt-get install pkg-config libpcre2-dev libncursesw5-dev # 5 or greater
-cd build && cmake .. && sudo cmake --build . --target install # optionally -DBUILD_TESTING=true
+sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
+scripts/install.bash
 ```
 # Uninstall
 
 ```bash
-sudo scripts/uninstall.bash
+scripts/uninstall.bash
 ```
 # hist
 
-`hist` is a bash function which uses `choose`. During installation, there is an optional prompt to install it. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
+`hist` is a bash function installed with `choose`. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
 
 ```bash
   git log --oneline

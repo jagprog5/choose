@@ -34,16 +34,7 @@ if (NO_SCROLL_BORDER)
   )
 endif()
 
-install(TARGETS choose DESTINATION /usr/bin)
-
-# hist
-
-add_custom_command(
-  TARGET choose
-  POST_BUILD
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  COMMAND scripts/hist_installer.bash
-)
+install(TARGETS choose DESTINATION ~/.choose)
 
 if(BUILD_TESTING)
   set(BOOST_MIN_VERSION "1.63.0")
