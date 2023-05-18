@@ -14,11 +14,15 @@ namespace choose {
 namespace regex {
 
 struct code_destroyer {
-  void operator()(pcre2_code* code) { pcre2_code_free(code); }
+  void operator()(pcre2_code* code) {
+    pcre2_code_free(code);  // library does null check
+  }
 };
 
 struct match_data_destroyer {
-  void operator()(pcre2_match_data* match_data) { pcre2_match_data_free(match_data); }
+  void operator()(pcre2_match_data* match_data) {
+    pcre2_match_data_free(match_data);  // library does null check
+  }
 };
 
 using code = std::unique_ptr<pcre2_code, code_destroyer>;

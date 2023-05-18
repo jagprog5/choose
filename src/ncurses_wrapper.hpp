@@ -7,7 +7,11 @@
 namespace choose {
 
 struct file_destroyer {
-  void operator()(FILE* f) { fclose(f); }
+  void operator()(FILE* f) {
+    if (f) {
+      fclose(f);
+    }
+  }
 };
 
 using file = std::unique_ptr<FILE, file_destroyer>;
@@ -17,13 +21,21 @@ namespace nc {
 // if a ncurses call fails, instead of checking for ERR, it just throws
 
 struct window_destroyer {
-  void operator()(WINDOW* w) { delwin(w); }
+  void operator()(WINDOW* w) {
+    if (w) {
+      delwin(w);
+    }
+  }
 };
 
 using window = std::unique_ptr<WINDOW, window_destroyer>;
 
 struct screen_destroyer {
-  void operator()(SCREEN* w) { delscreen(w); }
+  void operator()(SCREEN* s) {
+    if (s) {
+      delscreen(s);
+    }
+  }
 };
 
 using screen = std::unique_ptr<SCREEN, screen_destroyer>;

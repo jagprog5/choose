@@ -429,6 +429,15 @@ int main(int argc, char* const* argv) {
     stream_output = std::vector<char>();
   }
 
+  // https://stackoverflow.com/a/44884859/15534181
+  // required for ncurses to work after using stdin
+  choose::file f = choose::file(fopen("/dev/tty", "r+"));
+  if (!f) {
+    perror(NULL);
+    return EXIT_FAILURE;
+  }
+  choose::nc::screen screen;
+
   UIState state{
       std::move(args),              //
       std::move(tokens),            //
@@ -439,16 +448,8 @@ int main(int argc, char* const* argv) {
           ),
   };
 
-  // https://stackoverflow.com/a/44884859/15534181
-  // required for ncurses to work after using stdin
-  choose::file f = choose::file(fopen("/dev/tty", "r+"));
-  if (!f) {
-    perror(NULL);
-    return EXIT_FAILURE;
-  }
-
   try {
-    choose::nc::screen screen = choose::nc::newterm(NULL, f, f);
+    screen = choose::nc::newterm(NULL, f, f);
     set_term(screen.get());
 
     choose::nc::cbreak();  // pass keys directly from input without buffering
