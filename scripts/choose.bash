@@ -36,8 +36,8 @@ hist() {
     return 1
   fi
 
-  history -s $(cat "$TEMPFILE")
+  history -s -- $(cat "$TEMPFILE")
 
   # run on current shell
-  source "$TEMPFILE"
+  source -- "$TEMPFILE"
 }
