@@ -189,7 +189,7 @@ bool process_token(Token&& t, ProcessTokenContext& context) {
     return false;
   }
 
-  if (!context.args.sort) {
+  if (!context.args.sort || context.args.defined_sort_comp) {
     context.output.push_back(std::move(t));
     if (context.args.unique) {
       // if unique, duplicate removed
@@ -200,12 +200,11 @@ bool process_token(Token&& t, ProcessTokenContext& context) {
     }
     ++context.out_count;
   } else {
-    // sorted
-    bool sort_is_reversed = context.args.sort_reverse;
-    auto greater_or_lesser = [sort_is_reversed](const Token& lhs, const Token& rhs) -> bool {  //
-      return sort_is_reversed ? lhs > rhs : lhs < rhs;
+    // non user defined sorting and uniqueness. user defined sorting is handled below
+    auto comp = [&context](const Token& lhs, const Token& rhs) -> bool {  //
+      return context.args.sort_reverse ? lhs > rhs : lhs < rhs;
     };
-    auto pos = std::lower_bound(context.output.cbegin(), context.output.cend(), t, greater_or_lesser);
+    auto pos = std::lower_bound(context.output.cbegin(), context.output.cend(), t, comp);
     if (!context.args.unique || pos == context.output.cend() || *pos != t) {
       context.output.insert(pos, std::move(t));
       ++context.out_count;
@@ -444,6 +443,24 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   if (ptc.direct_output) {
     ptc.direct_output->finish_output();
     throw termination_request();
+  }
+
+  if (args.defined_sort_comp) {
+    // user defined sort requires different sorting and uniqueness handling
+    // uniqueness was handled already in process_token. now just sorting
+    auto comp = [&args](const Token& lhs, const Token& rhs) -> bool {  //
+      Token combined;
+      str::append_to_buffer(combined.buffer, lhs.buffer);
+      str::append_to_buffer(combined.buffer, args.defined_sort_sep);
+      str::append_to_buffer(combined.buffer, rhs.buffer);
+      int comp_result = regex::match(args.defined_sort_comp, combined.buffer.data(), combined.buffer.size(), args.defined_sort_comp_data, "user comp");
+      bool ret = comp_result > 0;
+      if (args.sort_reverse) {
+        ret = !ret;  // subtle nuance here. this is ok because the sort is stable
+      }
+      return ret;
+    };
+    std::stable_sort(output.begin(), output.end(), comp);
   }
 
   if (args.flip) {

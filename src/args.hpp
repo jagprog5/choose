@@ -53,9 +53,15 @@ struct Arguments {
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
-  bool sort = false;
+  bool sort = false;  // indicates that any sort is applied
   // if sort_reverse is set, then sort should also be set at the same time
   bool sort_reverse = false;
+
+  // same as above. sort should be set at the same time
+  std::vector<char> defined_sort_sep;
+  regex::code defined_sort_comp = 0;
+  regex::match_data defined_sort_comp_data = 0;
+
   bool unique = false;
   bool flip = false;
   bool multiple_selections = false;
@@ -167,12 +173,19 @@ struct UncompiledCodes {
   std::vector<UncompiledOrderedOp> ordered_ops;
   const char* primary = 0;
 
+  const char* defined_sort_comp = 0;
+
   void compile(Arguments& output) const {
     for (const UncompiledOrderedOp& op : ordered_ops) {
       OrderedOp oo = op.compile(re_options);
       output.ordered_ops.push_back(std::move(oo));
     }
     output.primary = regex::compile(primary, re_options, "positional argument");
+
+    if (defined_sort_comp) {
+      output.defined_sort_comp = regex::compile(defined_sort_comp, re_options, "defined comp");
+      output.defined_sort_comp_data = regex::create_match_data(output.defined_sort_comp);
+    }
   }
 };
 
@@ -276,6 +289,12 @@ void print_help_message() {
       "                of the output if any output was given and without --no-delimit\n"
       "        -d, --no-delimit\n"
       "                don't add a batch separator at the end of the output\n"
+      "        --defined-sort <sep> <comp>\n"
+      "                apply a user defined sort. less-than comparison is indicated by\n"
+      "                concatenating two tokens with sep and successfully matching\n"
+      "                against comp. ignores --sort. compatible with --sort-reverse\n"
+      "        --defined-sort-z <comp>\n"
+      "                --defined-sort with a null char separator\n"
       "        -e, --end\n"
       "                begin cursor and prompt at the bottom\n"
       "        --flip\n"
@@ -426,6 +445,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"output-separator", required_argument, NULL, 'o'},
         {"batch-separator", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
+        {"defined-sort", required_argument, NULL, 0},
+        {"defined-sort-z", required_argument, NULL, 0},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
@@ -544,6 +565,24 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               op.arg1 = argv[optind - 1];
               uncompiled_output.ordered_ops.push_back(op);
             }
+          } else if (strcmp("defined-sort", name) == 0) {
+            if (optind >= argc) {
+              // ran off end
+              arg_error_preamble(argc, argv);
+              fputs("option '--defined-sort' requires two arguments\n", stderr);
+              arg_has_errors = true;
+            } else {
+              ret.sort = true;
+              ++optind;
+              size_t len = std::strlen(argv[optind - 2]);
+              ret.defined_sort_sep.resize(len);
+              std::memcpy(ret.defined_sort_sep.data(), argv[optind - 2], len * sizeof(char));
+              uncompiled_output.defined_sort_comp = argv[optind - 1];
+            }
+          } else if (strcmp("defined-sort-z", name) == 0) {
+            ret.sort = true;
+            ret.defined_sort_sep = {'\0'};
+            uncompiled_output.defined_sort_comp = optarg;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else {

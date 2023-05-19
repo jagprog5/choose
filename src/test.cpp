@@ -398,6 +398,24 @@ BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(defined_sort) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort", "---", "^John [a-zA-Z]+---"});
+  choose_output correct_output{std::vector<choose::Token>{"John Smith", "John Doe", "John Doe", "Apple", "Banana"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_sort_reverse_and_unique) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort", "---", "^John [a-zA-Z]+---", "--sort-reverse", "-u"});
+  choose_output correct_output{std::vector<choose::Token>{"Banana", "Apple", "John Doe", "John Smith"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_sort_z) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort-z", "^John [a-zA-Z]+\\0"});
+  choose_output correct_output{std::vector<choose::Token>{"John Smith", "John Doe", "John Doe", "Apple", "Banana"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(in_limit) {
   choose_output out = run_choose("d\nc\nb\na", {"--in=3", "--sort"});
   choose_output correct_output{std::vector<choose::Token>{"b", "c", "d"}};
