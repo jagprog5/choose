@@ -57,6 +57,13 @@ This command separates each token by "===", filters for unique elements, and sor
 ```bash
 echo -n "this===is===is===test===test===" | choose === -ust -o $'\n=-=\n'
 ```
+
+And this uses makes it so all tokens that start with John are first:
+
+```bash
+echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith" | choose --defined-sort-z '^John' -r
+```
+
 ## Regex
 
 It supports lookarounds / full pcre2 syntax, and can match against patterns in text:
