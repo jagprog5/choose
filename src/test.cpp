@@ -623,3 +623,50 @@ BOOST_AUTO_TEST_CASE(match_start_after_end) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(misc_args)
+
+BOOST_AUTO_TEST_CASE(null_output_separators) {
+  choose_output out = run_choose("a\nb\nc", {"-zyt"});
+  choose_output correct_output{std::vector<char>{'a', '\0', 'b', '\0', 'c', '\0'}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(null_input_separator) {
+  choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-0"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(parse_ul) {
+  int argc = 1;
+  const char* const argv[] = {"/tester/path/to/parse_ul"};
+  long out;  // NOLINT
+  bool arg_has_errors = false;
+  choose::parse_ul("123", &out, 0, 1000, &arg_has_errors, "simple", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
+  BOOST_REQUIRE_EQUAL(out, 123);
+  choose::parse_ul("banana", &out, 0, 1000, &arg_has_errors, "simple parse error", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("-999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "-range parse err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "+range parse err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("3", &out, 3, 1000, &arg_has_errors, "-range inclusive", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
+  BOOST_REQUIRE_EQUAL(out, 3);
+  choose::parse_ul("1000", &out, 3, 1000, &arg_has_errors, "+range inclusive", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
+  BOOST_REQUIRE_EQUAL(out, 1000);
+  choose::parse_ul("2", &out, 3, 1000, &arg_has_errors, "-range exclusive err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("1001", &out, 3, 1000, &arg_has_errors, "+range exclusive err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+}
+
+BOOST_AUTO_TEST_SUITE_END()

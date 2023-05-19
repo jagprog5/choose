@@ -189,20 +189,30 @@ struct UncompiledCodes {
   }
 };
 
-void arg_error_preamble(int argc, char* const* argv) {
+void arg_error_preamble(int argc, const char* const* argv, FILE* err = stderr) {
   const char* me;  // NOLINT initialized below
   if (argc > 0 && argv && *argv) {
     me = *argv;
   } else {
     me = "choose";
   }
-  fputs(me, stderr);
-  fputs(": ", stderr);
+  fputs(me, err);
+  fputs(": ", err);
 }
 
-// on error, prints an appropriate message and sets arg_has_errors to true,
-// out will still be written to but should not be used
-void parse_ul(const char* str, long* out, unsigned long min_inclusive, unsigned long max_inclusive, bool* arg_has_errors, const char* name, int argc, char* const* argv) {
+// parse a non-negative long, placed in out, from null terminating string, str.
+// on parse or range error, arg_has_errors is set to true, and an error is
+// printed to err, which includes the name and args; out will have been written
+// to but should not be used
+void parse_ul(const char* str,  //
+              long* out,
+              unsigned long min_inclusive,
+              unsigned long max_inclusive,
+              bool* arg_has_errors,
+              const char* name,
+              int argc,
+              const char* const* argv,
+              FILE* err = stderr) {
   // based off https://stackoverflow.com/a/14176593/15534181
   char* temp;  // NOLINT initialized by strtol
   errno = 0;
@@ -210,12 +220,16 @@ void parse_ul(const char* str, long* out, unsigned long min_inclusive, unsigned 
   // strtoul is trash and doesn't handle negative values in a sane way
   *out = std::strtol(str, &temp, 0);
   if (temp == str || *temp != '\0' || ((*out == LONG_MIN || *out == LONG_MAX) && errno == ERANGE)) {
-    arg_error_preamble(argc, argv);
-    fprintf(stderr, "--%s parse error\n", name);
+    if (err) {
+      arg_error_preamble(argc, argv, err);
+      fprintf(stderr, "--%s parse error\n", name);
+    }
     *arg_has_errors = true;
   } else if (*out < 0 || (unsigned long)*out < min_inclusive || (unsigned long)*out > max_inclusive) {
-    arg_error_preamble(argc, argv);
-    fprintf(stderr, "--%s value out of range\n", name);
+    if (err) {
+      arg_error_preamble(argc, argv, err);
+      fprintf(stderr, "--%s value out of range\n", name);
+    }
     *arg_has_errors = true;
   }
 }
