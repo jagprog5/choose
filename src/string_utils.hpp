@@ -130,6 +130,11 @@ void append_to_buffer(std::vector<T>& buf, const T* begin, const T* end) {
   std::copy(begin, end, &*buf.end() - (end - begin));
 }
 
+template <typename T>
+void append_to_buffer(std::vector<T>& buf, const std::vector<T>& from) {
+  append_to_buffer(buf, &*from.cbegin(), &*from.cend());
+}
+
 // applies word wrapping on a string
 // convert the prompt to a vector of wide char null terminating strings
 std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int num_columns) {
