@@ -181,11 +181,29 @@ BOOST_AUTO_TEST_CASE(test_decrement_until_not_separating_multibyte) {
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {
   std::vector<char> empty;
   str::apply_index_op(empty, 123, true);
-  BOOST_REQUIRE_EQUAL(empty, (std::vector<char>{'1', '2', '3', ' '}));
+  BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
-  // std::vector<char> not_empty{'a', 'b', 'c'};
-  // str::apply_index_op(not_empty, 123, true);
-  // BOOST_REQUIRE_EQUAL(not_empty, (std::vector<char>{'1', '2', '3', ' '}));
+  std::vector<char> val_zero;
+  str::apply_index_op(val_zero, 0, true); // log edge case
+  BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
+
+  std::vector<char> not_empty{'a', 'b', 'c'};
+  str::apply_index_op(not_empty, 123, true);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
+}
+
+BOOST_AUTO_TEST_CASE(apply_index_op_after) {
+  std::vector<char> empty;
+  str::apply_index_op(empty, 123, false);
+  BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
+
+  std::vector<char> less_than_10;
+  str::apply_index_op(less_than_10, 9, false);
+  BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
+
+  std::vector<char> not_empty{'a', 'b', 'c'};
+  str::apply_index_op(not_empty, 123, false);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
