@@ -3,6 +3,7 @@
 #include <cassert>
 #include <optional>
 #include <set>
+#include <utility>
 
 #include "args.hpp"
 #include "regex.hpp"
@@ -22,6 +23,7 @@ struct Token {
   Token(Token&&) = default;
   Token& operator=(const Token&) & = default;
   Token& operator=(Token&&) & = default;
+  ~Token() = default;
 };
 
 // writes an output separator between each token
@@ -246,7 +248,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  uint32_t max_lookbehind_size;  // bytes
+  uint32_t max_lookbehind_size;  // NOLINT // bytes
   if (args.max_lookbehind_set()) {
     max_lookbehind_size = args.max_lookbehind;
   } else {
@@ -256,7 +258,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     max_lookbehind_size *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
-  uint32_t min_bytes_to_read;
+  uint32_t min_bytes_to_read;  // NOLINT
   if (args.min_read_set()) {
     min_bytes_to_read = args.min_read;
   } else {
@@ -333,7 +335,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   // only used when is_match == false
   Token token_being_built;
 
-  bool input_done;
+  bool input_done;  // NOLINT
   // helper lambda. reads stdin into the subject.
   // sets input_done appropriately
   auto get_more_input = [&](size_t n) {
@@ -405,7 +407,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       goto skip_read;
     } else {
       if (!input_done) {
-        const char* new_subject_begin;
+        const char* new_subject_begin;  // NOLINT
         if (match_result == 0) {
           // there was no match but there is more input
           new_subject_begin = &*subject.cend();
@@ -451,7 +453,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         // there was no match and there is no more input
         if (!is_match) {
           str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, &*subject.end());
-          if (token_being_built.buffer.size() != 0 || args.use_input_delimiter) {
+          if (!token_being_built.buffer.empty() || args.use_input_delimiter) {
             process_token(std::move(token_being_built), ptc);
           }
         }

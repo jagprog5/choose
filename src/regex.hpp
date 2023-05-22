@@ -152,6 +152,7 @@ struct Match {
   Match& operator=(const Match&) = delete;
   Match(Match&& o) = delete;
   Match& operator=(Match&&) = delete;
+  ~Match() = default;
 
   Match(const char* begin, const char* end) : begin(begin), end(end) {
     // check not required since PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK is not used,
