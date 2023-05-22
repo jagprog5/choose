@@ -57,10 +57,14 @@ struct Arguments {
   // if sort_reverse is set, then sort should also be set at the same time
   bool sort_reverse = false;
 
-  // same as above. sort should be set at the same time
-  std::vector<char> defined_sort_sep;
-  regex::code defined_sort_comp = 0;
-  regex::match_data defined_sort_comp_data = 0;
+  // if sort_comp is set, then sort should also be set at the same time
+  bool comp_sort = false;
+
+  // user defined comparison
+  std::vector<char> comp_sep;
+  regex::code comp = 0;
+  regex::match_data comp_data = 0;
+  bool comp_unique = false;
 
   bool unique = false;
   bool flip = false;
@@ -173,7 +177,7 @@ struct UncompiledCodes {
   std::vector<UncompiledOrderedOp> ordered_ops;
   const char* primary = 0;
 
-  const char* defined_sort_comp = 0;
+  const char* comp = 0;
 
   void compile(Arguments& output) const {
     for (const UncompiledOrderedOp& op : ordered_ops) {
@@ -182,9 +186,9 @@ struct UncompiledCodes {
     }
     output.primary = regex::compile(primary, re_options, "positional argument");
 
-    if (defined_sort_comp) {
-      output.defined_sort_comp = regex::compile(defined_sort_comp, re_options, "defined comp");
-      output.defined_sort_comp_data = regex::create_match_data(output.defined_sort_comp);
+    if (comp) {
+      output.comp = regex::compile(comp, re_options, "defined comp");
+      output.comp_data = regex::create_match_data(output.comp);
     }
   }
 };
@@ -301,14 +305,20 @@ void print_help_message() {
       "                output (which is enabled via --tenacious), then a batch\n"
       "                separator is used between batches. it is also placed at the end\n"
       "                of the output if any output was given and without --no-delimit\n"
+      "        --comp <sep> <comp>\n"
+      "                user defined comparison. less-than comparison is indicated by\n"
+      "                concatenating two tokens with sep and successfully matching\n"
+      "                against comp. required by --comp-sort and --comp-unique\n"
+      "        --comp-sort\n"
+      "                requires --comp. does a stable sort using the comparison.\n"
+      "                ignores --sort. can use --sort-reverse\n"
+      "        --comp-unique\n"
+      "                requires --comp. allow only first instances of unique\n"
+      "                elements as defined by the comparison. ignores --unique\n"
+      "        --comp-z <comp>\n"
+      "                --comp with a null char separator\n"
       "        -d, --no-delimit\n"
       "                don't add a batch separator at the end of the output\n"
-      "        --defined-sort <sep> <comp>\n"
-      "                apply a user defined sort. less-than comparison is indicated by\n"
-      "                concatenating two tokens with sep and successfully matching\n"
-      "                against comp. ignores --sort. compatible with --sort-reverse\n"
-      "        --defined-sort-z <comp>\n"
-      "                --defined-sort with a null char separator\n"
       "        -e, --end\n"
       "                begin cursor and prompt at the bottom\n"
       "        --flip\n"
@@ -382,10 +392,12 @@ void print_help_message() {
       "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
       "        echo -n \"1A2a3\" | choose -i \"a\"\n"
       "        echo -n \"a b c\" | choose -o, -b$'\\n' \" \" -m --tenacious\\\n"
-      "                --selection-order -p \"press space\"\n"
+      "                --selection-order -p \"space, enter, escape\"\n"
       "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
+      "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
+      "                -r --comp-z '^John(?!\\0John)' --comp-sort\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
       "controls:\n"
@@ -459,8 +471,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"output-separator", required_argument, NULL, 'o'},
         {"batch-separator", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
-        {"defined-sort", required_argument, NULL, 0},
-        {"defined-sort-z", required_argument, NULL, 0},
+        {"comp", required_argument, NULL, 0},
+        {"comp-z", required_argument, NULL, 0},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
@@ -476,6 +488,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"out-index", optional_argument, NULL, 0},
         {"take", optional_argument, NULL, 't'},
         // options
+        {"comp-sort", no_argument, NULL, 0},
+        {"comp-unique", no_argument, NULL, 0},
         {"no-delimit", no_argument, NULL, 'd'},
         {"end", no_argument, NULL, 'e'},
         {"flip", no_argument, NULL, 0},
@@ -579,24 +593,22 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               op.arg1 = argv[optind - 1];
               uncompiled_output.ordered_ops.push_back(op);
             }
-          } else if (strcmp("defined-sort", name) == 0) {
+          } else if (strcmp("comp", name) == 0) {
             if (optind >= argc) {
               // ran off end
               arg_error_preamble(argc, argv);
-              fputs("option '--defined-sort' requires two arguments\n", stderr);
+              fputs("option '--comp' requires two arguments\n", stderr);
               arg_has_errors = true;
             } else {
-              ret.sort = true;
               ++optind;
               size_t len = std::strlen(argv[optind - 2]);
-              ret.defined_sort_sep.resize(len);
-              std::memcpy(ret.defined_sort_sep.data(), argv[optind - 2], len * sizeof(char));
-              uncompiled_output.defined_sort_comp = argv[optind - 1];
+              ret.comp_sep.resize(len);
+              std::memcpy(ret.comp_sep.data(), argv[optind - 2], len * sizeof(char));
+              uncompiled_output.comp = argv[optind - 1];
             }
-          } else if (strcmp("defined-sort-z", name) == 0) {
-            ret.sort = true;
-            ret.defined_sort_sep = {'\0'};
-            uncompiled_output.defined_sort_comp = optarg;
+          } else if (strcmp("comp-z", name) == 0) {
+            ret.comp_sep = {'\0'};
+            uncompiled_output.comp = optarg;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else {
@@ -616,6 +628,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             }
           } else if (strcmp("flip", name) == 0) {
             ret.flip = true;
+          } else if (strcmp("comp-sort", name) == 0) {
+            ret.comp_sort = true;
+            ret.sort = true;
+          } else if (strcmp("comp-unique", name) == 0) {
+            ret.comp_unique = true;
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("multiline", name) == 0) {

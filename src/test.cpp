@@ -232,7 +232,7 @@ struct choose_output {
 
 std::ostream& operator<<(std::ostream& os, const choose_output& out) {
   if (const std::vector<char>* out_str = std::get_if<std::vector<char>>(&out.o)) {
-    os << "stdout:\n";
+    os << "\nstdout: ";
     bool first = true;
     for (char ch : *out_str) {
       if (!first) {
@@ -248,11 +248,12 @@ std::ostream& operator<<(std::ostream& os, const choose_output& out) {
     }
   } else {
     const std::vector<choose::Token>& out_tokens = std::get<std::vector<choose::Token>>(out.o);
-    os << "tokens:\n";
+    os << "\ntokens: ";
     bool first_token = true;
     for (const Token& t : out_tokens) {
       if (!first_token) {
-        os << '\n';
+        os << '|';
+        os << '|';
       }
       first_token = false;
       bool first_in_token = true;
@@ -402,6 +403,8 @@ BOOST_AUTO_TEST_CASE(basic_output_match) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+// lexicographical sorting and uniqueness
+
 BOOST_AUTO_TEST_CASE(sort) {
   choose_output out = run_choose("this\nis\na\ntest", {"--sort"});
   choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
@@ -426,23 +429,56 @@ BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+// user defined sorting and uniqueness
+
 BOOST_AUTO_TEST_CASE(defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort", "---", "^John [a-zA-Z]+---"});
-  choose_output correct_output{std::vector<choose::Token>{"John Smith", "John Doe", "John Doe", "Apple", "Banana"}};
+  // this also checks the separator and sort stability
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-sort"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_sort_reverse) {
+  // notice that this isn't just the reverse of defined_sort test, since the sort is stable
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-sort", "--sort-reverse"});
+  choose_output correct_output{std::vector<choose::Token>{"Apple", "Banana", "John Doe", "John Doe", "John Smith"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_unique) {
+  // the comparison treats all John's as the same. so there's one John and one non John in the output.
+  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-unique"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "Apple"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(defined_sort_reverse_and_unique) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort", "---", "^John [a-zA-Z]+---", "--sort-reverse", "-u"});
-  choose_output correct_output{std::vector<choose::Token>{"Banana", "Apple", "John Doe", "John Smith"}};
+  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-sort", "--sort-reverse", "--comp-unique"});
+  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(defined_sort_z) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort-z", "^John [a-zA-Z]+\\0"});
-  choose_output correct_output{std::vector<choose::Token>{"John Smith", "John Doe", "John Doe", "Apple", "Banana"}};
+BOOST_AUTO_TEST_CASE(comp_z) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-z", "^John [a-zA-Z]+\\0(?!John)", "--comp-sort"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
+
+// mix of both lex and user defined
+
+BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--unique", "--comp-sort"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple", "Banana"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-unique", "--sort"});
+  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+// ========================
 
 BOOST_AUTO_TEST_CASE(in_limit) {
   choose_output out = run_choose("d\nc\nb\na", {"--in=3", "--sort"});
@@ -457,8 +493,8 @@ BOOST_AUTO_TEST_CASE(flip) {
 }
 
 BOOST_AUTO_TEST_CASE(direct_but_not_basic_limit) {
-  choose_output out = run_choose("a\nb\nc", {"--rm=b", "-t=2"});
-  choose_output correct_output{to_vec("a\nc\n")};
+  choose_output out = run_choose("a\nb\nc", {"--sub", "c", "d", "-t=2"});
+  choose_output correct_output{to_vec("a\nb\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
