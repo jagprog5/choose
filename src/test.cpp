@@ -15,14 +15,14 @@ BOOST_GLOBAL_FIXTURE(GlobalInit);
 BOOST_AUTO_TEST_SUITE(create_prompt_lines_test_suite)
 
 BOOST_AUTO_TEST_CASE(empty_prompt) {
-  auto ret = choose::str::create_prompt_lines("", 80);
+  auto ret = str::create_prompt_lines("", 80);
   BOOST_REQUIRE_EQUAL(ret.size(), 1);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"") == 0);
 }
 
 BOOST_AUTO_TEST_CASE(zero_width) {
   // zero or negative width is handled correctly
-  auto ret = choose::str::create_prompt_lines("abc", -1000);
+  auto ret = str::create_prompt_lines("abc", -1000);
   BOOST_REQUIRE_EQUAL(ret.size(), 3);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"a") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"b") == 0);
@@ -30,13 +30,13 @@ BOOST_AUTO_TEST_CASE(zero_width) {
 }
 
 BOOST_AUTO_TEST_CASE(only_whitespace) {
-  auto ret = choose::str::create_prompt_lines("         ", 3);
+  auto ret = str::create_prompt_lines("         ", 3);
   BOOST_REQUIRE_EQUAL(ret.size(), 1);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"") == 0);
 }
 
 BOOST_AUTO_TEST_CASE(small_width) {
-  auto ret = choose::str::create_prompt_lines("abcd", 1);
+  auto ret = str::create_prompt_lines("abcd", 1);
   BOOST_REQUIRE_EQUAL(ret.size(), 4);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"a") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"b") == 0);
@@ -45,14 +45,14 @@ BOOST_AUTO_TEST_CASE(small_width) {
 }
 
 BOOST_AUTO_TEST_CASE(excess_spaces) {
-  auto ret = choose::str::create_prompt_lines("    ab   cd  ", 3);
+  auto ret = str::create_prompt_lines("    ab   cd  ", 3);
   BOOST_REQUIRE_EQUAL(ret.size(), 2);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"ab") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"cd") == 0);
 }
 
 BOOST_AUTO_TEST_CASE(full_empty_one) {
-  auto ret = choose::str::create_prompt_lines("     a b c    ", 1);
+  auto ret = str::create_prompt_lines("     a b c    ", 1);
   BOOST_REQUIRE_EQUAL(ret.size(), 3);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"a") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"b") == 0);
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(full_empty_one) {
 }
 
 BOOST_AUTO_TEST_CASE(full_empty_many) {
-  auto ret = choose::str::create_prompt_lines("    111 222  333   444    555", 3);
+  auto ret = str::create_prompt_lines("    111 222  333   444    555", 3);
   BOOST_REQUIRE_EQUAL(ret.size(), 5);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"111") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"222") == 0);
@@ -70,7 +70,7 @@ BOOST_AUTO_TEST_CASE(full_empty_many) {
 }
 
 BOOST_AUTO_TEST_CASE(newlines) {
-  auto ret = choose::str::create_prompt_lines("this\nis\n\na\ntest", 80);
+  auto ret = str::create_prompt_lines("this\nis\n\na\ntest", 80);
   BOOST_REQUIRE_EQUAL(ret.size(), 5);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"this") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"is") == 0);
@@ -81,13 +81,13 @@ BOOST_AUTO_TEST_CASE(newlines) {
 
 BOOST_AUTO_TEST_CASE(zero_width_char_ignored) {
   const char ch[] = {'h', (char)0xEF, (char)0xBB, (char)0xBF, 'i', 0};
-  auto ret = choose::str::create_prompt_lines(ch, 80);
+  auto ret = str::create_prompt_lines(ch, 80);
   BOOST_REQUIRE_EQUAL(ret.size(), 1);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"hi") == 0);
 }
 
 BOOST_AUTO_TEST_CASE(word_boundary_with_leading_spaces) {
-  auto ret = choose::str::create_prompt_lines("  word", 4);
+  auto ret = str::create_prompt_lines("  word", 4);
   BOOST_REQUIRE_EQUAL(ret.size(), 2);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"word") == 0);
@@ -95,11 +95,11 @@ BOOST_AUTO_TEST_CASE(word_boundary_with_leading_spaces) {
 
 BOOST_AUTO_TEST_CASE(invalid_utf8) {
   const char ch[] = {(char)0b11100000, '\0'};
-  BOOST_CHECK_THROW(choose::str::create_prompt_lines(ch, 80), std::runtime_error);
+  BOOST_CHECK_THROW(str::create_prompt_lines(ch, 80), std::runtime_error);
 
   // a second place this happens, when consuming leading whitespace during wrap
   const char ch2[] = {'t', ' ', (char)0b11100000, '\0'};
-  BOOST_CHECK_THROW(choose::str::create_prompt_lines(ch2, 1), std::runtime_error);
+  BOOST_CHECK_THROW(str::create_prompt_lines(ch2, 1), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(wide_utf8) {
@@ -107,7 +107,7 @@ BOOST_AUTO_TEST_CASE(wide_utf8) {
   // https://www.compart.com/en/unicode/U+6F22
   // 0xE6 0xBC 0xA2 encodes for a character which has a display width of 2
   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, ' ', (char)0xE6, (char)0xBC, (char)0xA2, '\0'};
-  auto ret = choose::str::create_prompt_lines(ch, 1);
+  auto ret = str::create_prompt_lines(ch, 1);
   BOOST_REQUIRE_EQUAL(ret.size(), 2);
   BOOST_REQUIRE(std::wcscmp(ret[0].data(), L"漢") == 0);
   BOOST_REQUIRE(std::wcscmp(ret[1].data(), L"漢") == 0);
@@ -125,26 +125,26 @@ char four = (char)0b11110000;
 
 BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
   const char empty[] = {};
-  BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(empty, empty) == 0);
+  BOOST_REQUIRE(str::utf8::find_last_non_continuation(empty, empty) == 0);
   const char simple[] = {'a'};
-  BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(simple, std::end(simple)) == simple);
+  BOOST_REQUIRE(str::utf8::find_last_non_continuation(simple, std::end(simple)) == simple);
   const char limit[] = {'a', continuation, continuation, continuation, continuation};
-  BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(limit, std::end(limit)) == 0);
+  BOOST_REQUIRE(str::utf8::find_last_non_continuation(limit, std::end(limit)) == 0);
   const char not_limit[] = {'a', continuation, continuation, continuation};
-  BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(not_limit, std::end(not_limit)) == not_limit);
+  BOOST_REQUIRE(str::utf8::find_last_non_continuation(not_limit, std::end(not_limit)) == not_limit);
   const char more[] = {'a', 'b', 'c', continuation, continuation, continuation};
-  BOOST_REQUIRE(choose::str::utf8::find_last_non_continuation(more, std::end(more)) == more + 2);
+  BOOST_REQUIRE(str::utf8::find_last_non_continuation(more, std::end(more)) == more + 2);
 }
 
 BOOST_AUTO_TEST_CASE(test_bytes_required) {
   const char empty[] = {};
-  BOOST_REQUIRE(choose::str::utf8::bytes_required(empty, empty) < 0);
+  BOOST_REQUIRE(str::utf8::bytes_required(empty, empty) < 0);
   const char simple[] = {'a'};
-  BOOST_REQUIRE(choose::str::utf8::bytes_required(simple, std::end(simple)) == 0);
+  BOOST_REQUIRE(str::utf8::bytes_required(simple, std::end(simple)) == 0);
   const char limit[] = {'a', continuation, continuation, continuation, continuation};
-  BOOST_REQUIRE(choose::str::utf8::bytes_required(limit, std::end(limit)) < 0);
+  BOOST_REQUIRE(str::utf8::bytes_required(limit, std::end(limit)) < 0);
   const char not_limit[] = {four, continuation, continuation, continuation};
-  BOOST_REQUIRE(choose::str::utf8::bytes_required(not_limit, std::end(not_limit)) == 0);
+  BOOST_REQUIRE(str::utf8::bytes_required(not_limit, std::end(not_limit)) == 0);
 
   char vals[] = {four, three, two, one};
   char* pos = vals;
@@ -153,7 +153,7 @@ BOOST_AUTO_TEST_CASE(test_bytes_required) {
     for (int i = 0; i < 3; ++i) {
       tester.push_back(continuation);
       int required = 4 - (int)tester.size() - (int)(pos - vals);
-      BOOST_REQUIRE_EQUAL(choose::str::utf8::bytes_required(&*tester.cbegin(), &*tester.cend()), required);
+      BOOST_REQUIRE_EQUAL(str::utf8::bytes_required(&*tester.cbegin(), &*tester.cend()), required);
     }
     ++pos;
   }
@@ -163,19 +163,47 @@ BOOST_AUTO_TEST_CASE(test_decrement_until_not_separating_multibyte) {
   const char none[] = {continuation, continuation};
   {
     const char* pos = &*std::crbegin(none);
-    bool r = choose::str::utf8::decrement_until_not_separating_multibyte(pos, none, &*std::cend(none)) == pos;
+    bool r = str::utf8::decrement_until_not_separating_multibyte(pos, none, &*std::cend(none)) == pos;
     BOOST_REQUIRE(r);
   }
   {
     const char* end = &*std::cend(none);
-    bool r = choose::str::utf8::decrement_until_not_separating_multibyte(end, none, &*std::cend(none)) == end;
+    bool r = str::utf8::decrement_until_not_separating_multibyte(end, none, &*std::cend(none)) == end;
     BOOST_REQUIRE(r);
   }
   const char vals[] = {continuation, one, continuation};
   const char* on_it = vals + 1;
-  BOOST_REQUIRE_EQUAL(choose::str::utf8::decrement_until_not_separating_multibyte(on_it, vals, &*std::cend(vals)), on_it);
+  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_not_separating_multibyte(on_it, vals, &*std::cend(vals)), on_it);
   const char* off_it = vals + 2;
-  BOOST_REQUIRE_EQUAL(choose::str::utf8::decrement_until_not_separating_multibyte(off_it, vals, &*std::cend(vals)), on_it);
+  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_not_separating_multibyte(off_it, vals, &*std::cend(vals)), on_it);
+}
+
+BOOST_AUTO_TEST_CASE(apply_index_op_before) {
+  std::vector<char> empty;
+  str::apply_index_op(empty, 123, true);
+  BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
+
+  std::vector<char> val_zero;
+  str::apply_index_op(val_zero, 0, true);  // log edge case
+  BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
+
+  std::vector<char> not_empty{'a', 'b', 'c'};
+  str::apply_index_op(not_empty, 123, true);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
+}
+
+BOOST_AUTO_TEST_CASE(apply_index_op_after) {
+  std::vector<char> empty;
+  str::apply_index_op(empty, 123, false);
+  BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
+
+  std::vector<char> less_than_10;
+  str::apply_index_op(less_than_10, 9, false);
+  BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
+
+  std::vector<char> not_empty{'a', 'b', 'c'};
+  str::apply_index_op(not_empty, 123, false);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -204,14 +232,14 @@ struct choose_output {
 
 std::ostream& operator<<(std::ostream& os, const choose_output& out) {
   if (const std::vector<char>* out_str = std::get_if<std::vector<char>>(&out.o)) {
-    os << "stdout:\n";
+    os << "\nstdout: ";
     bool first = true;
     for (char ch : *out_str) {
       if (!first) {
         os << ',';
       }
       first = false;
-      const char* escape_sequence = choose::str::get_escape_sequence(ch);
+      const char* escape_sequence = str::get_escape_sequence(ch);
       if (escape_sequence) {
         os << escape_sequence;
       } else {
@@ -220,11 +248,12 @@ std::ostream& operator<<(std::ostream& os, const choose_output& out) {
     }
   } else {
     const std::vector<choose::Token>& out_tokens = std::get<std::vector<choose::Token>>(out.o);
-    os << "tokens:\n";
+    os << "\ntokens: ";
     bool first_token = true;
     for (const Token& t : out_tokens) {
       if (!first_token) {
-        os << '\n';
+        os << '|';
+        os << '|';
       }
       first_token = false;
       bool first_in_token = true;
@@ -233,7 +262,7 @@ std::ostream& operator<<(std::ostream& os, const choose_output& out) {
           os << ',';
         }
         first_in_token = false;
-        const char* escape_sequence = choose::str::get_escape_sequence(ch);
+        const char* escape_sequence = str::get_escape_sequence(ch);
         if (escape_sequence) {
           os << escape_sequence;
         } else {
@@ -374,6 +403,8 @@ BOOST_AUTO_TEST_CASE(basic_output_match) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+// lexicographical sorting and uniqueness
+
 BOOST_AUTO_TEST_CASE(sort) {
   choose_output out = run_choose("this\nis\na\ntest", {"--sort"});
   choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
@@ -398,23 +429,56 @@ BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+// user defined sorting and uniqueness
+
 BOOST_AUTO_TEST_CASE(defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort", "---", "^John [a-zA-Z]+---"});
-  choose_output correct_output{std::vector<choose::Token>{"John Smith", "John Doe", "John Doe", "Apple", "Banana"}};
+  // this also checks the separator and sort stability
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-sort"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_sort_reverse) {
+  // notice that this isn't just the reverse of defined_sort test, since the sort is stable
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-sort", "--sort-reverse"});
+  choose_output correct_output{std::vector<choose::Token>{"Apple", "Banana", "John Doe", "John Doe", "John Smith"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_unique) {
+  // the comparison treats all John's as the same. so there's one John and one non John in the output.
+  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-unique"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "Apple"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(defined_sort_reverse_and_unique) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort", "---", "^John [a-zA-Z]+---", "--sort-reverse", "-u"});
-  choose_output correct_output{std::vector<choose::Token>{"Banana", "Apple", "John Doe", "John Smith"}};
+  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-sort", "--sort-reverse", "--comp-unique"});
+  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(defined_sort_z) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--defined-sort-z", "^John [a-zA-Z]+\\0"});
-  choose_output correct_output{std::vector<choose::Token>{"John Smith", "John Doe", "John Doe", "Apple", "Banana"}};
+BOOST_AUTO_TEST_CASE(comp_z) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-z", "^John [a-zA-Z]+\\0(?!John)", "--comp-sort"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
+
+// mix of both lex and user defined
+
+BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--unique", "--comp-sort"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple", "Banana"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John [a-zA-Z]+---(?!John)", "--comp-unique", "--sort"});
+  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+// ========================
 
 BOOST_AUTO_TEST_CASE(in_limit) {
   choose_output out = run_choose("d\nc\nb\na", {"--in=3", "--sort"});
@@ -429,8 +493,8 @@ BOOST_AUTO_TEST_CASE(flip) {
 }
 
 BOOST_AUTO_TEST_CASE(direct_but_not_basic_limit) {
-  choose_output out = run_choose("a\nb\nc", {"--rm=b", "-t=2"});
-  choose_output correct_output{to_vec("a\nc\n")};
+  choose_output out = run_choose("a\nb\nc", {"--sub", "c", "d", "-t=2"});
+  choose_output correct_output{to_vec("a\nb\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -618,8 +682,84 @@ BOOST_AUTO_TEST_CASE(ensure_completed_utf8_multibytes_gives_err) {
 }
 
 BOOST_AUTO_TEST_CASE(match_start_after_end) {
+  // ensuring that pcre2 handles this tricky case
+  BOOST_REQUIRE_THROW(run_choose("This is a test string.", {"-r", "--match", "test(?=...\\K)"}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(misc_args)
+
+BOOST_AUTO_TEST_CASE(null_output_separators) {
+  choose_output out = run_choose("a\nb\nc", {"-zyt"});
+  choose_output correct_output{std::vector<char>{'a', '\0', 'b', '\0', 'c', '\0'}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(null_input_separator) {
+  choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-0"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(parse_ul) {
+  int argc = 1;
+  const char* const argv[] = {"/tester/path/to/parse_ul"};
+  long out;  // NOLINT
+  bool arg_has_errors = false;
+  choose::parse_ul("123", &out, 0, 1000, &arg_has_errors, "simple", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
+  BOOST_REQUIRE_EQUAL(out, 123);
+  choose::parse_ul("banana", &out, 0, 1000, &arg_has_errors, "simple parse error", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("-999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "-range parse err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "+range parse err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("3", &out, 3, 1000, &arg_has_errors, "-range inclusive", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
+  BOOST_REQUIRE_EQUAL(out, 3);
+  choose::parse_ul("1000", &out, 3, 1000, &arg_has_errors, "+range inclusive", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
+  BOOST_REQUIRE_EQUAL(out, 1000);
+  choose::parse_ul("2", &out, 3, 1000, &arg_has_errors, "-range exclusive err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+  choose::parse_ul("1001", &out, 3, 1000, &arg_has_errors, "+range exclusive err", argc, argv, 0);
+  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
+  arg_has_errors = false;
+}
+
+BOOST_AUTO_TEST_CASE(in_index_before) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--in-index=before"});
+  choose_output correct_output{std::vector<choose::Token>{"0 this", "1 is", "2 a", "3 test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(misc_failures)
+
+BOOST_AUTO_TEST_CASE(match_start_after_end) {
   // \K can be used to set a match beginning after its end. this is guarded for
   BOOST_REQUIRE_THROW(run_choose("This is a test string.", {"-r", "--match", "test(?=...\\K)"}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(compilation_failure) {
+  BOOST_REQUIRE_THROW(run_choose("", {"-r", "["}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(match_failure) {
+  // in this case some utf8 failure
+  const char ch[] = {(char)0xFF, '\0'};
+  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf"}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(sub_failure) {
+  BOOST_REQUIRE_THROW(run_choose("test", {"-r", "--sub", "test", "${"}), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

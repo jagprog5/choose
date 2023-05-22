@@ -46,7 +46,7 @@ struct UIState {
   UIState& operator=(const UIState&) = delete;
   UIState(UIState&& o) = delete;
   UIState& operator=(UIState&&) = delete;
-  ~UIState() {}
+  ~UIState() = default;
 
   // this modifies selection_position and scroll_position appropriately
   void apply_constraints() {

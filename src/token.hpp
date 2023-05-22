@@ -3,6 +3,7 @@
 #include <cassert>
 #include <optional>
 #include <set>
+#include <utility>
 
 #include "args.hpp"
 #include "regex.hpp"
@@ -12,21 +13,17 @@ namespace choose {
 
 struct Token {
   std::vector<char> buffer;
-  bool operator<(const Token& other) const {  //
-    return std::lexicographical_compare(buffer.cbegin(), buffer.cend(), other.buffer.cbegin(), other.buffer.cend());
-  }
-  bool operator>(const Token& other) const { return other < *this; }
-  bool operator==(const Token& other) const { return this->buffer == other.buffer; }
-  bool operator!=(const Token& other) const { return !(*this == other); }
 
   // for testing
   Token(const char* in) : buffer(in, in + strlen(in)) {}
+  bool operator==(const Token& other) const { return this->buffer == other.buffer; }
 
   Token() = default;
   Token(const Token&) = default;
   Token(Token&&) = default;
   Token& operator=(const Token&) & = default;
   Token& operator=(Token&&) & = default;
+  ~Token() = default;
 };
 
 // writes an output separator between each token
@@ -138,7 +135,7 @@ using indirect = std::vector<Token>::size_type;  // an index into output
 struct ProcessTokenContext {
   choose::Arguments& args;
   std::vector<Token>& output;
-  std::function<bool(indirect)> seen_check;
+  std::function<bool(indirect)> uniqueness_check;  // returns true if the output[elem] is unique
   std::optional<TokenOutputStream> direct_output;
   // out_count is the number of tokens that have been written to the output.
   // if args.direct_output() isn't set, then this value will mirror output.size()
@@ -189,27 +186,16 @@ bool process_token(Token&& t, ProcessTokenContext& context) {
     return false;
   }
 
-  if (!context.args.sort || context.args.defined_sort_comp) {
-    context.output.push_back(std::move(t));
-    if (context.args.unique) {
-      // if unique, duplicate removed
-      if (!context.seen_check(context.output.size() - 1)) {
-        context.output.pop_back();
-        return false;
-      }
-    }
-    ++context.out_count;
-  } else {
-    // non user defined sorting and uniqueness. user defined sorting is handled below
-    auto comp = [&context](const Token& lhs, const Token& rhs) -> bool {  //
-      return context.args.sort_reverse ? lhs > rhs : lhs < rhs;
-    };
-    auto pos = std::lower_bound(context.output.cbegin(), context.output.cend(), t, comp);
-    if (!context.args.unique || pos == context.output.cend() || *pos != t) {
-      context.output.insert(pos, std::move(t));
-      ++context.out_count;
+  context.output.push_back(std::move(t));
+  if (context.uniqueness_check) {
+    // some form on uniqueness is being used
+    if (!context.uniqueness_check(context.output.size() - 1)) {
+      // the element is not unique. nothing was added to the uniqueness set
+      context.output.pop_back();
+      return false;
     }
   }
+  ++context.out_count;
 
   return context.out_count == context.args.in;
 }
@@ -262,7 +248,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  uint32_t max_lookbehind_size;  // bytes
+  uint32_t max_lookbehind_size;  // NOLINT // bytes
   if (args.max_lookbehind_set()) {
     max_lookbehind_size = args.max_lookbehind;
   } else {
@@ -272,7 +258,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     max_lookbehind_size *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
-  uint32_t min_bytes_to_read;
+  uint32_t min_bytes_to_read;  // NOLINT
   if (args.min_read_set()) {
     min_bytes_to_read = args.min_read;
   } else {
@@ -292,17 +278,54 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_match = args.match;
   const bool is_basic = args.is_basic();
 
-  // seen is only used if the output is unique and unsorted.
-  // it is entirely used in process_token
-  auto indirect_comparison = [&output](indirect lhs, indirect rhs) -> bool { return output[lhs] < output[rhs]; };
-  std::set<indirect, decltype(indirect_comparison)> seen(indirect_comparison);
+  std::function<bool(indirect, indirect)> uniqueness_comp = 0;
 
-  // returns true if the output[elem] is unique
-  std::function<bool(indirect)> seen_check = [&seen](indirect elem) -> bool { return seen.insert(elem).second; };
+  auto user_defined_comparison = [&args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    const Token* lhs = &lhs_arg;
+    const Token* rhs = &rhs_arg;
+    if (args.sort_reverse) {
+      std::swap(lhs, rhs);
+    }
+    Token combined;
+    str::append_to_buffer(combined.buffer, lhs->buffer);
+    str::append_to_buffer(combined.buffer, args.comp_sep);
+    str::append_to_buffer(combined.buffer, rhs->buffer);
+    int comp_result = regex::match(args.comp, combined.buffer.data(), combined.buffer.size(), args.comp_data, "user comp");
+    return comp_result > 0;
+  };
 
-  ProcessTokenContext ptc{args,                      //
-                          output,                    //
-                          seen_check,                //
+  auto lexicographical_comparison = [&args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    const Token* lhs = &lhs_arg;
+    const Token* rhs = &rhs_arg;
+    if (args.sort_reverse) {
+      std::swap(lhs, rhs);
+    }
+    return std::lexicographical_compare(  //
+        lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
+  };
+
+  if (args.comp_unique) {
+    uniqueness_comp = [&user_defined_comparison, &output = std::as_const(output), &args = std::as_const(args)](indirect lhs, indirect rhs) -> bool {  //
+      return user_defined_comparison(output[lhs], output[rhs]);
+    };
+  } else if (args.unique) {
+    uniqueness_comp = [&lexicographical_comparison, &output = std::as_const(output)](indirect lhs, indirect rhs) -> bool {  //
+      return lexicographical_comparison(output[lhs], output[rhs]);
+    };
+  }
+
+  std::set<indirect, std::function<bool(indirect, indirect)>> uniqueness_set(uniqueness_comp);
+
+  std::function<bool(indirect)> uniqueness_check = 0;
+  if (uniqueness_comp) {
+    uniqueness_check = [&uniqueness_set](indirect elem) -> bool {  //
+      return uniqueness_set.insert(elem).second;
+    };
+  }
+
+  ProcessTokenContext ptc{args,    //
+                          output,  //
+                          uniqueness_check,
                           args.is_direct_output() ?  //
                               std::optional(TokenOutputStream(args))
                                                   : std::nullopt,
@@ -312,7 +335,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   // only used when is_match == false
   Token token_being_built;
 
-  bool input_done;
+  bool input_done;  // NOLINT
   // helper lambda. reads stdin into the subject.
   // sets input_done appropriately
   auto get_more_input = [&](size_t n) {
@@ -348,7 +371,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     if (match_result != 0 && match_result != -1) {
       // a complete match
-      regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
+      regex::Match match = regex::get_match(subject.data(), match_data);
 
       if (is_match) {
         auto match_handler = [&](const regex::Match& m) -> bool {
@@ -363,7 +386,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return process_token(std::move(t), ptc);
           }
         };
-        if (regex::get_match_and_groups(subject.data(), match_result, match_data, match_handler, "match pattern")) {
+        if (regex::get_match_and_groups(subject.data(), match_result, match_data, match_handler)) {
           break;
         }
       } else {
@@ -384,13 +407,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       goto skip_read;
     } else {
       if (!input_done) {
-        const char* new_subject_begin;
+        const char* new_subject_begin;  // NOLINT
         if (match_result == 0) {
           // there was no match but there is more input
           new_subject_begin = &*subject.cend();
         } else {
           // there was a partial match and there is more input
-          regex::Match match = regex::get_match(subject.data(), match_data, "input separator");
+          regex::Match match = regex::get_match(subject.data(), match_data);
           new_subject_begin = match.begin;
         }
 
@@ -430,7 +453,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         // there was no match and there is no more input
         if (!is_match) {
           str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, &*subject.end());
-          if (token_being_built.buffer.size() != 0 || args.use_input_delimiter) {
+          if (!token_being_built.buffer.empty() || args.use_input_delimiter) {
             process_token(std::move(token_being_built), ptc);
           }
         }
@@ -445,22 +468,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     throw termination_request();
   }
 
-  if (args.defined_sort_comp) {
-    // user defined sort requires different sorting and uniqueness handling
-    // uniqueness was handled already in process_token. now just sorting
-    auto comp = [&args](const Token& lhs, const Token& rhs) -> bool {  //
-      Token combined;
-      str::append_to_buffer(combined.buffer, lhs.buffer);
-      str::append_to_buffer(combined.buffer, args.defined_sort_sep);
-      str::append_to_buffer(combined.buffer, rhs.buffer);
-      int comp_result = regex::match(args.defined_sort_comp, combined.buffer.data(), combined.buffer.size(), args.defined_sort_comp_data, "user comp");
-      bool ret = comp_result > 0;
-      if (args.sort_reverse) {
-        ret = !ret;  // subtle nuance here. this is ok because the sort is stable
-      }
-      return ret;
-    };
-    std::stable_sort(output.begin(), output.end(), comp);
+  uniqueness_set.clear();
+
+  if (args.comp_sort) {
+    std::stable_sort(output.begin(), output.end(), user_defined_comparison);
+  } else if (args.sort) {
+    std::sort(output.begin(), output.end(), lexicographical_comparison);
   }
 
   if (args.flip) {

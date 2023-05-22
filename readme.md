@@ -7,7 +7,7 @@
 choose is a stream manipulation tool for creating selection dialogs.
 ## Dialogs
 
-Here is an example of a simple dialog:
+Here is an example dialog:
 
 ```bash
 echo $'here\nis\neach\noption' | choose -p "Pick a word! 📋❗"
@@ -57,6 +57,13 @@ This command separates each token by "===", filters for unique elements, and sor
 ```bash
 echo -n "this===is===is===test===test===" | choose === -ust -o $'\n=-=\n'
 ```
+
+Sorting and uniqueness can also have user defined comparisons. In this case, all tokens that start with "John" are first, but otherwise the order is retained:
+
+```bash
+echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith" | choose -r --comp-z '^John(?!\0John)' --comp-sort
+```
+
 ## Regex
 
 It supports lookarounds / full pcre2 syntax, and can match against patterns in text:
