@@ -371,7 +371,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     if (match_result != 0 && match_result != -1) {
       // a complete match
-      regex::Match match = regex::get_match(subject.data(), match_data);
+      regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
 
       if (is_match) {
         auto match_handler = [&](const regex::Match& m) -> bool {
@@ -386,7 +386,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return process_token(std::move(t), ptc);
           }
         };
-        if (regex::get_match_and_groups(subject.data(), match_result, match_data, match_handler)) {
+        if (regex::get_match_and_groups(subject.data(), match_result, match_data, match_handler, "match pattern")) {
           break;
         }
       } else {
@@ -413,7 +413,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = &*subject.cend();
         } else {
           // there was a partial match and there is more input
-          regex::Match match = regex::get_match(subject.data(), match_data);
+          regex::Match match = regex::get_match(subject.data(), match_data, "input separator");
           new_subject_begin = match.begin;
         }
 
