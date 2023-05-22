@@ -87,7 +87,7 @@ time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.055s
 ```bash
 choose --help
 ```
-# Install
+# Install / Update
 
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev

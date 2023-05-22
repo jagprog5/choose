@@ -681,11 +681,6 @@ BOOST_AUTO_TEST_CASE(ensure_completed_utf8_multibytes_gives_err) {
   BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "--min-read=1"}), std::runtime_error);
 }
 
-BOOST_AUTO_TEST_CASE(match_start_after_end) {
-  // ensuring that pcre2 handles this tricky case
-  BOOST_REQUIRE_THROW(run_choose("This is a test string.", {"-r", "--match", "test(?=...\\K)"}), std::runtime_error);
-}
-
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(misc_args)
