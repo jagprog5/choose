@@ -184,7 +184,7 @@ BOOST_AUTO_TEST_CASE(apply_index_op_before) {
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
   std::vector<char> val_zero;
-  str::apply_index_op(val_zero, 0, true); // log edge case
+  str::apply_index_op(val_zero, 0, true);  // log edge case
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
@@ -682,7 +682,7 @@ BOOST_AUTO_TEST_CASE(ensure_completed_utf8_multibytes_gives_err) {
 }
 
 BOOST_AUTO_TEST_CASE(match_start_after_end) {
-  // \K can be used to set a match beginning after its end. this is guarded for
+  // ensuring that pcre2 handles this tricky case
   BOOST_REQUIRE_THROW(run_choose("This is a test string.", {"-r", "--match", "test(?=...\\K)"}), std::runtime_error);
 }
 
@@ -731,6 +731,35 @@ BOOST_AUTO_TEST_CASE(parse_ul) {
   choose::parse_ul("1001", &out, 3, 1000, &arg_has_errors, "+range exclusive err", argc, argv, 0);
   BOOST_REQUIRE_EQUAL(arg_has_errors, true);
   arg_has_errors = false;
+}
+
+BOOST_AUTO_TEST_CASE(in_index_before) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--in-index=before"});
+  choose_output correct_output{std::vector<choose::Token>{"0 this", "1 is", "2 a", "3 test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(misc_failures)
+
+BOOST_AUTO_TEST_CASE(match_start_after_end) {
+  // \K can be used to set a match beginning after its end. this is guarded for
+  BOOST_REQUIRE_THROW(run_choose("This is a test string.", {"-r", "--match", "test(?=...\\K)"}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(compilation_failure) {
+  BOOST_REQUIRE_THROW(run_choose("", {"-r", "["}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(match_failure) {
+  // in this case some utf8 failure
+  const char ch[] = {(char)0xFF, '\0'};
+  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf"}), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(sub_failure) {
+  BOOST_REQUIRE_THROW(run_choose("test", {"-r", "--sub", "test", "${"}), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

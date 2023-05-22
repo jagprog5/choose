@@ -148,21 +148,28 @@ struct Match {
   const char* begin;
   const char* end;
 
-  Match(const char* begin, const char* end, const char* identification) : begin(begin), end(end) {
-    if (begin > end) {
-      char msg[512];
-      snprintf(msg, 512,
-               "In %s, \\K was used in an assertion to set the match start after its end.\n"
-               "From end to start the match was: %.*s",
-               identification, (int)(begin - end), end);
-      throw std::runtime_error(msg);
-    }
+  Match(const Match& o) = delete;
+  Match& operator=(const Match&) = delete;
+  Match(Match&& o) = delete;
+  Match& operator=(Match&&) = delete;
+
+  Match(const char* begin, const char* end) : begin(begin), end(end) {
+    // check not required since PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK is not used,
+    // and it can't be enabled any other way
+    // if (begin > end) {
+    //   char msg[512];
+    //   snprintf(msg, 512,
+    //            "In %s, \\K was used in an assertion to set the match start after its end.\n"
+    //            "From end to start the match was: %.*s",
+    //            identification, (int)(begin - end), end);
+    //   throw std::runtime_error(msg);
+    // }
   }
 };
 
-Match get_match(const char* subject, const match_data& match_data, const char* identification) {
+Match get_match(const char* subject, const match_data& match_data) {
   PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data.get());
-  return Match(subject + ovector[0], subject + ovector[1], identification);
+  return Match(subject + ovector[0], subject + ovector[1]);
 }
 
 // T is a handler lambda bool(const Match& or Match&&), which is called with the match and each match group
@@ -170,10 +177,10 @@ Match get_match(const char* subject, const match_data& match_data, const char* i
 // rc is the return value from regex::match
 // returns true iff no other matches or groups should be processed
 template <typename T>
-bool get_match_and_groups(const char* subject, int rc, const match_data& match_data, T handler, const char* identification) {
+bool get_match_and_groups(const char* subject, int rc, const match_data& match_data, T handler) {
   PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data.get());
   for (int i = 0; i < rc; ++i) {
-    if (handler(Match(subject + ovector[2 * i], subject + ovector[2 * i + 1], identification))) {
+    if (handler(Match(subject + ovector[2 * i], subject + ovector[2 * i + 1]))) {
       return true;
     }
   }
