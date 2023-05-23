@@ -39,6 +39,14 @@ code compile(const char* pattern, uint32_t options, const char* identification) 
     snprintf(msg, 512, "PCRE2 compilation in %s failed at offset %d: %s", identification, (int)error_offset, buffer);
     throw std::runtime_error(msg);
   }
+  // uint32_t jit_options;                // NOLINT
+  // if (options & PCRE2_PARTIAL_HARD) {  // partial hard is the only type of partial matching used in choose
+  //   jit_options = PCRE2_JIT_PARTIAL_HARD;
+  // } else {
+  //   jit_options = PCRE2_JIT_COMPLETE;
+  // }
+  // // ignore the return code here. falls back to normal code
+  // pcre2_jit_compile(re, jit_options);
   return code(re);
 }
 
