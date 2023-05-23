@@ -58,10 +58,10 @@ This command separates each token by "===", filters for unique elements, and sor
 echo -n "this===is===is===test===test===" | choose === -ust -o $'\n=-=\n'
 ```
 
-Sorting and uniqueness can also have user defined comparisons. In this case, all tokens that start with "John" are first, but otherwise the order is retained:
+Sorting and uniqueness can have user defined comparison. In this case, all tokens that start with "John" are first, but otherwise the order is retained:
 
 ```bash
-echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith" | choose -r --comp-z '^John(?!\0John)' --comp-sort
+echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith" | choose -r --comp-z $'^John[ a-zA-Z]*\0(?!John)' --comp-sort
 ```
 
 ## Regex
@@ -73,15 +73,25 @@ echo "aaabbbccc" | choose -r --match "(?<=aaa)bbb(...)" -t
 ```
 ## Speed
 
-For a simple grep case, its speed is slower but comparable to [pcre2grep](https://www.pcre.org/current/doc/html/pcre2grep.html), which uses the same regex engine but has different functionality:
+choose is slower than common tools at narrow tasks.
+
+For a simple grep case, its slower but comparable to [pcre2grep](https://www.pcre.org/current/doc/html/pcre2grep.html), which uses the same regex engine:
 
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
 time (cat words_alpha.txt | grep "test" > out.txt)          # 0.005s
 time (cat words_alpha.txt | pcre2grep "test" > out.txt)     # 0.019s
-time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.055s
+time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.055s (~2 to 4 times slower that pcre2grep)
 ```
+
+For a simple substitution case, its slower than sed:
+
+```bash
+time (cat words_alpha.txt | sed "s/test/banana/g" > out.txt)        # 0.055s
+time (cat words_alpha.txt | choose --sub test banana -t > out.txt)  # 0.293s (~5 times slower than sed)
+```
+
 ## Documentation
 
 ```bash

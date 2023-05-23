@@ -45,7 +45,7 @@ using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
 
-constexpr ptrdiff_t RETAIN_LIMIT_DEFAULT = 32768;
+#define RETAIN_LIMIT_DEFAULT 32768
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
@@ -184,7 +184,7 @@ struct UncompiledCodes {
       OrderedOp oo = op.compile(re_options);
       output.ordered_ops.push_back(std::move(oo));
     }
-    output.primary = regex::compile(primary, re_options, "positional argument");
+    output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
 
     if (comp) {
       output.comp = regex::compile(comp, re_options, "defined comp");
@@ -355,9 +355,9 @@ void print_help_message() {
       "        --retain-limit <# bytes, default: " choose_xstr(RETAIN_LIMIT_DEFAULT) ">\n"
       "                this ensures that the memory usage is bounded in the event of\n"
       "                parasitic matching. if a match is greedy (e.g. \".*\"), then the\n"
-      "                match buffer would increase to hold the entire input as it tries\n"
-      "                to complete the match. reaching this limit results in a match\n"
-      "                failure. similarly, if the separator never matches (e.g. $'')\n"
+      "                match buffer increases to hold the entire input as it tries to\n"
+      "                complete the match. reaching this limit results in a match\n"
+      "                failure. additionally, if the separator never matches (e.g. $'')\n"
       "                then the limit of the size of the token being built is also\n"
       "                subject to this limit. reaching this limit results in the\n"
       "                token's content thus far being discarded.\n"
@@ -397,7 +397,7 @@ void print_help_message() {
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
-      "                -r --comp-z '^John(?!\\0John)' --comp-sort\n"
+      "                -r --comp-z $'^John[ a-zA-Z]*\\0(?!John)' --comp-sort\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
       "controls:\n"

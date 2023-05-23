@@ -28,7 +28,7 @@ struct match_data_destroyer {
 using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
-code compile(const char* pattern, uint32_t options, const char* identification) {
+code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE) {
   int error_number;         // NOLINT
   PCRE2_SIZE error_offset;  // NOLINT
   pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, options, &error_number, &error_offset, NULL);
@@ -39,6 +39,8 @@ code compile(const char* pattern, uint32_t options, const char* identification) 
     snprintf(msg, 512, "PCRE2 compilation in %s failed at offset %d: %s", identification, (int)error_offset, buffer);
     throw std::runtime_error(msg);
   }
+  // ignore the return code here. falls back to normal code
+  pcre2_jit_compile(re, jit_options);
   return code(re);
 }
 
