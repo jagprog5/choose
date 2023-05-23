@@ -92,6 +92,7 @@ choose --help
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
 scripts/install.bash
+source ~/.bashrc
 ```
 # Uninstall
 

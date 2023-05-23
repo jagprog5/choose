@@ -22,7 +22,6 @@ else
   echo "    '$LINE'"
   echo "$LINE" >>~/.bashrc
 fi
-echo Reloading bashrc
-source ~/.bashrc
 echo "================================================================================"
 echo Done!
+echo Please reload bashrc.
