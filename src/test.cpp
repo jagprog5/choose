@@ -663,7 +663,10 @@ BOOST_AUTO_TEST_CASE(utf8_lookback_separates_multibyte) {
   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
   // lookbehind of 4 bytes, reading >=1 character at a time
   // the lookbehind must be correctly decremented to include the 0xE6 byte
-  const char pattern[] = {'(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
+
+  // in pcre2 10.39 this test would hang with JIT enabled.
+  // this is fixed in the newest version
+  const char pattern[] = {'(', '*', 'N', 'O', '_', 'J', 'I', 'T', ')', '(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
   choose_output out = run_choose(ch, {"-r", "--max-lookbehind=1", "--min-read=1", "--utf", "--match", pattern});
   choose_output correct_output{std::vector<choose::Token>{"st"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
