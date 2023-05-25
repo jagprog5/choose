@@ -6,6 +6,12 @@
 
 using namespace choose;
 
+char continuation = (char)0b10000000;
+char one = (char)0b00000000;
+char two = (char)0b11000000;
+char three = (char)0b11100000;
+char four = (char)0b11110000;
+
 struct GlobalInit {
   GlobalInit() { setlocale(LC_ALL, ""); }
 };
@@ -117,65 +123,53 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(other_string_utils_test_suite)
 
-char continuation = (char)0b10000000;
-char one = (char)0b00000000;
-char two = (char)0b11000000;
-char three = (char)0b11100000;
-char four = (char)0b11110000;
-
-BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
+BOOST_AUTO_TEST_CASE(test_last_character_start) {
   const char empty[] = {};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(empty, empty) == 0);
+  BOOST_REQUIRE(str::utf8::last_character_start(empty, empty) == 0);
   const char simple[] = {'a'};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(simple, std::end(simple)) == simple);
+  BOOST_REQUIRE(str::utf8::last_character_start(simple, std::end(simple)) == simple);
   const char limit[] = {'a', continuation, continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(limit, std::end(limit)) == 0);
+  BOOST_REQUIRE(str::utf8::last_character_start(limit, std::end(limit)) == 0);
   const char not_limit[] = {'a', continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(not_limit, std::end(not_limit)) == not_limit);
+  BOOST_REQUIRE(str::utf8::last_character_start(not_limit, std::end(not_limit)) == not_limit);
   const char more[] = {'a', 'b', 'c', continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(more, std::end(more)) == more + 2);
+  BOOST_REQUIRE(str::utf8::last_character_start(more, std::end(more)) == more + 2);
 }
 
-BOOST_AUTO_TEST_CASE(test_bytes_required) {
-  const char empty[] = {};
-  BOOST_REQUIRE(str::utf8::bytes_required(empty, empty) < 0);
-  const char simple[] = {'a'};
-  BOOST_REQUIRE(str::utf8::bytes_required(simple, std::end(simple)) == 0);
-  const char limit[] = {'a', continuation, continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::bytes_required(limit, std::end(limit)) < 0);
-  const char not_limit[] = {four, continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::bytes_required(not_limit, std::end(not_limit)) == 0);
-
-  char vals[] = {four, three, two, one};
-  char* pos = vals;
-  while (pos != std::end(vals)) {
-    std::vector<char> tester{*pos};
-    for (int i = 0; i < 3; ++i) {
-      tester.push_back(continuation);
-      int required = 4 - (int)tester.size() - (int)(pos - vals);
-      BOOST_REQUIRE_EQUAL(str::utf8::bytes_required(&*tester.cbegin(), &*tester.cend()), required);
-    }
-    ++pos;
-  }
-}
-
-BOOST_AUTO_TEST_CASE(test_decrement_until_not_separating_multibyte) {
+BOOST_AUTO_TEST_CASE(test_decrement_until_character_start) {
   const char none[] = {continuation, continuation};
   {
     const char* pos = &*std::crbegin(none);
-    bool r = str::utf8::decrement_until_not_separating_multibyte(pos, none, &*std::cend(none)) == pos;
+    bool r = str::utf8::decrement_until_character_start(pos, none, &*std::cend(none)) == pos;
     BOOST_REQUIRE(r);
   }
   {
     const char* end = &*std::cend(none);
-    bool r = str::utf8::decrement_until_not_separating_multibyte(end, none, &*std::cend(none)) == end;
+    bool r = str::utf8::decrement_until_character_start(end, none, &*std::cend(none)) == end;
     BOOST_REQUIRE(r);
   }
   const char vals[] = {continuation, one, continuation};
   const char* on_it = vals + 1;
-  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_not_separating_multibyte(on_it, vals, &*std::cend(vals)), on_it);
+  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_character_start(on_it, vals, &*std::cend(vals)), on_it);
   const char* off_it = vals + 2;
-  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_not_separating_multibyte(off_it, vals, &*std::cend(vals)), on_it);
+  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_character_start(off_it, vals, &*std::cend(vals)), on_it);
+}
+
+BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
+  const char none[] = {continuation, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(none, std::end(none)) == NULL);
+
+  const char complete[] = {three, continuation, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(complete, std::end(complete)) == std::end(complete));
+
+  const char single[] = {one};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(single, std::end(single)) == std::end(single));
+
+  const char err[] = {(char)0xFF, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(err, std::end(err)) == err);
+
+  const char incomplete[] = {three, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(incomplete, std::end(incomplete)) == incomplete);
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {
@@ -392,13 +386,13 @@ BOOST_AUTO_TEST_CASE(zero_in_out_limit) {
 BOOST_AUTO_TEST_CASE(basic_output_accumulation) {
   // basic output avoids a copy when it can, but it still accumulates the input on no/partial separator match.
   // this is needed because an entire token needs to be accumulated before a filter can be applied
-  choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--min-read=1", "-f", "s", "-t"});
+  choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "-f", "s", "-t"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(basic_output_match) {
-  choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--min-read=1", "--match", "-t"});
+  choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "--match", "-t"});
   choose_output correct_output{to_vec("aaa\naaa\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -542,44 +536,44 @@ BOOST_AUTO_TEST_CASE(check_empty_input) {
 }
 
 BOOST_AUTO_TEST_CASE(check_match_with_groups) {
-  choose_output out = run_choose("abcde", {"-r", "--min-read=1", "--match", "b(c)(d)"});
+  choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)"});
   choose_output correct_output{std::vector<choose::Token>{"bcd", "c", "d"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_match_with_groups_limit) {
-  choose_output out = run_choose("abcde", {"-r", "--min-read=1", "--match", "b(c)(d)", "--in=2"});
+  choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "--in=2"});
   choose_output correct_output{std::vector<choose::Token>{"bcd", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_no_match_lookbehind_retained) {
   // if there is no match, then the input is discarded but it keep enough for the lookbehind
-  choose_output out = run_choose("aaabbbccc", {"--min-read=3", "-r", "--match", "(?<=aaa)bbb"});
+  choose_output out = run_choose("aaabbbccc", {"--read=3", "-r", "--match", "(?<=aaa)bbb"});
   choose_output correct_output{std::vector<choose::Token>{"bbb"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_partial_match_lookbehind_retained) {
-  choose_output out = run_choose("aaabbbccc", {"--min-read=4", "-r", "--match", "(?<=aaa)bbb"});
+  choose_output out = run_choose("aaabbbccc", {"--read=4", "-r", "--match", "(?<=aaa)bbb"});
   choose_output correct_output{std::vector<choose::Token>{"bbb"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_no_separator_lookbehind_retained) {
-  choose_output out = run_choose("aaabbbccc", {"--min-read=3", "-r", "(?<=aaa)bbb"});
+  choose_output out = run_choose("aaabbbccc", {"--read=3", "-r", "(?<=aaa)bbb"});
   choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_partial_separator_lookbehind_retained) {
-  choose_output out = run_choose("aaabbbccc", {"--min-read=4", "-r", "(?<=aaa)bbb"});
+  choose_output out = run_choose("aaabbbccc", {"--read=4", "-r", "(?<=aaa)bbb"});
   choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(separator_no_match) {
-  choose_output out = run_choose("aaabbbccc", {"zzzz", "--min-read=1"});
+  choose_output out = run_choose("aaabbbccc", {"zzzz", "--read=1"});
   choose_output correct_output{std::vector<choose::Token>{"aaabbbccc"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -605,7 +599,7 @@ BOOST_AUTO_TEST_CASE(input_is_separator_use_delimit) {
 
 BOOST_AUTO_TEST_CASE(check_shrink_excess) {
   // creates a large subject but resizes internal buffer to remove the bytes that weren't written to
-  choose_output out = run_choose("12345", {"zzzz", "--min-read=10000"});
+  choose_output out = run_choose("12345", {"zzzz", "--read=10000"});
   choose_output correct_output{std::vector<choose::Token>{"12345"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -628,7 +622,7 @@ BOOST_AUTO_TEST_CASE(begin_of_string) {
   // not including the t, making it the beginning of the line again. but the
   // lookbehind of 1 allows characters to be retained, so it is correctly
   // recognized as not the beginning of the string.
-  choose_output out = run_choose("uaaat", {"-r", "--match", "--min-read=1", "\\A[ut]"});
+  choose_output out = run_choose("uaaat", {"-r", "--match", "--read=1", "\\A[ut]"});
   choose_output correct_output{std::vector<choose::Token>{"u"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -640,7 +634,7 @@ BOOST_AUTO_TEST_CASE(begin_of_line) {
 }
 
 BOOST_AUTO_TEST_CASE(end_of_string) {
-  choose_output out = run_choose("uaaat", {"-r", "--match", "--min-read=6", "[ut]\\Z"});
+  choose_output out = run_choose("uaaat", {"-r", "--match", "--read=6", "[ut]\\Z"});
   choose_output correct_output{std::vector<choose::Token>{"t"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -653,19 +647,19 @@ BOOST_AUTO_TEST_CASE(end_of_line) {
 
 BOOST_AUTO_TEST_CASE(retain_limit_match) {
   // safety bounds on parasitic matching. match failure
-  choose_output out = run_choose("1234", {"--match", "1234", "--min-read=1", "--retain-limit=2"});
+  choose_output out = run_choose("1234", {"--match", "1234", "--read=1", "--retain-limit=2"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(retain_limit_separator) {
-  choose_output out = run_choose("aaa1234aaa", {"1234", "--min-read=1", "--retain-limit=2"});
+  choose_output out = run_choose("aaa1234aaa", {"1234", "--read=1", "--retain-limit=2"});
   choose_output correct_output{std::vector<choose::Token>{"a"}}; // end of last token within retain limit
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(retain_limit_very_long_line) {
-  choose_output out = run_choose("1234\n1234\n12\n12\n", {"--min-read=1", "--retain-limit=2"});
+  choose_output out = run_choose("1234\n1234\n12\n12\n", {"--read=1", "--retain-limit=2"});
   choose_output correct_output{std::vector<choose::Token>{"4", "4", "12", "12"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -673,7 +667,7 @@ BOOST_AUTO_TEST_CASE(retain_limit_very_long_line) {
 BOOST_AUTO_TEST_CASE(complete_utf8) {
   // checks that the last utf8 char is completed before sending it to pcre2
   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
-  choose_output out = run_choose(ch, {"--min-read=1", "--utf"});
+  choose_output out = run_choose(ch, {"--read=1", "--utf"});
   choose_output correct_output{std::vector<choose::Token>{ch}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -683,21 +677,38 @@ BOOST_AUTO_TEST_CASE(utf8_lookback_separates_multibyte) {
   // lookbehind of 4 bytes, reading >=1 character at a time
   // the lookbehind must be correctly decremented to include the 0xE6 byte
   const char pattern[] = {'(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
-  choose_output out = run_choose(ch, {"-r", "--max-lookbehind=1", "--min-read=1", "--utf", "--match", pattern});
+  choose_output out = run_choose(ch, {"-r", "--max-lookbehind=1", "--read=1", "--utf", "--match", pattern});
   choose_output correct_output{std::vector<choose::Token>{"st"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_utf8) {
   const char ch[] = {(char)0xFF, (char)0b11000000, (char)0b10000000, (char)0b10000000, 't', 'e', 's', 't', 0};
-  choose_output out = run_choose(ch, {"-r", "--min-read=1", "--utf-allow-invalid", "--match", "test"});
+  choose_output out = run_choose(ch, {"-r", "--read=1", "--utf-allow-invalid", "--match", "test"});
   choose_output correct_output{std::vector<choose::Token>{"test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(invalid_utf8_separating_multibyte_not_ok) {
+  // sanity check for this: https://github.com/PCRE2Project/pcre2/issues/239. an
+  // incomplete byte does not give a partial match. so allow invalid still needs
+  // the subject_effective_end logic
+  const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
+  choose_output out = run_choose(ch, {"-r", "--read=1", "--utf-allow-invalid", "--match", ch});
+  choose_output correct_output{std::vector<choose::Token>{ch}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(invalid_utf8_overlong_byte) {
+  const char ch[] = {continuation, continuation, continuation, continuation, 0};
+  choose_output out = run_choose(ch, {"-r", "--read=1", "--utf-allow-invalid", "--match", "anything"});
+  choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(ensure_completed_utf8_multibytes_gives_err) {
   const char ch[] = {(char)0b10000000, 0};
-  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "--min-read=1"}), std::runtime_error);
+  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "--read=1"}), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

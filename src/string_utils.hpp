@@ -338,8 +338,8 @@ bool is_continuation(unsigned char c) {
   return (c & 0b11000000) == 0b10000000;
 }
 
-// returns null on error
-const char* find_last_non_continuation(const char* begin, const char* end) {
+// returns NULL on error
+const char* last_character_start(const char* begin, const char* end) {
   // find the first non continuation byte in the string
   const char* pos = end - 1;
   // the limit is of concern here for when invalid utf is enabled.
@@ -362,26 +362,30 @@ const char* find_last_non_continuation(const char* begin, const char* end) {
   return pos;
 }
 
-// given a string, how many bytes are required to finish the last utf8 multibyte
-// returns a negative value on error
-int bytes_required(const char* begin, const char* end) {
-  const char* pos = find_last_non_continuation(begin, end);
+// returns NULL on error
+const char* last_completed_character_end(const char* begin, const char* end) {
+  const char* pos = last_character_start(begin, end);
   if (pos == NULL) {
-    return -1;
+    return NULL;
   }
-  return length(*pos) - (int)(end - pos);
+  int len = length(*pos); // len of -1 returns pos
+  if (pos + len == end) {
+    return end;
+  } else {
+    return pos;
+  }
 }
 
 // pos is in range [begin,end).
 // pos might be decremented till begin. begin is an inclusive lower bound.
-// it is assumed that end is the completion of a multibyte -> if pos is end, then end is returned.
-// if an error occurs, then the return value is somewhere in range [begin, pos]
-const char* decrement_until_not_separating_multibyte(const char* pos, const char* begin, const char* end) {
+// it is assumed that end is a character start -> if pos is end, then end is returned.
+// if an error occurs, then pos is returned
+const char* decrement_until_character_start(const char* pos, const char* begin, const char* end) {
   if (pos == end) {
     return pos;
   }
 
-  const char* ret = find_last_non_continuation(begin, pos + 1);
+  const char* ret = last_character_start(begin, pos + 1);
   if (ret == NULL) {
     return pos;
   }
