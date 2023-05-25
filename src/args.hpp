@@ -90,9 +90,9 @@ struct Arguments {
   }
 
   // max indicates unset. can't be 0
-  uint32_t min_read = std::numeric_limits<uint32_t>::max();
-  bool min_read_set() const { //
-    return min_read != std::numeric_limits<uint32_t>::max();
+  uint32_t bytes_to_read = std::numeric_limits<uint32_t>::max();
+  bool bytes_to_read_set() const { //
+    return bytes_to_read != std::numeric_limits<uint32_t>::max();
   }
 
   ptrdiff_t retain_limit = RETAIN_LIMIT_DEFAULT;
@@ -344,9 +344,6 @@ void print_help_message() {
       "                the max number of characters that the pattern can look before\n"
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
-      "        --min-read <# bytes>\n"
-      "                the minimum number of bytes read from stdin per iteration of the\n"
-      "                token creation logic\n"
       "        -o, --output-separator <separator, default: '\\n'>\n"
       "                if multiple tokens are selected (which is enabled via -m), then\n"
       "                a separator is placed between each token in the output\n"
@@ -356,6 +353,8 @@ void print_help_message() {
       "        -p, --prompt <prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the input separator.\n"
+      "        --read <# bytes>\n"
+      "                the number of bytes read from stdin per iteration\n"
       "        --retain-limit <# bytes, default: " choose_xstr(RETAIN_LIMIT_DEFAULT) ">\n"
       "                this ensures that the memory usage is bounded in the event of\n"
       "                parasitic matching. if a match is greedy (e.g. \".*\"), then the\n"
@@ -484,7 +483,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"retain-limit", required_argument, NULL, 0},
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
-        {"min-read", required_argument, NULL, 0},
+        {"read", required_argument, NULL, 0},
         {"in", required_argument, NULL, 0},
         {"in-index", optional_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
@@ -547,10 +546,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             long v; // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.max_lookbehind = v;
-          } else if (strcmp("min-read", name) == 0) {
+          } else if (strcmp("read", name) == 0) {
             long v; // NOLINT
             parse_ul(optarg, &v, 1, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.min_read = v;
+            ret.bytes_to_read = v;
           } else if (strcmp("out", name) == 0) {
             long v; // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);

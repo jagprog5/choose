@@ -263,10 +263,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   const uint32_t max_lookbehind_size = get_max_lookbehind_size();
 
-  auto get_min_bytes_to_read = [&]() {
+  auto get_bytes_to_read = [&]() {
     uint32_t ret; // NOLINT
-    if (args.min_read_set()) {
-      ret = args.min_read;
+    if (args.bytes_to_read_set()) {
+      ret = args.bytes_to_read;
     } else {
       // * 2 is arbitrary. some amount more than the match
       ret = regex::min_match_length(args.primary) * 2;
@@ -279,7 +279,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     return ret;
   };
 
-  const uint32_t min_bytes_to_read = get_min_bytes_to_read();
+  const uint32_t bytes_to_read = get_bytes_to_read();
 
   std::vector<char> subject;   // match subject
   PCRE2_SIZE start_offset = 0; // match offset in the subject
@@ -348,10 +348,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   bool input_done; // NOLINT
 
   while (1) {
-    subject.resize(subject.size() + min_bytes_to_read);
-    char* write_pos = &*subject.end() - min_bytes_to_read;
-    size_t bytes_read = get_n_bytes(args.input, min_bytes_to_read, write_pos);
-    input_done = bytes_read != min_bytes_to_read;
+    subject.resize(subject.size() + bytes_to_read);
+    char* write_pos = &*subject.end() - bytes_to_read;
+    size_t bytes_read = get_n_bytes(args.input, bytes_to_read, write_pos);
+    input_done = bytes_read != bytes_to_read;
     if (input_done) {
       // shrink excess
       subject.resize((bytes_read + write_pos) - &*subject.begin());
