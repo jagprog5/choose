@@ -480,6 +480,25 @@ BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
 
 // ========================
 
+BOOST_AUTO_TEST_CASE(no_delimit) {
+  choose_output out = run_choose("a\nb\nc", {"--no-delimit", "-t"});
+  choose_output correct_output{to_vec("a\nb\nc")};  // no newline at end
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(delimit_on_empty) {
+  choose_output out = run_choose("", {"--delimit-on-empty", "-t"});
+  choose_output correct_output{to_vec("\n")};  // newline at end
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(no_delimit_delimit_on_empty) {
+  // checking precedence
+  choose_output out = run_choose("", {"--no-delimit", "--delimit-on-empty", "-t"});
+  choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(in_limit) {
   choose_output out = run_choose("d\nc\nb\na", {"--in=3", "--sort"});
   choose_output correct_output{std::vector<choose::Token>{"b", "c", "d"}};
