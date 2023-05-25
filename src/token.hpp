@@ -396,7 +396,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = subject_effective_end;
         } else {
           // there was a partial match and there is more input
-          regex::Match match = regex::get_match(subject.data(), match_data, "input separator");
+          regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
           new_subject_begin = match.begin;
         }
 

@@ -845,7 +845,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (ret.bytes_to_read == std::numeric_limits<uint32_t>::max()) {
-    ret.bytes_to_read = 4096;
+    ret.bytes_to_read = 4096; // some value based on cursory profiling
     if (ret.bytes_to_read > ret.retain_limit / 2) {
       ret.bytes_to_read = ret.retain_limit / 2;
     }
@@ -853,7 +853,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   if (ret.bytes_to_read == 0) {
     arg_error_preamble(argc, argv);
-    fputs("the minimum bytes to read cannot be set to zero\n", stderr);
+    fputs("the bytes to read cannot be set to zero\n", stderr);
     arg_error_preamble(argc, argv);
     fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
     exit(EXIT_FAILURE);
