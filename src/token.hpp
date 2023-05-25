@@ -55,7 +55,7 @@ class TokenOutputStream {
     if (!args.no_delimit && (!first || args.delimit_on_empty)) {
       str::write_f(args.output, args.bout_separator);
     }
-    first = true;  // optional
+    first = true; // optional
   }
 };
 
@@ -69,7 +69,7 @@ class BatchOutputStream {
   std::optional<std::vector<char>> output;
 
  public:
-  BatchOutputStream(const Arguments& args,  //
+  BatchOutputStream(const Arguments& args, //
                     std::optional<std::vector<char>>&& output)
       : args(args), output(output) {}
 
@@ -93,7 +93,7 @@ class BatchOutputStream {
       str::write_optional_buffer(args.output, output, args.bout_separator);
     }
     str::finish_optional_buffer(args.output, output);
-    first_within_batch = true;  // optional
+    first_within_batch = true; // optional
     first_batch = true;
   }
 
@@ -130,12 +130,12 @@ const char* id(bool is_match) {
   }
 }
 
-using indirect = std::vector<Token>::size_type;  // an index into output
+using indirect = std::vector<Token>::size_type; // an index into output
 
 struct ProcessTokenContext {
   choose::Arguments& args;
   std::vector<Token>& output;
-  std::function<bool(indirect)> uniqueness_check;  // returns true if the output[elem] is unique
+  std::function<bool(indirect)> uniqueness_check; // returns true if the output[elem] is unique
   std::optional<TokenOutputStream> direct_output;
   // out_count is the number of tokens that have been written to the output.
   // if args.direct_output() isn't set, then this value will mirror output.size()
@@ -228,7 +228,7 @@ void basic_process_token(const char* begin, const char* end, ProcessTokenContext
   }
 }
 
-}  // namespace
+} // namespace
 
 // reads from args.input, and returns the tokens if not args.out_set().
 // if args.out is set, then this function writes the output to args.output
@@ -248,7 +248,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  uint32_t max_lookbehind_size;  // NOLINT // bytes
+  uint32_t max_lookbehind_size; // NOLINT // bytes
   if (args.max_lookbehind_set()) {
     max_lookbehind_size = args.max_lookbehind;
   } else {
@@ -258,7 +258,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     max_lookbehind_size *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
-  uint32_t min_bytes_to_read;  // NOLINT
+  uint32_t min_bytes_to_read; // NOLINT
   if (args.min_read_set()) {
     min_bytes_to_read = args.min_read;
   } else {
@@ -271,8 +271,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     }
   }
 
-  std::vector<char> subject;    // match subject
-  PCRE2_SIZE start_offset = 0;  // match offset in the subject
+  std::vector<char> subject;   // match subject
+  PCRE2_SIZE start_offset = 0; // match offset in the subject
   regex::match_data match_data = regex::create_match_data(args.primary);
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
   const bool is_match = args.match;
@@ -300,16 +300,16 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     if (args.sort_reverse) {
       std::swap(lhs, rhs);
     }
-    return std::lexicographical_compare(  //
+    return std::lexicographical_compare( //
         lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
   };
 
   if (args.comp_unique) {
-    uniqueness_comp = [&user_defined_comparison, &output = std::as_const(output), &args = std::as_const(args)](indirect lhs, indirect rhs) -> bool {  //
+    uniqueness_comp = [&user_defined_comparison, &output = std::as_const(output), &args = std::as_const(args)](indirect lhs, indirect rhs) -> bool { //
       return user_defined_comparison(output[lhs], output[rhs]);
     };
   } else if (args.unique) {
-    uniqueness_comp = [&lexicographical_comparison, &output = std::as_const(output)](indirect lhs, indirect rhs) -> bool {  //
+    uniqueness_comp = [&lexicographical_comparison, &output = std::as_const(output)](indirect lhs, indirect rhs) -> bool { //
       return lexicographical_comparison(output[lhs], output[rhs]);
     };
   }
@@ -318,15 +318,15 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   std::function<bool(indirect)> uniqueness_check = 0;
   if (uniqueness_comp) {
-    uniqueness_check = [&uniqueness_set](indirect elem) -> bool {  //
+    uniqueness_check = [&uniqueness_set](indirect elem) -> bool { //
       return uniqueness_set.insert(elem).second;
     };
   }
 
-  ProcessTokenContext ptc{args,    //
-                          output,  //
+  ProcessTokenContext ptc{args,   //
+                          output, //
                           uniqueness_check,
-                          args.is_direct_output() ?  //
+                          args.is_direct_output() ? //
                               std::optional(TokenOutputStream(args))
                                                   : std::nullopt,
                           0};
@@ -335,7 +335,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   // only used when is_match == false
   Token token_being_built;
 
-  bool input_done;  // NOLINT
+  bool input_done; // NOLINT
   // helper lambda. reads stdin into the subject.
   // sets input_done appropriately
   auto get_more_input = [&](size_t n) {
@@ -343,7 +343,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     char* write_pos = &*subject.end() - n;
     size_t bytes_read = get_n_bytes(args.input, n, write_pos);
     input_done = bytes_read != n;
-    if (input_done) {  // shrink excess
+    if (input_done) { // shrink excess
       subject.resize(bytes_read + write_pos - &*subject.begin());
     }
   };
@@ -364,7 +364,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       match_options &= ~PCRE2_PARTIAL_HARD;
     }
 
-  skip_read:  // do another iteration but don't read in any more bytes
+  skip_read: // do another iteration but don't read in any more bytes
 
     // match for the pattern in the subject
     int match_result = regex::match(args.primary, subject.data(), subject.size(), match_data, id(is_match), start_offset, match_options);
@@ -407,7 +407,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       goto skip_read;
     } else {
       if (!input_done) {
-        const char* new_subject_begin;  // NOLINT
+        const char* new_subject_begin; // NOLINT
         if (match_result == 0) {
           // there was no match but there is more input
           new_subject_begin = &*subject.cend();
@@ -494,4 +494,4 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   return output;
 }
 
-}  // namespace choose
+} // namespace choose

@@ -98,6 +98,6 @@ void mouseinterval(int i) {
   }
 }
 
-}  // namespace nc
+} // namespace nc
 
-}  // namespace choose
+} // namespace choose

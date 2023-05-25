@@ -153,7 +153,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
   const int INITIAL_AVAILABLE_WIDTH = num_columns;
   int available_width = INITIAL_AVAILABLE_WIDTH;
   while (pos < prompt_terminator) {
-    wchar_t ch;  // NOLINT initialized by get_ch()
+    wchar_t ch; // NOLINT initialized by get_ch()
 
     // read from the prompt to produce a wide char, placed in ch. returns false on decode err
     auto get_ch = [&]() -> bool {
@@ -183,7 +183,7 @@ std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int nu
     } else {
       int ch_width = wcwidth(ch);
       if (ch_width <= 0) {
-        continue;  // do not use 0 width or error width characters (EOF, etc)
+        continue; // do not use 0 width or error width characters (EOF, etc)
       }
       available_width -= ch_width;
 
@@ -289,7 +289,7 @@ void finish_optional_buffer(FILE* f, const std::optional<std::vector<char>>& out
 // writes the ascii representation of value into v, separated by a space, at the beginning or end
 void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
   size_t extension = value == 0 ? 1 : (size_t(std::log10(value)) + 1);
-  extension += 1;  // +1 for space
+  extension += 1; // +1 for space
   size_t new_size = v.size() + extension;
   v.resize(new_size);
   if (align_before) {
@@ -305,7 +305,7 @@ void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
   } else {
     char* ptr = &*v.end() - extension;
     *ptr++ = ' ';
-    if (extension > 2) {  // aka value > 9
+    if (extension > 2) { // aka value > 9
       sprintf(ptr, "%zu", value / 10);
     }
     // overwrite the null written by sprintf
@@ -388,8 +388,8 @@ const char* decrement_until_not_separating_multibyte(const char* pos, const char
   return ret;
 }
 
-}  // namespace utf8
+} // namespace utf8
 
-}  // namespace str
+} // namespace str
 
-}  // namespace choose
+} // namespace choose

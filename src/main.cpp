@@ -32,10 +32,10 @@ struct UIState {
   // if args.tenacious is true, this provides feedback to the user on selection confirmation
   int tenacious_single_select_indicator = 0;
 
-  int num_rows = 0;        // the screen height
-  int num_columns = 0;     // the screen width
-  int prompt_rows = 0;     // the screen height available to the prompt
-  int selection_rows = 0;  // the screen height available to the selection
+  int num_rows = 0;       // the screen height
+  int num_columns = 0;    // the screen width
+  int prompt_rows = 0;    // the screen height available to the prompt
+  int selection_rows = 0; // the screen height available to the selection
 
   // the indices of the tokens selected by the user
   std::vector<int> selections = {};
@@ -97,7 +97,7 @@ struct UIState {
         clear();
         mvprintw(0, 0, "too small!");
       }
-      int ch;  // NOLINT init by getch()
+      int ch; // NOLINT init by getch()
       do {
         ch = getch();
       } while (ch != KEY_RESIZE);
@@ -205,14 +205,14 @@ struct UIState {
 
   // returns true if the tui loop should continue, false if it should break
   bool handle_user_input() {
-    int ch = wgetch(selection_window.get());  // implicit wrefresh here
+    int ch = wgetch(selection_window.get()); // implicit wrefresh here
     if (sigint_occurred != 0 || ch == KEY_BACKSPACE || ch == 'q' || ch == 27) {
       choose::nc::endwin();
       os.finish_output();
       return false;
     } else if (ch == KEY_RESIZE) {
       on_resize();
-    } else if (ch == 'c') {  // && multiple_selections
+    } else if (ch == 'c') { // && multiple_selections
       selections.clear();
     } else if (ch == ' ' && args.multiple_selections) {
       auto pos = std::find(selections.cbegin(), selections.cend(), selection_position);
@@ -318,27 +318,27 @@ struct UIState {
 
         // if the token only contains chars which are not drawn visibly
         bool invisible_only = true;
-        std::mbstate_t ps = std::mbstate_t();  // text decode state gets reset per token
+        std::mbstate_t ps = std::mbstate_t(); // text decode state gets reset per token
         while (pos < end) {
           // a wchar_t string of length 1 for ncurses drawing
           // (only at [0] is set)
           wchar_t ch[2];
           ch[1] = L'\0';
 
-          const char* escape_sequence = 0;  // draw non printing ascii via escape sequence
-          bool char_is_invalid = false;     // decode error is represented by ?
+          const char* escape_sequence = 0; // draw non printing ascii via escape sequence
+          bool char_is_invalid = false;    // decode error is represented by ?
 
           size_t num_bytes = std::mbrtowc(&ch[0], pos, end - pos, &ps);
           if (num_bytes == 0) {
             // null char was decoded. this is perfectly valid
-            num_bytes = 1;  // keep going
+            num_bytes = 1; // keep going
           } else if (num_bytes == (size_t)-1) {
             // this sets errno, but we can keep going
             num_bytes = 1;
             char_is_invalid = true;
           } else if (num_bytes == (size_t)-2) {
             // the remaining bytes in the token do not complete a character
-            num_bytes = end - pos;  // go to the end
+            num_bytes = end - pos; // go to the end
             char_is_invalid = true;
           }
 
@@ -353,7 +353,7 @@ struct UIState {
           // the printing functions handle bound checking
           if (escape_sequence) {
             int len = (int)strlen(escape_sequence);
-            if (x + len <= num_columns) {  // check if drawing the char would wrap
+            if (x + len <= num_columns) { // check if drawing the char would wrap
               wattron(selection_window.get(), A_DIM);
               mvwaddstr(selection_window.get(), y, x, escape_sequence);
               wattroff(selection_window.get(), A_DIM);
@@ -375,7 +375,7 @@ struct UIState {
             wattron(selection_window.get(), A_DIM);
             mvwaddstr(selection_window.get(), y, num_columns - 3, "...");
             wattroff(selection_window.get(), A_DIM);
-            break;  // cancel printing the rest of the token
+            break; // cancel printing the rest of the token
           }
         }
 
@@ -439,12 +439,12 @@ int main(int argc, char* const* argv) {
   choose::nc::screen screen;
 
   UIState state{
-      std::move(args),              //
-      std::move(tokens),            //
-      output_is_tty,                //
-      choose::BatchOutputStream(    //
-          state.args,               //
-          std::move(stream_output)  //
+      std::move(args),             //
+      std::move(tokens),           //
+      output_is_tty,               //
+      choose::BatchOutputStream(   //
+          state.args,              //
+          std::move(stream_output) //
           ),
   };
 
@@ -452,9 +452,9 @@ int main(int argc, char* const* argv) {
     screen = choose::nc::newterm(NULL, f, f);
     set_term(screen.get());
 
-    choose::nc::cbreak();  // pass keys directly from input without buffering
+    choose::nc::cbreak(); // pass keys directly from input without buffering
     choose::nc::noecho();
-    curs_set(0);  // invisible cursor
+    curs_set(0); // invisible cursor
 
     // I don't handle ERR for anything color or attribute related since
     // the application still works, even on failure (just without color)

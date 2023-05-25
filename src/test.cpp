@@ -184,7 +184,7 @@ BOOST_AUTO_TEST_CASE(apply_index_op_before) {
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
   std::vector<char> val_zero;
-  str::apply_index_op(val_zero, 0, true);  // log edge case
+  str::apply_index_op(val_zero, 0, true); // log edge case
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
@@ -281,7 +281,7 @@ std::vector<char> to_vec(const char* s) {
 extern int optreset;
 
 struct str_destroyer {
-  void operator()(char* s) { free(s); }  // NOLINT
+  void operator()(char* s) { free(s); } // NOLINT
 };
 
 // runs choose with the given stdin and arguments
@@ -335,7 +335,7 @@ choose_output run_choose(const std::vector<char>& input, const std::vector<const
     std::vector<char> out;
     static constexpr size_t BUF_SIZE = 1024;
     char buf[BUF_SIZE];
-    size_t bytes_read;  // NOLINT
+    size_t bytes_read; // NOLINT
     do {
       bytes_read = fread(buf, sizeof(char), BUF_SIZE, output_reader.get());
       str::append_to_buffer(out, buf, std::begin(buf) + bytes_read);
@@ -482,13 +482,13 @@ BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
 
 BOOST_AUTO_TEST_CASE(no_delimit) {
   choose_output out = run_choose("a\nb\nc", {"--no-delimit", "-t"});
-  choose_output correct_output{to_vec("a\nb\nc")};  // no newline at end
+  choose_output correct_output{to_vec("a\nb\nc")}; // no newline at end
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(delimit_on_empty) {
   choose_output out = run_choose("", {"--delimit-on-empty", "-t"});
-  choose_output correct_output{to_vec("\n")};  // newline at end
+  choose_output correct_output{to_vec("\n")}; // newline at end
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -660,7 +660,7 @@ BOOST_AUTO_TEST_CASE(retain_limit_match) {
 
 BOOST_AUTO_TEST_CASE(retain_limit_separator) {
   choose_output out = run_choose("aaa1234aaa", {"1234", "--min-read=1", "--retain-limit=2"});
-  choose_output correct_output{std::vector<choose::Token>{"a"}};  // end of last token within retain limit
+  choose_output correct_output{std::vector<choose::Token>{"a"}}; // end of last token within retain limit
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -719,7 +719,7 @@ BOOST_AUTO_TEST_CASE(null_input_separator) {
 BOOST_AUTO_TEST_CASE(parse_ul) {
   int argc = 1;
   const char* const argv[] = {"/tester/path/to/parse_ul"};
-  long out;  // NOLINT
+  long out; // NOLINT
   bool arg_has_errors = false;
   choose::parse_ul("123", &out, 0, 1000, &arg_has_errors, "simple", argc, argv, 0);
   BOOST_REQUIRE_EQUAL(arg_has_errors, false);

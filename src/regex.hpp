@@ -15,13 +15,13 @@ namespace regex {
 
 struct code_destroyer {
   void operator()(pcre2_code* code) {
-    pcre2_code_free(code);  // library does null check
+    pcre2_code_free(code); // library does null check
   }
 };
 
 struct match_data_destroyer {
   void operator()(pcre2_match_data* match_data) {
-    pcre2_match_data_free(match_data);  // library does null check
+    pcre2_match_data_free(match_data); // library does null check
   }
 };
 
@@ -29,8 +29,8 @@ using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
 code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE) {
-  int error_number;         // NOLINT
-  PCRE2_SIZE error_offset;  // NOLINT
+  int error_number;        // NOLINT
+  PCRE2_SIZE error_offset; // NOLINT
   pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, options, &error_number, &error_offset, NULL);
   if (re == NULL) {
     PCRE2_UCHAR buffer[256];
@@ -54,7 +54,7 @@ match_data create_match_data(const code& code) {
 
 // returns -1 if partial matching was specified in match_options and the subject is a partial match.
 // returns 0 if there are no matches, else 1 + the number of groups
-int match(const code& re,  //
+int match(const code& re, //
           const char* subject,
           PCRE2_SIZE subject_length,
           const match_data& match_data,
@@ -79,25 +79,25 @@ int match(const code& re,  //
 }
 
 uint32_t options(const code& c) {
-  uint32_t options;  // NOLINT
+  uint32_t options; // NOLINT
   pcre2_pattern_info(c.get(), PCRE2_INFO_ALLOPTIONS, &options);
   return options;
 }
 
 uint32_t max_lookbehind_size(const code& c) {
-  uint32_t out;  // NOLINT
+  uint32_t out; // NOLINT
   pcre2_pattern_info(c.get(), PCRE2_INFO_MAXLOOKBEHIND, &out);
   return out;
 }
 
 uint32_t min_match_length(const code& c) {
-  uint32_t out;  // NOLINT
+  uint32_t out; // NOLINT
   pcre2_pattern_info(c.get(), PCRE2_INFO_MINLENGTH, &out);
   return out;
 }
 
 // replacement is null terminating
-std::vector<char> substitute_global(const code& re,  //
+std::vector<char> substitute_global(const code& re, //
                                     const char* subject,
                                     PCRE2_SIZE subject_length,
                                     const char* replacement) {
@@ -107,32 +107,32 @@ std::vector<char> substitute_global(const code& re,  //
     sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
   }
 #endif
-  PCRE2_SIZE output_size = 0;                // initial pass calculates length of output
-  pcre2_substitute(re.get(),                 //
-                   (PCRE2_SPTR)subject,      //
-                   subject_length,           //
-                   0,                        //
-                   sub_flags,                //
-                   NULL,                     //
-                   NULL,                     //
-                   (PCRE2_SPTR)replacement,  //
-                   PCRE2_ZERO_TERMINATED,    //
-                   NULL,                     //
+  PCRE2_SIZE output_size = 0;               // initial pass calculates length of output
+  pcre2_substitute(re.get(),                //
+                   (PCRE2_SPTR)subject,     //
+                   subject_length,          //
+                   0,                       //
+                   sub_flags,               //
+                   NULL,                    //
+                   NULL,                    //
+                   (PCRE2_SPTR)replacement, //
+                   PCRE2_ZERO_TERMINATED,   //
+                   NULL,                    //
                    &output_size);
 
   std::vector<char> sub_out(output_size);
   sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
 
-  int sub_rc = pcre2_substitute(re.get(),                       //
-                                (PCRE2_SPTR)subject,            //
-                                subject_length,                 //
-                                0,                              //
-                                sub_flags,                      //
-                                NULL,                           //
-                                NULL,                           //
-                                (PCRE2_SPTR)replacement,        //
-                                PCRE2_ZERO_TERMINATED,          //
-                                (PCRE2_UCHAR8*)sub_out.data(),  //
+  int sub_rc = pcre2_substitute(re.get(),                      //
+                                (PCRE2_SPTR)subject,           //
+                                subject_length,                //
+                                0,                             //
+                                sub_flags,                     //
+                                NULL,                          //
+                                NULL,                          //
+                                (PCRE2_SPTR)replacement,       //
+                                PCRE2_ZERO_TERMINATED,         //
+                                (PCRE2_UCHAR8*)sub_out.data(), //
                                 &output_size);
 
   if (sub_rc < 0) {
@@ -142,7 +142,7 @@ std::vector<char> substitute_global(const code& re,  //
     snprintf(msg, 512, "PCRE2 substitution error: %s", buffer);
     throw std::runtime_error(msg);
   }
-  sub_out.resize(sub_out.size() - 1);  // pcre2_substitute always places an extra null char at the end
+  sub_out.resize(sub_out.size() - 1); // pcre2_substitute always places an extra null char at the end
   return sub_out;
 }
 
@@ -183,5 +183,5 @@ bool get_match_and_groups(const char* subject, int rc, const match_data& match_d
   return false;
 }
 
-}  // namespace regex
-}  // namespace choose
+} // namespace regex
+} // namespace choose
