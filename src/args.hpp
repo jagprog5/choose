@@ -13,6 +13,7 @@
 #include <ncursesw/curses.h>
 
 #include "regex.hpp"
+#include "string_utils.hpp"
 
 namespace choose {
 
@@ -76,6 +77,7 @@ struct Arguments {
   bool delimit_on_empty = false;
   // max is entirely valid, and the default
   typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
+
   // max indicates unset
   typename std::vector<int>::size_type out = std::numeric_limits<decltype(out)>::max();
   // skip the interface
@@ -83,17 +85,13 @@ struct Arguments {
     return out != std::numeric_limits<decltype(out)>::max();
   }
 
-  // max indicates unset
+  // number of bytes
+  // args will set it to a default value if it is unset. max indicates unset
   uint32_t max_lookbehind = std::numeric_limits<uint32_t>::max();
-  bool max_lookbehind_set() const { //
-    return max_lookbehind != std::numeric_limits<uint32_t>::max();
-  }
 
-  // max indicates unset. can't be 0
+  // number of bytes. can't be 0
+  // args will set it to a default value if it is unset. max indicates unset
   uint32_t bytes_to_read = std::numeric_limits<uint32_t>::max();
-  bool bytes_to_read_set() const { //
-    return bytes_to_read != std::numeric_limits<uint32_t>::max();
-  }
 
   ptrdiff_t retain_limit = RETAIN_LIMIT_DEFAULT;
   const char* locale = "";
@@ -536,6 +534,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("retain-limit", name) == 0) {
             long v; // NOLINT
+            // minimum is enforced to 2 via bytes_to_read check below
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.retain_limit)>::max(), &arg_has_errors, name, argc, argv);
             ret.retain_limit = v;
           } else if (strcmp("in", name) == 0) {
@@ -548,7 +547,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.max_lookbehind = v;
           } else if (strcmp("read", name) == 0) {
             long v; // NOLINT
-            parse_ul(optarg, &v, 1, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
+            // minimum value enforced below
+            parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.bytes_to_read = v;
           } else if (strcmp("out", name) == 0) {
             long v; // NOLINT
@@ -833,13 +833,37 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     ret.output = stdout;
   }
 
+  // compile the arguments now that the entire context has been obtained
+  uncompiled_output.compile(ret);
+
+  // defaults
+  if (ret.max_lookbehind == std::numeric_limits<uint32_t>::max()) {
+    ret.max_lookbehind = regex::max_lookbehind_size(ret.primary);
+  }
+  if (regex::options(ret.primary) & PCRE2_UTF) {
+    ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
+  }
+
+  if (ret.bytes_to_read == std::numeric_limits<uint32_t>::max()) {
+    ret.bytes_to_read = 4096;
+    if (ret.bytes_to_read > ret.retain_limit / 2) {
+      ret.bytes_to_read = ret.retain_limit / 2;
+    }
+  }
+
+  if (ret.bytes_to_read == 0) {
+    arg_error_preamble(argc, argv);
+    fputs("the minimum bytes to read cannot be set to zero\n", stderr);
+    arg_error_preamble(argc, argv);
+    fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
+    exit(EXIT_FAILURE);
+  }
+
   if (isatty(fileno(ret.input))) {
     int exit_code = puts("Try 'choose --help' for more information.") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     exit(exit_code);
   }
 
-  // compile the arguments now that the entire context has been obtained
-  uncompiled_output.compile(ret);
   return ret;
 }
 

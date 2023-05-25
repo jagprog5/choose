@@ -248,39 +248,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   const bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  auto get_max_lookbehind_size = [&]() {
-    uint32_t ret; // NOLINT
-    if (args.max_lookbehind_set()) {
-      ret = args.max_lookbehind;
-    } else {
-      ret = regex::max_lookbehind_size(args.primary);
-    }
-    if (is_uft) {
-      ret *= str::utf8::MAX_BYTES_PER_CHARACTER;
-    }
-    return ret;
-  };
-
-  const uint32_t max_lookbehind_size = get_max_lookbehind_size();
-
-  auto get_bytes_to_read = [&]() {
-    uint32_t ret; // NOLINT
-    if (args.bytes_to_read_set()) {
-      ret = args.bytes_to_read;
-    } else {
-      // * 2 is arbitrary. some amount more than the match
-      ret = regex::min_match_length(args.primary) * 2;
-      // reasonable lower bound based on cursory profiling
-      static constexpr size_t LOWER_BOUND = RETAIN_LIMIT_DEFAULT / 8;
-      if (ret < LOWER_BOUND) {
-        ret = LOWER_BOUND;
-      }
-    }
-    return ret;
-  };
-
-  const uint32_t bytes_to_read = get_bytes_to_read();
-
   std::vector<char> subject;   // match subject
   PCRE2_SIZE start_offset = 0; // match offset in the subject
   const regex::match_data match_data = regex::create_match_data(args.primary);
@@ -348,10 +315,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   bool input_done; // NOLINT
 
   while (1) {
-    subject.resize(subject.size() + bytes_to_read);
-    char* write_pos = &*subject.end() - bytes_to_read;
-    size_t bytes_read = get_n_bytes(args.input, bytes_to_read, write_pos);
-    input_done = bytes_read != bytes_to_read;
+    subject.resize(subject.size() + args.bytes_to_read);
+    char* write_pos = &*subject.end() - args.bytes_to_read;
+    size_t bytes_read = get_n_bytes(args.input, args.bytes_to_read, write_pos);
+    input_done = bytes_read != args.bytes_to_read;
     if (input_done) {
       // shrink excess
       subject.resize((bytes_read + write_pos) - &*subject.begin());
@@ -444,7 +411,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
         // account for lookbehind bytes to retain prior to the match
         const char* new_subject_begin_cp = new_subject_begin;
-        new_subject_begin -= max_lookbehind_size;
+        new_subject_begin -= args.max_lookbehind;
         if (new_subject_begin < &*subject.begin()) {
           new_subject_begin = &*subject.begin();
         }
