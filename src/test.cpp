@@ -123,36 +123,53 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(other_string_utils_test_suite)
 
-BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
+BOOST_AUTO_TEST_CASE(test_last_character_start) {
   const char empty[] = {};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(empty, empty) == 0);
+  BOOST_REQUIRE(str::utf8::last_character_start(empty, empty) == 0);
   const char simple[] = {'a'};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(simple, std::end(simple)) == simple);
+  BOOST_REQUIRE(str::utf8::last_character_start(simple, std::end(simple)) == simple);
   const char limit[] = {'a', continuation, continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(limit, std::end(limit)) == 0);
+  BOOST_REQUIRE(str::utf8::last_character_start(limit, std::end(limit)) == 0);
   const char not_limit[] = {'a', continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(not_limit, std::end(not_limit)) == not_limit);
+  BOOST_REQUIRE(str::utf8::last_character_start(not_limit, std::end(not_limit)) == not_limit);
   const char more[] = {'a', 'b', 'c', continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::find_last_non_continuation(more, std::end(more)) == more + 2);
+  BOOST_REQUIRE(str::utf8::last_character_start(more, std::end(more)) == more + 2);
 }
 
-BOOST_AUTO_TEST_CASE(test_decrement_until_not_separating_multibyte) {
+BOOST_AUTO_TEST_CASE(test_decrement_until_character_start) {
   const char none[] = {continuation, continuation};
   {
     const char* pos = &*std::crbegin(none);
-    bool r = str::utf8::decrement_until_not_separating_multibyte(pos, none, &*std::cend(none)) == pos;
+    bool r = str::utf8::decrement_until_character_start(pos, none, &*std::cend(none)) == pos;
     BOOST_REQUIRE(r);
   }
   {
     const char* end = &*std::cend(none);
-    bool r = str::utf8::decrement_until_not_separating_multibyte(end, none, &*std::cend(none)) == end;
+    bool r = str::utf8::decrement_until_character_start(end, none, &*std::cend(none)) == end;
     BOOST_REQUIRE(r);
   }
   const char vals[] = {continuation, one, continuation};
   const char* on_it = vals + 1;
-  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_not_separating_multibyte(on_it, vals, &*std::cend(vals)), on_it);
+  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_character_start(on_it, vals, &*std::cend(vals)), on_it);
   const char* off_it = vals + 2;
-  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_not_separating_multibyte(off_it, vals, &*std::cend(vals)), on_it);
+  BOOST_REQUIRE_EQUAL(str::utf8::decrement_until_character_start(off_it, vals, &*std::cend(vals)), on_it);
+}
+
+BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
+  const char none[] = {continuation, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(none, std::end(none)) == NULL);
+
+  const char complete[] = {three, continuation, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(complete, std::end(complete)) == std::end(complete));
+
+  const char single[] = {one};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(single, std::end(single)) == std::end(single));
+
+  const char err[] = {(char)0xFF, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(err, std::end(err)) == err);
+
+  const char incomplete[] = {three, continuation};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(incomplete, std::end(incomplete)) == incomplete);
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {

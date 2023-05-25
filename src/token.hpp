@@ -329,7 +329,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     // don't separate multibyte at end of subject
     const char* subject_effective_end; // NOLINT
     if (is_uft && !input_done) {
-      subject_effective_end = str::utf8::find_last_non_continuation(&*subject.begin(), &*subject.cend());
+      subject_effective_end = str::utf8::last_completed_character_end(&*subject.begin(), &*subject.cend());
       if (subject_effective_end == NULL) {
         if (is_invalid_uft) {
           subject_effective_end = &*subject.cend();
@@ -417,7 +417,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
         if (is_uft) {
           // don't separate multibyte at begin of subject
-          new_subject_begin = str::utf8::decrement_until_not_separating_multibyte(new_subject_begin, &*subject.cbegin(), subject_effective_end);
+          new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, &*subject.cbegin(), subject_effective_end);
         }
 
         start_offset = new_subject_begin_cp - new_subject_begin;
