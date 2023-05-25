@@ -52,7 +52,7 @@ class TokenOutputStream {
   }
 
   void finish_output() {
-    if (!args.bout_no_delimit && !first) {
+    if (!args.no_delimit && (!first || args.delimit_on_empty)) {
       str::write_f(args.output, args.bout_separator);
     }
     first = true;  // optional
@@ -89,7 +89,7 @@ class BatchOutputStream {
   }
 
   void finish_output() {
-    if (!args.bout_no_delimit && !first_batch) {
+    if (!args.no_delimit && (!first_batch || args.delimit_on_empty)) {
       str::write_optional_buffer(args.output, output, args.bout_separator);
     }
     str::finish_optional_buffer(args.output, output);

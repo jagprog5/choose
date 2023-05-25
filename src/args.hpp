@@ -72,7 +72,8 @@ struct Arguments {
   // match is false indicates that Arguments::primary is the separator between tokens.
   // else, it matches the tokens themselves
   bool match = false;
-  bool bout_no_delimit = false;
+  bool no_delimit = false;
+  bool delimit_on_empty = false;
   // max is entirely valid, and the default
   typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
   // max indicates unset
@@ -318,7 +319,10 @@ void print_help_message() {
       "        --comp-z <comp>\n"
       "                --comp with a null char separator\n"
       "        -d, --no-delimit\n"
-      "                don't add a batch separator at the end of the output\n"
+      "                don't add a batch separator at the end of the output. ignores\n"
+      "                --delimit-on-empty\n"
+      "        --delimit-on-empty\n"
+      "                even if the output would be empty, place a batch separator\n"
       "        -e, --end\n"
       "                begin cursor and prompt at the bottom\n"
       "        --flip\n"
@@ -491,6 +495,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"comp-sort", no_argument, NULL, 0},
         {"comp-unique", no_argument, NULL, 0},
         {"no-delimit", no_argument, NULL, 'd'},
+        {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
         {"flip", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
@@ -633,6 +638,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.sort = true;
           } else if (strcmp("comp-unique", name) == 0) {
             ret.comp_unique = true;
+          } else if (strcmp("delimit-on-empty", name) == 0) {
+            ret.delimit_on_empty = true;
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("multiline", name) == 0) {
@@ -716,7 +723,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         print_help_message();
         break;
       case 'd':
-        ret.bout_no_delimit = true;
+        ret.no_delimit = true;
         break;
       case 'e':
         ret.end = true;
