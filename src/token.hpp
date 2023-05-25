@@ -245,35 +245,45 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     return output;
   }
 
-  bool is_uft = regex::options(args.primary) & PCRE2_UTF;
-  bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
+  const bool is_uft = regex::options(args.primary) & PCRE2_UTF;
+  const bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  uint32_t max_lookbehind_size; // NOLINT // bytes
-  if (args.max_lookbehind_set()) {
-    max_lookbehind_size = args.max_lookbehind;
-  } else {
-    max_lookbehind_size = regex::max_lookbehind_size(args.primary);
-  }
-  if (is_uft) {
-    max_lookbehind_size *= str::utf8::MAX_BYTES_PER_CHARACTER;
-  }
-
-  uint32_t min_bytes_to_read; // NOLINT
-  if (args.min_read_set()) {
-    min_bytes_to_read = args.min_read;
-  } else {
-    // * 2 is arbitrary. some amount more than the match
-    min_bytes_to_read = regex::min_match_length(args.primary) * 2;
-    // reasonable lower bound based on cursory profiling
-    static constexpr size_t LOWER_BOUND = RETAIN_LIMIT_DEFAULT / 8;
-    if (min_bytes_to_read < LOWER_BOUND) {
-      min_bytes_to_read = LOWER_BOUND;
+  auto get_max_lookbehind_size = [&]() {
+    uint32_t ret; // NOLINT
+    if (args.max_lookbehind_set()) {
+      ret = args.max_lookbehind;
+    } else {
+      ret = regex::max_lookbehind_size(args.primary);
     }
-  }
+    if (is_uft) {
+      ret *= str::utf8::MAX_BYTES_PER_CHARACTER;
+    }
+    return ret;
+  };
+
+  const uint32_t max_lookbehind_size = get_max_lookbehind_size();
+
+  auto get_min_bytes_to_read = [&]() {
+    uint32_t ret; // NOLINT
+    if (args.min_read_set()) {
+      ret = args.min_read;
+    } else {
+      // * 2 is arbitrary. some amount more than the match
+      ret = regex::min_match_length(args.primary) * 2;
+      // reasonable lower bound based on cursory profiling
+      static constexpr size_t LOWER_BOUND = RETAIN_LIMIT_DEFAULT / 8;
+      if (ret < LOWER_BOUND) {
+        ret = LOWER_BOUND;
+      }
+    }
+    return ret;
+  };
+
+  const uint32_t min_bytes_to_read = get_min_bytes_to_read();
 
   std::vector<char> subject;   // match subject
   PCRE2_SIZE start_offset = 0; // match offset in the subject
-  regex::match_data match_data = regex::create_match_data(args.primary);
+  const regex::match_data match_data = regex::create_match_data(args.primary);
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
   const bool is_match = args.match;
   const bool is_basic = args.is_basic();
@@ -336,38 +346,44 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   Token token_being_built;
 
   bool input_done; // NOLINT
-  // helper lambda. reads stdin into the subject.
-  // sets input_done appropriately
-  auto get_more_input = [&](size_t n) {
-    subject.resize(subject.size() + n);
-    char* write_pos = &*subject.end() - n;
-    size_t bytes_read = get_n_bytes(args.input, n, write_pos);
-    input_done = bytes_read != n;
-    if (input_done) { // shrink excess
-      subject.resize(bytes_read + write_pos - &*subject.begin());
-    }
-  };
 
   while (1) {
-    get_more_input(min_bytes_to_read);
-    if (is_uft && !input_done) {
-      int to_complete = str::utf8::bytes_required(&*subject.cbegin(), &*subject.cend());
-      if (to_complete > 0) {
-        get_more_input(to_complete);
-      } else if (to_complete < 0 && !is_invalid_uft) {
-        throw std::runtime_error("utf8 decoding error");
-      }
-    }
-
+    subject.resize(subject.size() + min_bytes_to_read);
+    char* write_pos = &*subject.end() - min_bytes_to_read;
+    size_t bytes_read = get_n_bytes(args.input, min_bytes_to_read, write_pos);
+    input_done = bytes_read != min_bytes_to_read;
     if (input_done) {
+      // shrink excess
+      subject.resize((bytes_read + write_pos) - &*subject.begin());
       // required to make end anchors like \Z match at the end of the input
       match_options &= ~PCRE2_PARTIAL_HARD;
+    }
+
+    // don't separate multibyte at end of subject
+    const char* subject_effective_end; // NOLINT
+    if (is_uft && !input_done) {
+      subject_effective_end = str::utf8::find_last_non_continuation(&*subject.begin(), &*subject.cend());
+      if (subject_effective_end == NULL) {
+        if (is_invalid_uft) {
+          subject_effective_end = &*subject.cend();
+        } else {
+          throw std::runtime_error("utf8 decoding error");
+        }
+      }
+    } else {
+      subject_effective_end = &*subject.cend();
     }
 
   skip_read: // do another iteration but don't read in any more bytes
 
     // match for the pattern in the subject
-    int match_result = regex::match(args.primary, subject.data(), subject.size(), match_data, id(is_match), start_offset, match_options);
+    int match_result = regex::match(args.primary,                               //
+                                    subject.data(),                             //
+                                    subject_effective_end - &*subject.cbegin(), //
+                                    match_data,                                 //
+                                    id(is_match),                               //
+                                    start_offset,                               //
+                                    match_options);
 
     if (match_result != 0 && match_result != -1) {
       // a complete match
@@ -410,7 +426,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         const char* new_subject_begin; // NOLINT
         if (match_result == 0) {
           // there was no match but there is more input
-          new_subject_begin = &*subject.cend();
+          new_subject_begin = subject_effective_end;
         } else {
           // there was a partial match and there is more input
           regex::Match match = regex::get_match(subject.data(), match_data, "input separator");
@@ -433,7 +449,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = &*subject.begin();
         }
         if (is_uft) {
-          new_subject_begin = str::utf8::decrement_until_not_separating_multibyte(new_subject_begin, &*subject.cbegin(), &*subject.cend());
+          // don't separate multibyte at begin of subject
+          new_subject_begin = str::utf8::decrement_until_not_separating_multibyte(new_subject_begin, &*subject.cbegin(), subject_effective_end);
         }
 
         start_offset = new_subject_begin_cp - new_subject_begin;
@@ -452,7 +469,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       } else {
         // there was no match and there is no more input
         if (!is_match) {
-          str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, &*subject.end());
+          str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, subject_effective_end);
           if (!token_being_built.buffer.empty() || args.use_input_delimiter) {
             process_token(std::move(token_being_built), ptc);
           }

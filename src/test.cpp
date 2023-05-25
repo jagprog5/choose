@@ -6,6 +6,12 @@
 
 using namespace choose;
 
+char continuation = (char)0b10000000;
+char one = (char)0b00000000;
+char two = (char)0b11000000;
+char three = (char)0b11100000;
+char four = (char)0b11110000;
+
 struct GlobalInit {
   GlobalInit() { setlocale(LC_ALL, ""); }
 };
@@ -117,12 +123,6 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(other_string_utils_test_suite)
 
-char continuation = (char)0b10000000;
-char one = (char)0b00000000;
-char two = (char)0b11000000;
-char three = (char)0b11100000;
-char four = (char)0b11110000;
-
 BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
   const char empty[] = {};
   BOOST_REQUIRE(str::utf8::find_last_non_continuation(empty, empty) == 0);
@@ -134,29 +134,6 @@ BOOST_AUTO_TEST_CASE(test_find_last_non_continuation) {
   BOOST_REQUIRE(str::utf8::find_last_non_continuation(not_limit, std::end(not_limit)) == not_limit);
   const char more[] = {'a', 'b', 'c', continuation, continuation, continuation};
   BOOST_REQUIRE(str::utf8::find_last_non_continuation(more, std::end(more)) == more + 2);
-}
-
-BOOST_AUTO_TEST_CASE(test_bytes_required) {
-  const char empty[] = {};
-  BOOST_REQUIRE(str::utf8::bytes_required(empty, empty) < 0);
-  const char simple[] = {'a'};
-  BOOST_REQUIRE(str::utf8::bytes_required(simple, std::end(simple)) == 0);
-  const char limit[] = {'a', continuation, continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::bytes_required(limit, std::end(limit)) < 0);
-  const char not_limit[] = {four, continuation, continuation, continuation};
-  BOOST_REQUIRE(str::utf8::bytes_required(not_limit, std::end(not_limit)) == 0);
-
-  char vals[] = {four, three, two, one};
-  char* pos = vals;
-  while (pos != std::end(vals)) {
-    std::vector<char> tester{*pos};
-    for (int i = 0; i < 3; ++i) {
-      tester.push_back(continuation);
-      int required = 4 - (int)tester.size() - (int)(pos - vals);
-      BOOST_REQUIRE_EQUAL(str::utf8::bytes_required(&*tester.cbegin(), &*tester.cend()), required);
-    }
-    ++pos;
-  }
 }
 
 BOOST_AUTO_TEST_CASE(test_decrement_until_not_separating_multibyte) {
@@ -692,6 +669,23 @@ BOOST_AUTO_TEST_CASE(invalid_utf8) {
   const char ch[] = {(char)0xFF, (char)0b11000000, (char)0b10000000, (char)0b10000000, 't', 'e', 's', 't', 0};
   choose_output out = run_choose(ch, {"-r", "--min-read=1", "--utf-allow-invalid", "--match", "test"});
   choose_output correct_output{std::vector<choose::Token>{"test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(invalid_utf8_separating_multibyte_not_ok) {
+  // sanity check for this: https://github.com/PCRE2Project/pcre2/issues/239. an
+  // incomplete byte does not give a partial match. so allow invalid still needs
+  // the subject_effective_end logic
+  const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
+  choose_output out = run_choose(ch, {"-r", "--min-read=1", "--utf-allow-invalid", "--match", ch});
+  choose_output correct_output{std::vector<choose::Token>{ch}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(invalid_utf8_overlong_byte) {
+  const char ch[] = {continuation, continuation, continuation, continuation, 0};
+  choose_output out = run_choose(ch, {"-r", "--min-read=1", "--utf-allow-invalid", "--match", "anything"});
+  choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

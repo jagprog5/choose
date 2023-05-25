@@ -318,22 +318,6 @@ namespace utf8 {
 
 static constexpr int MAX_BYTES_PER_CHARACTER = 4;
 
-// c is the first byte of a utf8 multibyte sequence. returns the length of the multibyte
-// returns -1 on error. e.g. this is a continuation byte
-int length(unsigned char c) {
-  if (c < 0b10000000) {
-    return 1;
-  } else if ((c & 0b11100000) == 0b11000000) {
-    return 2;
-  } else if ((c & 0b11110000) == 0b11100000) {
-    return 3;
-  } else if ((c & 0b11111000) == 0b11110000) {
-    return 4;
-  } else {
-    return -1;
-  }
-}
-
 bool is_continuation(unsigned char c) {
   return (c & 0b11000000) == 0b10000000;
 }
@@ -360,16 +344,6 @@ const char* find_last_non_continuation(const char* begin, const char* end) {
   }
 
   return pos;
-}
-
-// given a string, how many bytes are required to finish the last utf8 multibyte
-// returns a negative value on error
-int bytes_required(const char* begin, const char* end) {
-  const char* pos = find_last_non_continuation(begin, end);
-  if (pos == NULL) {
-    return -1;
-  }
-  return length(*pos) - (int)(end - pos);
 }
 
 // pos is in range [begin,end).
