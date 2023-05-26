@@ -91,9 +91,9 @@ struct Arguments {
 
   // number of bytes. can't be 0
   // args will set it to a default value if it is unset. max indicates unset
-  uint32_t bytes_to_read = std::numeric_limits<uint32_t>::max();
+  size_t bytes_to_read = std::numeric_limits<size_t>::max();
 
-  ptrdiff_t retain_limit = RETAIN_LIMIT_DEFAULT;
+  size_t retain_limit = RETAIN_LIMIT_DEFAULT;
   const char* locale = "";
 
   std::vector<char> out_separator = {'\n'};
@@ -543,12 +543,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.in = v;
           } else if (strcmp("max-lookbehind", name) == 0) {
             long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.max_lookbehind)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.max_lookbehind = v;
           } else if (strcmp("read", name) == 0) {
             long v; // NOLINT
             // minimum value enforced below
-            parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.bytes_to_read)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.bytes_to_read = v;
           } else if (strcmp("out", name) == 0) {
             long v; // NOLINT
@@ -837,14 +837,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   uncompiled_output.compile(ret);
 
   // defaults
-  if (ret.max_lookbehind == std::numeric_limits<uint32_t>::max()) {
+  if (ret.max_lookbehind == std::numeric_limits<decltype(ret.max_lookbehind)>::max()) {
     ret.max_lookbehind = regex::max_lookbehind_size(ret.primary);
   }
   if (regex::options(ret.primary) & PCRE2_UTF) {
     ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
-  if (ret.bytes_to_read == std::numeric_limits<uint32_t>::max()) {
+  if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = 8192; // some value based on cursory profiling
     if (ret.bytes_to_read > ret.retain_limit / 2) {
       ret.bytes_to_read = ret.retain_limit / 2;

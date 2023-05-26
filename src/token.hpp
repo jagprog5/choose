@@ -251,7 +251,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   const bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  std::vector<char> subject; // match subject
+  char subject[args.retain_limit];
+  size_t subject_size = 0; // how full is the buffer
   PCRE2_SIZE match_offset = 0;
   PCRE2_SIZE prev_sep_end = 0;
   const regex::match_data match_data = regex::create_match_data(args.primary);
@@ -312,16 +313,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
                                                   : std::nullopt,
                           0};
 
-  bool input_done; // NOLINT
-
   while (1) {
-    subject.resize(subject.size() + args.bytes_to_read);
-    char* write_pos = &*subject.end() - args.bytes_to_read;
-    size_t bytes_read = get_n_bytes(args.input, args.bytes_to_read, write_pos);
-    input_done = bytes_read != args.bytes_to_read;
+    char* write_pos = &subject[subject_size];
+    size_t bytes_to_read = std::min(args.bytes_to_read, args.retain_limit - subject_size);
+    size_t bytes_read = get_n_bytes(args.input, bytes_to_read, write_pos);
+    bool input_done = bytes_read != args.bytes_to_read;
+    subject_size += bytes_read;
     if (input_done) {
-      // shrink excess
-      subject.resize((bytes_read + write_pos) - &*subject.begin());
       // required to make end anchors like \Z match at the end of the input
       match_options &= ~PCRE2_PARTIAL_HARD;
     }
@@ -329,33 +327,33 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     // don't separate multibyte at end of subject
     const char* subject_effective_end; // NOLINT
     if (is_uft && !input_done) {
-      subject_effective_end = str::utf8::last_completed_character_end(&*subject.cbegin(), &*subject.cend());
+      subject_effective_end = str::utf8::last_completed_character_end(subject, subject + subject_size);
       if (subject_effective_end == NULL) {
         if (is_invalid_uft) {
-          subject_effective_end = &*subject.cend();
+          subject_effective_end = subject + subject_size;
         } else {
           throw std::runtime_error("utf8 decoding error");
         }
       }
     } else {
-      subject_effective_end = &*subject.cend();
+      subject_effective_end = subject + subject_size;
     }
 
   skip_read: // do another iteration but don't read in any more bytes
 
-    int match_result = regex::match(args.primary,                               //
-                                    subject.data(),                             //
-                                    subject_effective_end - &*subject.cbegin(), //
-                                    match_data,                                 //
-                                    id(is_match),                               //
-                                    match_offset,                               //
+    int match_result = regex::match(args.primary,                    //
+                                    subject,                         //
+                                    subject_effective_end - subject, //
+                                    match_data,                      //
+                                    id(is_match),                    //
+                                    match_offset,                    //
                                     match_options);
 
     if (match_result > 0) {
       // a complete match:
       // process the match, set the offsets, then do another iteration without
       // reading more input
-      regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
+      regex::Match match = regex::get_match(subject, match_data, id(is_match));
       if (is_match) {
         auto match_handler = [&](const regex::Match& m) -> bool {
           if (is_basic) {
@@ -367,23 +365,23 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return process_token(std::move(t), ptc);
           }
         };
-        if (regex::get_match_and_groups(subject.data(), match_result, match_data, match_handler, "match pattern")) {
+        if (regex::get_match_and_groups(subject, match_result, match_data, match_handler, "match pattern")) {
           break;
         }
       } else {
         if (is_basic) {
-          basic_process_token(&*subject.begin() + prev_sep_end, match.begin, ptc);
+          basic_process_token(subject + prev_sep_end, match.begin, ptc);
         } else {
           Token t;
-          str::append_to_buffer(t.buffer, &*subject.begin() + prev_sep_end, match.begin);
+          str::append_to_buffer(t.buffer, subject + prev_sep_end, match.begin);
           if (process_token(std::move(t), ptc)) {
             break;
           }
         }
-        prev_sep_end = match.end - &*subject.begin();
+        prev_sep_end = match.end - subject;
       }
       // set the start offset to just after the match
-      match_offset = match.end - &*subject.begin();
+      match_offset = match.end - subject;
       goto skip_read;
     } else {
       if (!input_done) {
@@ -394,33 +392,40 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = subject_effective_end;
         } else {
           // there was a partial match and there is more input
-          regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
+          regex::Match match = regex::get_match(subject, match_data, id(is_match));
           new_subject_begin = match.begin;
         }
 
         // account for lookbehind bytes to retain prior to the match
         const char* new_subject_begin_cp = new_subject_begin;
         new_subject_begin -= args.max_lookbehind;
-        if (new_subject_begin < &*subject.begin()) {
-          new_subject_begin = &*subject.begin();
+        if (new_subject_begin < subject) {
+          new_subject_begin = subject;
         }
         if (is_uft) {
           // don't separate multibyte at begin of subject
-          new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, &*subject.cbegin(), subject_effective_end);
+          new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, subject, subject_effective_end);
         }
 
-        new_subject_begin = std::min(new_subject_begin, &*subject.cbegin() + prev_sep_end);
+        const char* subject_const = subject;
+        new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
 
         // cut out the excess from the beginning
         match_offset = new_subject_begin_cp - new_subject_begin;
 
         if (!is_match) {
-          prev_sep_end -= new_subject_begin - &*subject.cbegin();
+          prev_sep_end -= new_subject_begin - subject;
         }
-        subject.erase(subject.begin(), typename std::vector<char>::const_iterator(new_subject_begin));
+        char* to = subject;
+        const char* from = new_subject_begin;
+        while (from < subject + subject_size) {
+          *to++ = *from++;
+        }
+        subject_size -= from - to;
 
-        if ((int)subject.size() > args.retain_limit) {
-          subject.clear();
+        // before reading in more input, check if the buffer is filled
+        if (subject_size == args.retain_limit) {
+          subject_size = 0;
           match_offset = 0;
           prev_sep_end = 0;
         }
@@ -428,17 +433,17 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         // no match and no more input:
         // process the last token and break from the loop
         if (!is_match) {
-          if (prev_sep_end != subject.size() || args.use_input_delimiter) {
+          if (prev_sep_end != subject_size || args.use_input_delimiter) {
             if (is_basic) {
-              basic_process_token(&*subject.begin() + prev_sep_end, subject_effective_end, ptc);
+              basic_process_token(subject + prev_sep_end, subject_effective_end, ptc);
             } else {
-              subject.erase(subject.begin(), subject.begin() + prev_sep_end);
-              Token t{std::move(subject)};
+              std::vector<char> v;
+              str::append_to_buffer(v, subject + prev_sep_end, subject_effective_end);
+              Token t{std::move(v)};
               process_token(std::move(t), ptc);
             }
           }
         }
-        subject.clear();
         break;
       }
     }
