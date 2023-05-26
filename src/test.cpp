@@ -170,6 +170,10 @@ BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
 
   const char incomplete[] = {three, continuation};
   BOOST_REQUIRE(str::utf8::last_completed_character_end(incomplete, std::end(incomplete)) == incomplete);
+
+  // adding a continuation byte does not decrease the effective size of the string
+  const char gotchya[] = {(char)0b11000000, (char)0b10000000, (char)0b10000000};
+  BOOST_REQUIRE(str::utf8::last_completed_character_end(gotchya, std::end(gotchya)) == std::end(gotchya) - 1);
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {

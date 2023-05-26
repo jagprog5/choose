@@ -18,6 +18,7 @@ struct Token {
   Token(const char* in) : buffer(in, in + strlen(in)) {}
   bool operator==(const Token& other) const { return this->buffer == other.buffer; }
 
+  Token(std::vector<char>&& i) : buffer(std::move(i)){};
   Token() = default;
   Token(const Token&) = default;
   Token(Token&&) = default;
@@ -100,6 +101,8 @@ class BatchOutputStream {
   bool uses_buffer() const { return output.has_value(); }
 };
 
+// leads to an exit unless this is a unit test
+// effectively skips the tui interface
 struct termination_request : public std::exception {};
 
 namespace {
@@ -248,8 +251,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   const bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  std::vector<char> subject;   // match subject
-  PCRE2_SIZE start_offset = 0; // match offset in the subject
+  std::vector<char> subject; // match subject
+  PCRE2_SIZE match_offset = 0;
+  PCRE2_SIZE prev_sep_end = 0;
   const regex::match_data match_data = regex::create_match_data(args.primary);
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
   const bool is_match = args.match;
@@ -308,10 +312,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
                                                   : std::nullopt,
                           0};
 
-  // stores the token so far.
-  // only used when is_match == false
-  Token token_being_built;
-
   bool input_done; // NOLINT
 
   while (1) {
@@ -329,7 +329,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     // don't separate multibyte at end of subject
     const char* subject_effective_end; // NOLINT
     if (is_uft && !input_done) {
-      subject_effective_end = str::utf8::last_completed_character_end(&*subject.begin(), &*subject.cend());
+      subject_effective_end = str::utf8::last_completed_character_end(&*subject.cbegin(), &*subject.cend());
       if (subject_effective_end == NULL) {
         if (is_invalid_uft) {
           subject_effective_end = &*subject.cend();
@@ -343,29 +343,27 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   skip_read: // do another iteration but don't read in any more bytes
 
-    // match for the pattern in the subject
     int match_result = regex::match(args.primary,                               //
                                     subject.data(),                             //
                                     subject_effective_end - &*subject.cbegin(), //
                                     match_data,                                 //
                                     id(is_match),                               //
-                                    start_offset,                               //
+                                    match_offset,                               //
                                     match_options);
 
-    if (match_result != 0 && match_result != -1) {
-      // a complete match
+    if (match_result > 0) {
+      // a complete match:
+      // process the match, set the offsets, then do another iteration without
+      // reading more input
       regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
-
       if (is_match) {
         auto match_handler = [&](const regex::Match& m) -> bool {
           if (is_basic) {
             basic_process_token(m.begin, m.end, ptc);
             return false;
           } else {
-            std::vector<char> token_buf;
-            str::append_to_buffer(token_buf, m.begin, m.end);
             Token t;
-            t.buffer = std::move(token_buf);
+            str::append_to_buffer(t.buffer, m.begin, m.end);
             return process_token(std::move(t), ptc);
           }
         };
@@ -373,23 +371,23 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           break;
         }
       } else {
-        if (is_basic && token_being_built.buffer.empty()) {
-          basic_process_token(&*subject.begin() + start_offset, match.begin, ptc);
+        if (is_basic) {
+          basic_process_token(&*subject.begin() + prev_sep_end, match.begin, ptc);
         } else {
-          // copy the bytes prior to the separator into token_being_built
-          str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, match.begin);
-          if (process_token(std::move(token_being_built), ptc)) {
+          Token t;
+          str::append_to_buffer(t.buffer, &*subject.begin() + prev_sep_end, match.begin);
+          if (process_token(std::move(t), ptc)) {
             break;
           }
-          token_being_built = Token();
         }
+        prev_sep_end = match.end - &*subject.begin();
       }
-
       // set the start offset to just after the match
-      start_offset = match.end - &*subject.begin();
+      match_offset = match.end - &*subject.begin();
       goto skip_read;
     } else {
       if (!input_done) {
+        // no or partial match and input is left
         const char* new_subject_begin; // NOLINT
         if (match_result == 0) {
           // there was no match but there is more input
@@ -398,15 +396,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           // there was a partial match and there is more input
           regex::Match match = regex::get_match(subject.data(), match_data, id(is_match));
           new_subject_begin = match.begin;
-        }
-
-        if (!is_match) {
-          str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, new_subject_begin);
-          if ((int)token_being_built.buffer.size() > args.retain_limit) {
-            // the line of text is really really long.
-            // grep's handling of this case is implementation defined.
-            token_being_built.buffer.clear();
-          }
         }
 
         // account for lookbehind bytes to retain prior to the match
@@ -420,27 +409,36 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, &*subject.cbegin(), subject_effective_end);
         }
 
-        start_offset = new_subject_begin_cp - new_subject_begin;
+        new_subject_begin = std::min(new_subject_begin, &*subject.cbegin() + prev_sep_end);
+
+        // cut out the excess from the beginning
+        match_offset = new_subject_begin_cp - new_subject_begin;
+
+        if (!is_match) {
+          prev_sep_end -= new_subject_begin - &*subject.cbegin();
+        }
         subject.erase(subject.begin(), typename std::vector<char>::const_iterator(new_subject_begin));
 
         if ((int)subject.size() > args.retain_limit) {
-          // the partial match length has exceeded the limit. count as a no match
-          if (!is_match) {
-            // typical behaviour on match failure is to append the subject to the token being built.
-            // however, since the token_being_built would also reach this limit, it is discarded as well
-            token_being_built.buffer.clear();
-          }
           subject.clear();
-          start_offset = 0;
+          match_offset = 0;
+          prev_sep_end = 0;
         }
       } else {
-        // there was no match and there is no more input
+        // no match and no more input:
+        // process the last token and break from the loop
         if (!is_match) {
-          str::append_to_buffer(token_being_built.buffer, &*subject.begin() + start_offset, subject_effective_end);
-          if (!token_being_built.buffer.empty() || args.use_input_delimiter) {
-            process_token(std::move(token_being_built), ptc);
+          if (prev_sep_end != subject.size() || args.use_input_delimiter) {
+            if (is_basic) {
+              basic_process_token(&*subject.begin() + prev_sep_end, subject_effective_end, ptc);
+            } else {
+              subject.erase(subject.begin(), subject.begin() + prev_sep_end);
+              Token t{std::move(subject)};
+              process_token(std::move(t), ptc);
+            }
           }
         }
+        subject.clear();
         break;
       }
     }

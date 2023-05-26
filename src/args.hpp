@@ -845,7 +845,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (ret.bytes_to_read == std::numeric_limits<uint32_t>::max()) {
-    ret.bytes_to_read = 4096; // some value based on cursory profiling
+    ret.bytes_to_read = 8192; // some value based on cursory profiling
     if (ret.bytes_to_read > ret.retain_limit / 2) {
       ret.bytes_to_read = ret.retain_limit / 2;
     }

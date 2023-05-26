@@ -368,12 +368,12 @@ const char* last_completed_character_end(const char* begin, const char* end) {
   if (pos == NULL) {
     return NULL;
   }
-  int len = length(*pos); // len of -1 returns pos
-  if (pos + len == end) {
-    return end;
-  } else {
+  int len = length(*pos);
+  if (len == -1 || pos + len > end) {
     return pos;
   }
+
+  return pos + len;
 }
 
 // pos is in range [begin,end).
