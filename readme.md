@@ -80,16 +80,16 @@ For a simple grep case, its slower but comparable to [pcre2grep](https://www.pcr
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
-time (cat words_alpha.txt | grep "test" > out.txt)          # 0.005s
-time (cat words_alpha.txt | pcre2grep "test" > out.txt)     # 0.019s
-time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.055s (~2 to 4 times slower that pcre2grep)
+time (cat words_alpha.txt | grep "test" > out.txt)          # 0.008s
+time (cat words_alpha.txt | pcre2grep "test" > out.txt)     # 0.044s
+time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.081s (half speed of pcre2grep)
 ```
 
 For a simple substitution case, its slower than sed:
 
 ```bash
 time (cat words_alpha.txt | sed "s/test/banana/g" > out.txt)        # 0.055s
-time (cat words_alpha.txt | choose --sub test banana -t > out.txt)  # 0.293s (~5 times slower than sed)
+time (cat words_alpha.txt | choose --sub test banana -t > out.txt)  # 0.224s (~5 times slower than sed)
 ```
 
 ## Documentation

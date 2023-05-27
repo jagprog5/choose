@@ -649,6 +649,13 @@ BOOST_AUTO_TEST_CASE(end_of_line) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(retain_limit_less_than_read) {
+  // read takes the minimum of the available space in buffer left and the read amount
+  choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1000000", "--retain-limit=3"});
+  choose_output correct_output{std::vector<choose::Token>{}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(retain_limit_match) {
   choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1", "--retain-limit=3"});
   choose_output correct_output{std::vector<choose::Token>{}};
