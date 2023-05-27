@@ -317,7 +317,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     char* write_pos = &subject[subject_size];
     size_t bytes_to_read = std::min(args.bytes_to_read, args.retain_limit - subject_size);
     size_t bytes_read = get_n_bytes(args.input, bytes_to_read, write_pos);
-    bool input_done = bytes_read != args.bytes_to_read;
+    bool input_done = bytes_read != bytes_to_read;
     subject_size += bytes_read;
     if (input_done) {
       // required to make end anchors like \Z match at the end of the input
@@ -410,11 +410,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         const char* subject_const = subject;
         if (!is_match) {
           // keep the bytes required, either from the lookback retain for the next iteration,
-          // or because the separator starts here
+          // or because the separator ended there and there
           new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
         }
 
-        // cut out the excess from the beginning
+        // cut out the excess from the beginning and adjust the offset
         match_offset = new_subject_begin_cp - new_subject_begin;
 
         if (!is_match) {
