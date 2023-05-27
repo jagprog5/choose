@@ -87,13 +87,13 @@ struct Arguments {
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
-  uint32_t max_lookbehind = std::numeric_limits<uint32_t>::max();
+  uint32_t max_lookbehind = std::numeric_limits<decltype(max_lookbehind)>::max();
 
   // number of bytes. can't be 0
   // args will set it to a default value if it is unset. max indicates unset
-  uint32_t bytes_to_read = std::numeric_limits<uint32_t>::max();
+  size_t bytes_to_read = std::numeric_limits<decltype(bytes_to_read)>::max();
 
-  ptrdiff_t retain_limit = RETAIN_LIMIT_DEFAULT;
+  size_t retain_limit = RETAIN_LIMIT_DEFAULT;
   const char* locale = "";
 
   std::vector<char> out_separator = {'\n'};
@@ -298,7 +298,7 @@ void print_help_message() {
       "                so the replacement is always a regex.\n"
 #endif
       "options:\n"
-      "        -b, --batch-separator <separator, default: <output separator>>\n"
+      "        -b, --batch-separator <separator, default: <output-separator>>\n"
       "                selecting multiple tokens and sending them to the output\n"
       "                together is a \"batch\". if multiple batches are send to the\n"
       "                output (which is enabled via --tenacious), then a batch\n"
@@ -351,7 +351,7 @@ void print_help_message() {
       "        -p, --prompt <prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the input separator.\n"
-      "        --read <# bytes>\n"
+      "        --read <# bytes, default: <retain-limit>>\n"
       "                the number of bytes read from stdin per iteration\n"
       "        --retain-limit <# bytes, default: " choose_xstr(RETAIN_LIMIT_DEFAULT) ">\n"
       "                this ensures that the memory usage is bounded in the event of\n"
@@ -534,7 +534,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("retain-limit", name) == 0) {
             long v; // NOLINT
-            // minimum is enforced to 2 via bytes_to_read check below
+            // minimum is enforced via bytes_to_read check below
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.retain_limit)>::max(), &arg_has_errors, name, argc, argv);
             ret.retain_limit = v;
           } else if (strcmp("in", name) == 0) {
@@ -543,12 +543,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.in = v;
           } else if (strcmp("max-lookbehind", name) == 0) {
             long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.max_lookbehind)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.max_lookbehind = v;
           } else if (strcmp("read", name) == 0) {
             long v; // NOLINT
             // minimum value enforced below
-            parse_ul(optarg, &v, 0, std::numeric_limits<uint32_t>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.bytes_to_read)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.bytes_to_read = v;
           } else if (strcmp("out", name) == 0) {
             long v; // NOLINT
@@ -804,19 +804,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     uncompiled_output.primary = "\n";
   }
 
-  // give failure on dangerous args
-  if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
-    arg_error_preamble(argc, argv);
-    fputs("A non-matchable separator will discard the token thus far when the retain limit is hit.\n", stderr);
-    arg_has_errors = true;
-  }
-
-  if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
-    arg_error_preamble(argc, argv);
-    fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
-    arg_has_errors = true;
-  }
-
   if (arg_has_errors) {
     exit(EXIT_FAILURE);
   }
@@ -837,26 +824,46 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   uncompiled_output.compile(ret);
 
   // defaults
-  if (ret.max_lookbehind == std::numeric_limits<uint32_t>::max()) {
+  if (ret.max_lookbehind == std::numeric_limits<decltype(ret.max_lookbehind)>::max()) {
     ret.max_lookbehind = regex::max_lookbehind_size(ret.primary);
   }
+  if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
+    ret.bytes_to_read = ret.retain_limit;
+  }
+
+  // required. number of characters
   if (regex::options(ret.primary) & PCRE2_UTF) {
     ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
-  if (ret.bytes_to_read == std::numeric_limits<uint32_t>::max()) {
-    ret.bytes_to_read = 4096; // some value based on cursory profiling
-    if (ret.bytes_to_read > ret.retain_limit / 2) {
-      ret.bytes_to_read = ret.retain_limit / 2;
+  // do checks if not unit test
+  if (input == NULL) {
+    // give failure on dangerous args
+    if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
+      arg_error_preamble(argc, argv);
+      fputs("A non-matchable separator will discard the token thus far when the retain limit is hit.\n", stderr);
+      exit(EXIT_FAILURE);
     }
-  }
 
-  if (ret.bytes_to_read == 0) {
-    arg_error_preamble(argc, argv);
-    fputs("the bytes to read cannot be set to zero\n", stderr);
-    arg_error_preamble(argc, argv);
-    fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
-    exit(EXIT_FAILURE);
+    if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
+      arg_error_preamble(argc, argv);
+      fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+
+    if (ret.bytes_to_read == 0) {
+      arg_error_preamble(argc, argv);
+      fputs("the bytes to read cannot be set to zero\n", stderr);
+      arg_error_preamble(argc, argv);
+      fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+
+    if (regex::min_match_length(ret.primary) > ret.retain_limit) {
+      arg_error_preamble(argc, argv);
+      fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+      exit(EXIT_FAILURE);
+    }
   }
 
   if (isatty(fileno(ret.input))) {
