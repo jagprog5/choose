@@ -804,19 +804,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     uncompiled_output.primary = "\n";
   }
 
-  // give failure on dangerous args
-  if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
-    arg_error_preamble(argc, argv);
-    fputs("A non-matchable separator will discard the token thus far when the retain limit is hit.\n", stderr);
-    arg_has_errors = true;
-  }
-
-  if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
-    arg_error_preamble(argc, argv);
-    fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
-    arg_has_errors = true;
-  }
-
   if (arg_has_errors) {
     exit(EXIT_FAILURE);
   }
@@ -846,17 +833,39 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = 8192; // some value based on cursory profiling
-    if (ret.bytes_to_read > ret.retain_limit / 2) {
-      ret.bytes_to_read = ret.retain_limit / 2;
+    if (ret.bytes_to_read > ret.retain_limit) {
+      ret.bytes_to_read = ret.retain_limit;
     }
   }
 
-  if (ret.bytes_to_read == 0) {
-    arg_error_preamble(argc, argv);
-    fputs("the bytes to read cannot be set to zero\n", stderr);
-    arg_error_preamble(argc, argv);
-    fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
-    exit(EXIT_FAILURE);
+  // do checks if not unit test
+  if (input == NULL) {
+    // give failure on dangerous args
+    if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
+      arg_error_preamble(argc, argv);
+      fputs("A non-matchable separator will discard the token thus far when the retain limit is hit.\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+
+    if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
+      arg_error_preamble(argc, argv);
+      fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+
+    if (ret.bytes_to_read == 0) {
+      arg_error_preamble(argc, argv);
+      fputs("the bytes to read cannot be set to zero\n", stderr);
+      arg_error_preamble(argc, argv);
+      fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+
+    if (regex::min_match_length(ret.primary) > ret.retain_limit) {
+      arg_error_preamble(argc, argv);
+      fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+      exit(EXIT_FAILURE);
+    }
   }
 
   if (isatty(fileno(ret.input))) {
