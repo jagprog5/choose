@@ -817,3 +817,73 @@ BOOST_AUTO_TEST_CASE(sub_failure) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+#define CHOOSE_DO_FUZZ
+#ifdef CHOOSE_DO_FUZZ
+
+#include <random>
+
+BOOST_AUTO_TEST_SUITE(fuzz)
+
+bool endsWith(const char* str, const char* ending) {
+  size_t strLen = std::strlen(str);
+  size_t endingLen = std::strlen(ending);
+
+  // If the ending is longer than the string, it can't be a match
+  if (endingLen > strLen) {
+    return false;
+  }
+
+  // Compare the ending of the string with the ending parameter
+  return std::strcmp(str + (strLen - endingLen), ending) == 0;
+}
+
+BOOST_AUTO_TEST_CASE(random_input) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<char> data_dis(-128, 127);
+  std::uniform_int_distribution<size_t> len_dis(0, 200);
+  std::uniform_int_distribution<> bool_dis(0, 1);
+
+  // generate the error messages as strings from the library
+
+  pcre2_get_error_message();
+
+  auto get_random_vec = [&]() {
+    std::vector<char> ret;
+    ret.resize(len_dis(gen));
+    for (size_t i = 0; i < ret.size(); ++i) {
+      ret[i] = data_dis(gen);
+    }
+    return ret;
+  };
+
+  for (int iter = 0; iter < 100000; ++iter) {
+    std::vector<char> in = get_random_vec();
+    std::vector<const char*> argv;
+    if (bool_dis(gen)) {
+      argv.push_back("-r");
+    }
+    if (bool_dis(gen)) {
+      argv.push_back("--match");
+    }
+
+    std::vector<char> arg = get_random_vec();
+    argv.push_back(arg.data());
+
+    try {
+      run_choose(in, argv);
+    } catch (const std::exception& e) {
+      bool is_compilation_error = false;
+      for (const unsigned char* err : compile_error_texts) {
+
+      }
+      if (!endsWith(e.what(), "unmatched closing parenthesis") && !!endsWith(e.what(), "missing terminating ] for character class")) {
+        throw;
+      }
+    }
+  }
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+#endif
