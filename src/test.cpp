@@ -840,7 +840,7 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
   std::mt19937 gen(rd());
   std::uniform_int_distribution<char> data_dis(-128, 127);
   std::uniform_int_distribution<size_t> data_len_dis(0, 200);
-  std::uniform_int_distribution<size_t> positional_arg_len_dis(1, 200);
+  std::uniform_int_distribution<size_t> non_zero_len_dis(1, 200);
   std::uniform_int_distribution<> bool_dis(0, 1);
 
   // generate the error messages as strings from pcre2 library
@@ -884,10 +884,14 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
       argv.push_back("--utf-allow-invalid");
     }
     argv.push_back("--buf-size=100");
+    std::vector<char> buf_size_arg = to_vec("--read=");
+    buf_size_arg.resize(strlen("--read=") + 4); // three digit number then null
+    sprintf(buf_size_arg.data() + strlen("--read="), "%zu", non_zero_len_dis(gen));
+    argv.push_back(buf_size_arg.data());
 
     std::vector<char> positional_arg;
     do {
-      positional_arg.resize(positional_arg_len_dis(gen)); // not empty
+      positional_arg.resize(non_zero_len_dis(gen)); // not empty
       for (size_t i = 0; i < positional_arg.size(); ++i) {
         positional_arg[i] = data_dis(gen);
       }
@@ -899,12 +903,13 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
     } catch (const std::exception& e) {
       // if it's an error from pcre2, it is ignored. unless it's explicitely one
       // of the ones that are caused by us giving bad value.
-      if (endsWith(e.what(), "bad offset value") || //
+      if (endsWith(e.what(), "bad offset value") ||           //
           endsWith(e.what(), "bad offset into UTF string") || //
           endsWith(e.what(), "NULL argument passed")) {
         throw;
       }
       for (const char* err : error_strings) {
+        // if it's not a pcre2 err (e.g. bad alloc) then throw
         if (!endsWith(e.what(), err)) {
           throw;
         }
