@@ -254,7 +254,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   char subject[args.retain_limit];
   size_t subject_size = 0; // how full is the buffer
   PCRE2_SIZE match_offset = 0;
-  PCRE2_SIZE prev_sep_end = 0;
+  PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
   const regex::match_data match_data = regex::create_match_data(args.primary);
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
   const bool is_match = args.match;
@@ -408,7 +408,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
 
         const char* subject_const = subject;
-        new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
+        if (!is_match) {
+          // keep the bytes required, either from the lookback retain for the next iteration,
+          // or because the separator starts here
+          new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
+        }
 
         // cut out the excess from the beginning
         match_offset = new_subject_begin_cp - new_subject_begin;

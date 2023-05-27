@@ -656,6 +656,13 @@ BOOST_AUTO_TEST_CASE(retain_limit_match) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(retain_limit_enough_match) {
+  // safety bounds on parasitic matching. match failure
+  choose_output out = run_choose("1234", {"--match", "aaaa1234aaaaa", "--read=1", "--retain-limit=4"});
+  choose_output correct_output{std::vector<choose::Token>{"1234"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(retain_limit_separator) {
   choose_output out = run_choose("aaa1234aaa", {"1234", "--read=1", "--retain-limit=2"});
   choose_output correct_output{std::vector<choose::Token>{"a"}}; // end of last token within retain limit
