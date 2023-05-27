@@ -649,46 +649,46 @@ BOOST_AUTO_TEST_CASE(end_of_line) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_less_than_read) {
+BOOST_AUTO_TEST_CASE(buf_size_less_than_read) {
   // read takes the minimum of the available space in buffer left and the read amount
-  choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1000000", "--retain-limit=3"});
+  choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1000000", "--buf-size=3"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_match) {
-  choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1", "--retain-limit=3"});
+BOOST_AUTO_TEST_CASE(buf_size_match) {
+  choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1", "--buf-size=3"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_match_enough) {
-  choose_output out = run_choose("aaaa1234aaaa", {"--match", "1234", "--read=1", "--retain-limit=4"});
+BOOST_AUTO_TEST_CASE(buf_size_match_enough) {
+  choose_output out = run_choose("aaaa1234aaaa", {"--match", "1234", "--read=1", "--buf-size=4"});
   choose_output correct_output{std::vector<choose::Token>{"1234"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_partial_match_enough) {
-  choose_output out = run_choose("aaa1234aaaa1234aaaa", {"--match", "1234", "--read=4", "--retain-limit=4"});
+BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
+  choose_output out = run_choose("aaa1234aaaa1234aaaa", {"--match", "1234", "--read=4", "--buf-size=4"});
   choose_output correct_output{std::vector<choose::Token>{"1234", "1234"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_separator) {
-  choose_output out = run_choose("this1234test", {"1234", "--read=1", "--retain-limit=7"});
+BOOST_AUTO_TEST_CASE(buf_size_separator) {
+  choose_output out = run_choose("this1234test", {"1234", "--read=1", "--buf-size=7"});
   // the retain limit came into effect part way through matching the separator
   choose_output correct_output{std::vector<choose::Token>{"4test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_separator_enough) {
-  choose_output out = run_choose("this1234test", {"1234", "--read=1", "--retain-limit=8"});
+BOOST_AUTO_TEST_CASE(buf_size_separator_enough) {
+  choose_output out = run_choose("this1234test", {"1234", "--read=1", "--buf-size=8"});
   choose_output correct_output{std::vector<choose::Token>{"this", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(retain_limit_partial_separator_enough) {
-  choose_output out = run_choose("this1234test", {"1234", "--read=6", "--retain-limit=8"});
+BOOST_AUTO_TEST_CASE(buf_size_partial_separator_enough) {
+  choose_output out = run_choose("this1234test", {"1234", "--read=6", "--buf-size=8"});
   choose_output correct_output{std::vector<choose::Token>{"this", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

@@ -46,7 +46,7 @@ using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
 
-#define RETAIN_LIMIT_DEFAULT 32768
+#define BUF_SIZE_DEFAULT 32768
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
@@ -93,7 +93,7 @@ struct Arguments {
   // args will set it to a default value if it is unset. max indicates unset
   size_t bytes_to_read = std::numeric_limits<decltype(bytes_to_read)>::max();
 
-  size_t retain_limit = RETAIN_LIMIT_DEFAULT;
+  size_t buf_size = BUF_SIZE_DEFAULT;
   const char* locale = "";
 
   std::vector<char> out_separator = {'\n'};
@@ -351,17 +351,11 @@ void print_help_message() {
       "        -p, --prompt <prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the input separator.\n"
-      "        --read <# bytes, default: <retain-limit>>\n"
+      "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
-      "        --retain-limit <# bytes, default: " choose_xstr(RETAIN_LIMIT_DEFAULT) ">\n"
-      "                this ensures that the memory usage is bounded in the event of\n"
-      "                parasitic matching. if a match is greedy (e.g. \".*\"), then the\n"
-      "                match buffer increases to hold the entire input as it tries to\n"
-      "                complete the match. reaching this limit results in a match\n"
-      "                failure. additionally, if the separator never matches (e.g. $'')\n"
-      "                then the limit of the size of the token being built is also\n"
-      "                subject to this limit. reaching this limit results in the\n"
-      "                token's content thus far being discarded.\n"
+      "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
+      "                size of match buffer used. failing to match after the buffer is\n"
+      "                filled results in the buffer being cleared\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --selection-order\n"
@@ -478,7 +472,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
         {"remove", required_argument, NULL, 0},
-        {"retain-limit", required_argument, NULL, 0},
+        {"buf-size", required_argument, NULL, 0},
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
@@ -532,11 +526,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             UncompiledOrderedOp op{UncompiledOrderedOp::REMOVE, optarg, NULL};
             uncompiled_output.ordered_ops.push_back(op);
-          } else if (strcmp("retain-limit", name) == 0) {
+          } else if (strcmp("buf-size", name) == 0) {
             long v; // NOLINT
             // minimum is enforced via bytes_to_read check below
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.retain_limit)>::max(), &arg_has_errors, name, argc, argv);
-            ret.retain_limit = v;
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
+            ret.buf_size = v;
           } else if (strcmp("in", name) == 0) {
             long v; // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
@@ -828,7 +822,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     ret.max_lookbehind = regex::max_lookbehind_size(ret.primary);
   }
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
-    ret.bytes_to_read = ret.retain_limit;
+    ret.bytes_to_read = ret.buf_size;
   }
 
   // required. number of characters
@@ -855,11 +849,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       arg_error_preamble(argc, argv);
       fputs("the bytes to read cannot be set to zero\n", stderr);
       arg_error_preamble(argc, argv);
-      fputs("this can be caused by a small --retain-limit or small --read\n", stderr);
+      fputs("this can be caused by a small --buf-size or small --read\n", stderr);
       exit(EXIT_FAILURE);
     }
 
-    if (regex::min_match_length(ret.primary) > ret.retain_limit) {
+    if (regex::min_match_length(ret.primary) > ret.buf_size) {
       arg_error_preamble(argc, argv);
       fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
       exit(EXIT_FAILURE);

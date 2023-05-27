@@ -251,7 +251,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_uft = regex::options(args.primary) & PCRE2_UTF;
   const bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
-  char subject[args.retain_limit];
+  char subject[args.buf_size];
   size_t subject_size = 0; // how full is the buffer
   PCRE2_SIZE match_offset = 0;
   PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
@@ -315,7 +315,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   while (1) {
     char* write_pos = &subject[subject_size];
-    size_t bytes_to_read = std::min(args.bytes_to_read, args.retain_limit - subject_size);
+    size_t bytes_to_read = std::min(args.bytes_to_read, args.buf_size - subject_size);
     size_t bytes_read = get_n_bytes(args.input, bytes_to_read, write_pos);
     bool input_done = bytes_read != bytes_to_read;
     subject_size += bytes_read;
@@ -428,7 +428,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         subject_size -= from - to;
 
         // before reading in more input, check if the buffer is filled
-        if (subject_size == args.retain_limit) {
+        if (subject_size == args.buf_size) {
           subject_size = 0;
           match_offset = 0;
           prev_sep_end = 0;
