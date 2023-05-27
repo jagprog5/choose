@@ -828,38 +828,48 @@ BOOST_AUTO_TEST_SUITE(fuzz)
 bool endsWith(const char* str, const char* ending) {
   size_t strLen = std::strlen(str);
   size_t endingLen = std::strlen(ending);
-
-  // If the ending is longer than the string, it can't be a match
   if (endingLen > strLen) {
     return false;
   }
-
-  // Compare the ending of the string with the ending parameter
   return std::strcmp(str + (strLen - endingLen), ending) == 0;
 }
 
-BOOST_AUTO_TEST_CASE(random_input) {
+BOOST_AUTO_TEST_CASE(create_token_fuzz) {
+  // this does not ensure correctness, but can catch crashes
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_int_distribution<char> data_dis(-128, 127);
-  std::uniform_int_distribution<size_t> len_dis(0, 200);
+  std::uniform_int_distribution<size_t> data_len_dis(0, 200);
+  std::uniform_int_distribution<size_t> positional_arg_len_dis(1, 200);
   std::uniform_int_distribution<> bool_dis(0, 1);
 
-  // generate the error messages as strings from the library
+  // generate the error messages as strings from pcre2 library
+  std::vector<std::vector<char>> error_strings_mem;
+  std::vector<const char*> error_strings; // points to static memory or error_strings_mem
 
-  pcre2_get_error_message();
-
-  auto get_random_vec = [&]() {
-    std::vector<char> ret;
-    ret.resize(len_dis(gen));
-    for (size_t i = 0; i < ret.size(); ++i) {
-      ret[i] = data_dis(gen);
+  int errorcode = 0;
+  while (1) {
+    static constexpr size_t BUF_LENGTH = 1024;
+    error_strings_mem.emplace_back();
+    error_strings_mem.rbegin()->resize(BUF_LENGTH);
+    int rc = pcre2_get_error_message(errorcode, (PCRE2_UCHAR*)error_strings_mem.rbegin()->data(), BUF_LENGTH);
+    if (rc > 0) {
+      // rc is the length of the message without the null terminator
+      error_strings_mem.rbegin()->resize(rc + 1);
+      error_strings.push_back(error_strings_mem.rbegin()->data());
+    } else if (rc == PCRE2_ERROR_BADDATA) {
+      break;
+    } else {
+      BOOST_REQUIRE(false); // PCRE2_ERROR_NOMEMORY
     }
-    return ret;
-  };
+  }
 
-  for (int iter = 0; iter < 100000; ++iter) {
-    std::vector<char> in = get_random_vec();
+  for (int iter = 0; iter < 10000; ++iter) {
+    std::vector<char> in;
+    in.resize(data_len_dis(gen));
+    for (size_t i = 0; i < in.size(); ++i) {
+      in[i] = data_dis(gen);
+    }
     std::vector<const char*> argv;
     if (bool_dis(gen)) {
       argv.push_back("-r");
@@ -867,19 +877,37 @@ BOOST_AUTO_TEST_CASE(random_input) {
     if (bool_dis(gen)) {
       argv.push_back("--match");
     }
+    if (bool_dis(gen)) {
+      argv.push_back("--utf");
+    }
+    if (bool_dis(gen)) {
+      argv.push_back("--utf-allow-invalid");
+    }
+    argv.push_back("--buf-size=100");
 
-    std::vector<char> arg = get_random_vec();
-    argv.push_back(arg.data());
+    std::vector<char> positional_arg;
+    do {
+      positional_arg.resize(positional_arg_len_dis(gen)); // not empty
+      for (size_t i = 0; i < positional_arg.size(); ++i) {
+        positional_arg[i] = data_dis(gen);
+      }
+    } while (positional_arg[0] == '-');
+    argv.push_back(positional_arg.data());
 
     try {
       run_choose(in, argv);
     } catch (const std::exception& e) {
-      bool is_compilation_error = false;
-      for (const unsigned char* err : compile_error_texts) {
-
-      }
-      if (!endsWith(e.what(), "unmatched closing parenthesis") && !!endsWith(e.what(), "missing terminating ] for character class")) {
+      // if it's an error from pcre2, it is ignored. unless it's explicitely one
+      // of the ones that are caused by us giving bad value.
+      if (endsWith(e.what(), "bad offset value") || //
+          endsWith(e.what(), "bad offset into UTF string") || //
+          endsWith(e.what(), "NULL argument passed")) {
         throw;
+      }
+      for (const char* err : error_strings) {
+        if (!endsWith(e.what(), err)) {
+          throw;
+        }
       }
     }
   }
