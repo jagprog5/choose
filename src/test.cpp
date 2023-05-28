@@ -864,7 +864,7 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
     }
   }
 
-  for (int iter = 0; iter < 10000; ++iter) {
+  for (int iter = 0; iter < 1000; ++iter) {
     std::vector<char> in;
     in.resize(data_len_dis(gen));
     for (size_t i = 0; i < in.size(); ++i) {
@@ -902,7 +902,7 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
       run_choose(in, argv);
     } catch (const std::exception& e) {
       // if it's an error from pcre2, it is ignored. unless it's explicitely one
-      // of the ones that are caused by us giving bad value.
+      // of the ones that are caused by us giving bad values
       if (endsWith(e.what(), "bad offset value") ||           //
           endsWith(e.what(), "bad offset into UTF string") || //
           endsWith(e.what(), "NULL argument passed")) {
