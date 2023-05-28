@@ -818,12 +818,48 @@ BOOST_AUTO_TEST_CASE(sub_failure) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-#define CHOOSE_DO_FUZZ
-#ifdef CHOOSE_DO_FUZZ
-
 #include <random>
 
+// this does not ensure correctness, but can catch crashes
 BOOST_AUTO_TEST_SUITE(fuzz)
+
+BOOST_AUTO_TEST_CASE(create_prompt_lines_fuzz) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<char> data_dis(-128, 127);
+  std::uniform_int_distribution<size_t> non_zero_len_dis(1, 200);
+  std::uniform_int_distribution<size_t> data_len_dis(0, 200);
+
+  for (int iter = 0; iter < 1000; ++iter) {
+    std::vector<char> in;
+    in.resize(non_zero_len_dis(gen));
+    for (size_t i = 0; i < in.size(); ++i) {
+      char ch; // NOLINT
+      do {
+        ch = data_dis(gen);
+      } while (!ch);
+      in[i] = data_dis(gen);
+    }
+    if (!in.empty()) {
+      *in.rbegin() = '\0';
+    }
+
+    std::vector<std::vector<wchar_t>> out;
+    try {
+      out = str::create_prompt_lines(in.data(), data_len_dis(gen));
+    } catch (const std::exception& e) {
+      if (std::strcmp(e.what(), "decode err") == 0) {
+        continue;
+      }
+      throw;
+    }
+
+    for (const std::vector<wchar_t>& line : out) {
+      BOOST_REQUIRE(!line.empty());
+      BOOST_REQUIRE_EQUAL(*line.crbegin(), L'\0');
+    }
+  }
+}
 
 bool endsWith(const char* str, const char* ending) {
   size_t strLen = std::strlen(str);
@@ -835,7 +871,6 @@ bool endsWith(const char* str, const char* ending) {
 }
 
 BOOST_AUTO_TEST_CASE(create_token_fuzz) {
-  // this does not ensure correctness, but can catch crashes
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_int_distribution<char> data_dis(-128, 127);
@@ -919,4 +954,3 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
-#endif
