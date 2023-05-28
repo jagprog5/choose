@@ -72,7 +72,7 @@ int match(const code& re, //
     PCRE2_UCHAR buffer[256];
     pcre2_get_error_message(rc, buffer, sizeof(buffer));
     char msg[512];
-    snprintf(msg, 512, "Matching error in %s: \"%s\"", identification, buffer);
+    snprintf(msg, 512, "Matching error in %s: %s", identification, buffer);
     throw std::runtime_error(msg);
   }
   return rc;
