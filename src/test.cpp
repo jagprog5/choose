@@ -357,8 +357,8 @@ BOOST_AUTO_TEST_CASE(simple) {
 }
 
 BOOST_AUTO_TEST_CASE(simple_basic_output) {
-  // see args.is_basic(); also tests separators
-  choose_output out = run_choose("first\nsecond\nthird", {"--output-separator", " ", "--batch-separator=\n", "-t"});
+  // see args.is_basic(); also tests delimiters
+  choose_output out = run_choose("first\nsecond\nthird", {"--output-delimiter", " ", "--batch-delimiter=\n", "-t"});
   choose_output correct_output{to_vec("first second third\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -388,7 +388,7 @@ BOOST_AUTO_TEST_CASE(zero_in_out_limit) {
 }
 
 BOOST_AUTO_TEST_CASE(basic_output_accumulation) {
-  // basic output avoids a copy when it can, but it still accumulates the input on no/partial separator match.
+  // basic output avoids a copy when it can, but it still accumulates the input on no/partial delimiter match.
   // this is needed because an entire token needs to be accumulated before a filter can be applied
   choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "-f", "s", "-t"});
   choose_output correct_output{to_vec("first\nsecond\n")};
@@ -430,7 +430,7 @@ BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
 // user defined sorting and uniqueness
 
 BOOST_AUTO_TEST_CASE(defined_sort) {
-  // this also checks the separator and sort stability
+  // this also checks the delimiter and sort stability
   choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "---", "^John[ a-zA-Z]*---(?!John)", "--comp-sort"});
   choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -564,19 +564,19 @@ BOOST_AUTO_TEST_CASE(check_partial_match_lookbehind_retained) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(check_no_separator_lookbehind_retained) {
+BOOST_AUTO_TEST_CASE(check_no_delimiter_lookbehind_retained) {
   choose_output out = run_choose("aaabbbccc", {"--read=3", "-r", "(?<=aaa)bbb"});
   choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(check_partial_separator_lookbehind_retained) {
+BOOST_AUTO_TEST_CASE(check_partial_delimiter_lookbehind_retained) {
   choose_output out = run_choose("aaabbbccc", {"--read=4", "-r", "(?<=aaa)bbb"});
   choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(separator_no_match) {
+BOOST_AUTO_TEST_CASE(delimiter_no_match) {
   choose_output out = run_choose("aaabbbccc", {"zzzz", "--read=1"});
   choose_output correct_output{std::vector<choose::Token>{"aaabbbccc"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -589,13 +589,13 @@ BOOST_AUTO_TEST_CASE(empty_match_target) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(input_is_separator) {
+BOOST_AUTO_TEST_CASE(input_is_delimiter) {
   choose_output out = run_choose("\n", {});
   choose_output correct_output{std::vector<choose::Token>{""}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(input_is_separator_use_delimit) {
+BOOST_AUTO_TEST_CASE(input_is_delimiter_use_delimit) {
   choose_output out = run_choose("\n", {"--use-delimiter"});
   choose_output correct_output{std::vector<choose::Token>{"", ""}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -674,20 +674,20 @@ BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(buf_size_separator) {
+BOOST_AUTO_TEST_CASE(buf_size_delimiter) {
   choose_output out = run_choose("this1234test", {"1234", "--read=1", "--buf-size=7"});
-  // the retain limit came into effect part way through matching the separator
+  // the retain limit came into effect part way through matching the delimiter
   choose_output correct_output{std::vector<choose::Token>{"4test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(buf_size_separator_enough) {
+BOOST_AUTO_TEST_CASE(buf_size_delimiter_enough) {
   choose_output out = run_choose("this1234test", {"1234", "--read=1", "--buf-size=8"});
   choose_output correct_output{std::vector<choose::Token>{"this", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(buf_size_partial_separator_enough) {
+BOOST_AUTO_TEST_CASE(buf_size_partial_delimiter_enough) {
   choose_output out = run_choose("this1234test", {"1234", "--read=6", "--buf-size=8"});
   choose_output correct_output{std::vector<choose::Token>{"this", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -744,13 +744,13 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(misc_args)
 
-BOOST_AUTO_TEST_CASE(null_output_separators) {
+BOOST_AUTO_TEST_CASE(null_output_delimiters) {
   choose_output out = run_choose("a\nb\nc", {"-zyt"});
   choose_output correct_output{std::vector<char>{'a', '\0', 'b', '\0', 'c', '\0'}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(null_input_separator) {
+BOOST_AUTO_TEST_CASE(null_input_delimiter) {
   choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-0"});
   choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);

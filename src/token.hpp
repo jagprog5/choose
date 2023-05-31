@@ -27,8 +27,8 @@ struct Token {
   ~Token() = default;
 };
 
-// writes an output separator between each token
-// and a batch output separator on finish.
+// writes an output delimiter between each token
+// and a batch output delimiter on finish.
 class TokenOutputStream {
   bool first = true;
   const Arguments& args;
@@ -38,7 +38,7 @@ class TokenOutputStream {
 
   void write_output(const Token& t) {
     if (!first) {
-      str::write_f(args.output, args.out_separator);
+      str::write_f(args.output, args.out_delimiter);
     }
     first = false;
     str::write_f(args.output, t.buffer);
@@ -46,7 +46,7 @@ class TokenOutputStream {
 
   void write_output(const char* begin, const char* end) {
     if (!first) {
-      str::write_f(args.output, args.out_separator);
+      str::write_f(args.output, args.out_delimiter);
     }
     first = false;
     str::write_f(args.output, begin, end);
@@ -54,14 +54,14 @@ class TokenOutputStream {
 
   void finish_output() {
     if (!args.no_delimit && (!first || args.delimit_on_empty)) {
-      str::write_f(args.output, args.bout_separator);
+      str::write_f(args.output, args.bout_delimiter);
     }
     first = true; // optional
   }
 };
 
-// writes an output separator between tokens,
-// and a batch separator between batches and at the end
+// writes an output delimiter between tokens,
+// and a batch delimiter between batches and at the end
 class BatchOutputStream {
   bool first_within_batch = true;
   bool first_batch = true;
@@ -76,9 +76,9 @@ class BatchOutputStream {
 
   void write_output(const Token& t) {
     if (!first_within_batch) {
-      str::write_optional_buffer(args.output, output, args.out_separator);
+      str::write_optional_buffer(args.output, output, args.out_delimiter);
     } else if (!first_batch) {
-      str::write_optional_buffer(args.output, output, args.bout_separator);
+      str::write_optional_buffer(args.output, output, args.bout_delimiter);
     }
     first_within_batch = false;
     str::write_optional_buffer(args.output, output, t.buffer);
@@ -91,7 +91,7 @@ class BatchOutputStream {
 
   void finish_output() {
     if (!args.no_delimit && (!first_batch || args.delimit_on_empty)) {
-      str::write_optional_buffer(args.output, output, args.bout_separator);
+      str::write_optional_buffer(args.output, output, args.bout_delimiter);
     }
     str::finish_optional_buffer(args.output, output);
     first_within_batch = true; // optional
@@ -129,7 +129,7 @@ const char* id(bool is_match) {
   if (is_match) {
     return "match pattern";
   } else {
-    return "input separator";
+    return "input delimiter";
   }
 }
 
@@ -407,10 +407,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, subject, subject_effective_end);
         }
 
-        const char* subject_const = subject;
         if (!is_match) {
           // keep the bytes required, either from the lookback retain for the next iteration,
-          // or because the separator ended there and there
+          // or because the delimiter ended there and there
+          const char* subject_const = subject;
           new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
         }
 
@@ -422,13 +422,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
         char* to = subject;
         const char* from = new_subject_begin;
-        while (from < subject + subject_size) {
-          *to++ = *from++;
-        }
-        subject_size -= from - to;
-
-        // before reading in more input, check if the buffer is filled
-        if (subject_size == args.buf_size) {
+        if (from != to) {
+          while (from < subject + subject_size) {
+            *to++ = *from++;
+          }
+          subject_size -= from - to;
+        } else if (subject_size == args.buf_size) {
           subject_size = 0;
           match_offset = 0;
           prev_sep_end = 0;
