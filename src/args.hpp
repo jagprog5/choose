@@ -70,7 +70,7 @@ struct Arguments {
   bool unique = false;
   bool flip = false;
   bool multiple_selections = false;
-  // match is false indicates that Arguments::primary is the separator between tokens.
+  // match is false indicates that Arguments::primary is the delimiter after tokens.
   // else, it matches the tokens themselves
   bool match = false;
   bool no_delimit = false;
@@ -96,11 +96,11 @@ struct Arguments {
   size_t buf_size = BUF_SIZE_DEFAULT;
   const char* locale = "";
 
-  std::vector<char> out_separator = {'\n'};
-  std::vector<char> bout_separator;
+  std::vector<char> out_delimiter = {'\n'};
+  std::vector<char> bout_delimiter;
 
   const char* prompt = 0; // points inside one of the argv elements
-  // primary is either the input separator if match = false, or the match target otherwise
+  // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
 
   // testing purposes. if null, uses stdin and stdout.
@@ -262,7 +262,7 @@ void print_help_message() {
       "        Splits the input into tokens, and provides a tui for selecting which\n"
       "        tokens are sent to the output.\n"
       "positional argument:\n"
-      "        <input separator, default: '\\n'>\n"
+      "        <input delimiter, default: '\\n'>\n"
       "                describes how to split the input into tokens. each token is\n"
       "                displayed for selection in the interface.\n"
       "messages:\n"
@@ -272,7 +272,7 @@ void print_help_message() {
       "they are stated. they are applied before any sorting or uniqueness options.\n"
       "        -f, --filter <target>\n"
       "                remove tokens that don't match. it inherits the same match\n"
-      "                options as the input separator\n"
+      "                options as the input delimiter\n"
       "        --in-index [before|after]\n"
       "                on each token, insert the input index\n"
       "        --out-index [before|after]\n"
@@ -281,29 +281,31 @@ void print_help_message() {
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
       "                apply a global text substitution on each token. the target\n"
-      "                inherits the same match options as the input separator. "
+      "                inherits the same match options as the input delimiter. "
 #ifdef PCRE2_SUBSTITUTE_LITERAL
       "the\n"
 #else
       "if\n"
 #endif
 #ifdef PCRE2_SUBSTITUTE_LITERAL
-      "                replacement is done literally if the input separator is literal\n"
+      "                replacement is done literally if the input delimiter is literal\n"
       "                (aka the default without -r). otherwise, the replacement is a\n"
       "                regular expression.\n"
 #else
       "                compiled with a later verion of PCRE2, then the replacement would\n"
-      "                be been done literally if the input separator is literal (aka the\n"
+      "                be been done literally if the input delimiter is literal (aka the\n"
       "                default without -r). however, this version does not support this,\n"
       "                so the replacement is always a regex.\n"
 #endif
       "options:\n"
-      "        -b, --batch-separator <separator, default: <output-separator>>\n"
+      "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
       "                selecting multiple tokens and sending them to the output\n"
       "                together is a \"batch\". if multiple batches are send to the\n"
       "                output (which is enabled via --tenacious), then a batch\n"
-      "                separator is used between batches. it is also placed at the end\n"
-      "                of the output if any output was given and without --no-delimit\n"
+      "                delimiter is placed after each batch\n"
+      "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
+      "                size of match buffer used. failing to match after the buffer is\n"
+      "                filled results in the buffer being cleared\n"
       "        --comp <sep> <comp>\n"
       "                user defined comparison. less-than comparison is indicated by\n"
       "                concatenating two tokens with sep and successfully matching\n"
@@ -315,19 +317,19 @@ void print_help_message() {
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
       "        --comp-z <comp>\n"
-      "                --comp with a null char separator\n"
+      "                --comp with a null char delimiter\n"
       "        -d, --no-delimit\n"
-      "                don't add a batch separator at the end of the output. ignores\n"
+      "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
       "        --delimit-on-empty\n"
-      "                even if the output would be empty, place a batch separator\n"
+      "                even if the output would be empty, place a batch delimiter\n"
       "        -e, --end\n"
       "                begin cursor and prompt at the bottom\n"
       "        --flip\n"
       "                reverse the token order just before displaying. this happens\n"
       "                after all other operations\n"
       "        -i, --ignore-case\n"
-      "                make the input separator case-insensitive\n"
+      "                make the input delimiter case-insensitive\n"
       "        --in <# tokens>\n"
       "                stop reading the input once n tokens have been finalized\n"
       "        --locale <locale>\n"
@@ -337,25 +339,22 @@ void print_help_message() {
       "                implies --regex. enable multiline matching. (affects ^ and $)\n"
       "        --match\n"
       "                the positional argument matches the tokens instead of the\n"
-      "                separator. the match and each match group is a token\n"
+      "                delimiter. the match and each match group is a token\n"
       "        --max-lookbehind <# characters>\n"
       "                the max number of characters that the pattern can look before\n"
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
-      "        -o, --output-separator <separator, default: '\\n'>\n"
+      "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                if multiple tokens are selected (which is enabled via -m), then\n"
-      "                a separator is placed between each token in the output\n"
+      "                a delimiter is placed after each token in the output\n"
       "        --out [<# tokens>]\n"
       "                skip the interface. select the first n tokens if arg is\n"
       "                specified, or all tokens if unspecified\n"
       "        -p, --prompt <prompt>\n"
       "        -r, --regex\n"
-      "                use PCRE2 regex for the input separator.\n"
+      "                use PCRE2 regex for the input delimiter.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
-      "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
-      "                size of match buffer used. failing to match after the buffer is\n"
-      "                filled results in the buffer being cleared\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --selection-order\n"
@@ -370,17 +369,17 @@ void print_help_message() {
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --use-delimiter\n"
-      "                don't ignore a separator at the end of the input\n"
+      "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
       "                enable UTF-8\n"
       "        --utf-allow-invalid\n"
       "                implies --utf, skips invalid codes\n"
       "        -y, --batch-print0\n"
-      "                use null as the batch separator\n"
+      "                use null as the batch delimiter\n"
       "        -z, --print0\n"
-      "                use null as the output separator\n"
+      "                use null as the output delimiter\n"
       "        -0, --null, --read0\n"
-      "                use null as the input separator this is the same as -r and \\x00\n"
+      "                use null as the input delimiter this is the same as -r and \\x00\n"
       "        --\n"
       "                stop option parsing\n"
       "examples:\n"
@@ -392,7 +391,7 @@ void print_help_message() {
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
-      "                -r --comp-z $'^John[ a-zA-Z]*\\0(?!John)' --comp-sort\n"
+      "                -r --comp-z '^John[^\\0]*\\0(?!John)' --comp-sort\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
       "controls:\n"
@@ -454,7 +453,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   UncompiledCodes uncompiled_output;
   Arguments ret;
   bool arg_has_errors = false;
-  bool bout_separator_set = false;
+  bool bout_delimiter_set = false;
   while (1) {
     int option_index = 0;
     static struct option long_options[] = {
@@ -463,8 +462,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"version", no_argument, NULL, 'v'},
         {"help", no_argument, NULL, 'h'},
         // args
-        {"output-separator", required_argument, NULL, 'o'},
-        {"batch-separator", required_argument, NULL, 'b'},
+        {"output-delimiter", required_argument, NULL, 'o'},
+        {"batch-delimiter", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
         {"comp", required_argument, NULL, 0},
         {"comp-z", required_argument, NULL, 0},
@@ -750,11 +749,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 'y':
         // these options are made available since null can't be typed as a command line arg
         // there's precedent elsewhere, e.g. find -print0 -> xargs -0
-        ret.bout_separator = {'\0'};
-        bout_separator_set = true;
+        ret.bout_delimiter = {'\0'};
+        bout_delimiter_set = true;
         break;
       case 'z':
-        ret.out_separator = {'\0'};
+        ret.out_delimiter = {'\0'};
         break;
       case '0':
         uncompiled_output.primary = "\\x00";
@@ -763,15 +762,15 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 'o': {
         // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'o' in opt string
         size_t len = std::strlen(optarg);
-        ret.out_separator.resize(len);
-        std::memcpy(ret.out_separator.data(), optarg, len * sizeof(char));
+        ret.out_delimiter.resize(len);
+        std::memcpy(ret.out_delimiter.data(), optarg, len * sizeof(char));
       } break;
       case 'b': {
         // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'b' in opt string
         size_t len = std::strlen(optarg);
-        ret.bout_separator.resize(len);
-        std::memcpy(ret.bout_separator.data(), optarg, len * sizeof(char));
-        bout_separator_set = true;
+        ret.bout_delimiter.resize(len);
+        std::memcpy(ret.bout_delimiter.data(), optarg, len * sizeof(char));
+        bout_delimiter_set = true;
       } break;
       case 'p':
         ret.prompt = optarg;
@@ -783,8 +782,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
   }
 
-  if (!bout_separator_set) {
-    ret.bout_separator = ret.out_separator;
+  if (!bout_delimiter_set) {
+    ret.bout_delimiter = ret.out_delimiter;
   }
 
   if (!uncompiled_output.primary) {
@@ -835,7 +834,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     // give failure on dangerous args
     if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
       arg_error_preamble(argc, argv);
-      fputs("A non-matchable separator will discard the token thus far when the retain limit is hit.\n", stderr);
+      fputs("A non-matchable input delimiter will discard the token thus far when the retain limit is hit.\n", stderr);
       exit(EXIT_FAILURE);
     }
 
