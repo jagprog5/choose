@@ -1,8 +1,9 @@
-<h1 align="center" style=font-size:6em>choose</h1>
 
 [![Tests](https://github.com/jagprog5/choose/actions/workflows/tests.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/tests.yml)
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+# choose
 
 choose is a tool for creating selection dialogs and doing fancy transformations with regular expressions.
 ## Install
@@ -38,26 +39,19 @@ echo $'here❗\nis\neach\noption📋'\
 </td>
 <td>
 
+<pre>
 ┌───────────────────────┐  
-&#8198;│Pick a word!&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;│  
+│Pick a word!           │  
 └───────────────────────┘  
-\> here❗  
-&emsp;is  
-&emsp;each  
-&emsp;option📋  
+> here❗  
+  is  
+  each  
+  option📋  
+</pre>
 
 </td>
 </tr>
 </table>
-
-There are different modifiers on the interface (like `--prompt`), such as:
-
-| | |
-|-|-|
-|`--end`|Places the prompt and cursor at the end|
-|`--multi`|Allow multiple options to be selected|
-|`--selection-order`|Retains and displays the order as tokens are selected|
-|`--tenacious`|Allows groups of selections|
 
 # Delimiters
 
@@ -134,7 +128,7 @@ echo -n 'every other word is printed here' | choose ' ' -r -t\
 
 choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply ordering and uniqueness.
 
-For example, this command sorts the inputs and leaves only unique entires:
+For example, this command sorts the inputs and leaves only unique entries:
 
 <table>
 <tr>
@@ -189,7 +183,7 @@ Banana
 
 # Matching
 
-Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group forms a token.
+Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group form a token.
 
 <table>
 <tr>
@@ -216,29 +210,29 @@ ccc
 
 # Speed
 
-choose is slower than common tools at narrow tasks.
-
 For a simple grep case, its slower but comparable to [pcre2grep](https://www.pcre.org/current/doc/html/pcre2grep.html), which uses the same regex library:
 
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
-time (cat words_alpha.txt | grep "test" > out.txt)          # 0.008s
-time (cat words_alpha.txt | pcre2grep "test" > out.txt)     # 0.044s
-time (cat words_alpha.txt | choose -f "test" -t > out.txt)  # 0.065s (50% slower than pcre2grep)
+time (cat words_alpha.txt | grep "test" > out.txt)         # 0.008s
+time (cat words_alpha.txt | pcre2grep "test" > out.txt)    # 0.044s
+time (cat words_alpha.txt | choose -f "test" -t > out.txt) # 0.065s (50% slower than pcre2grep)
 ```
 
-For a simple substitution case, its slower than sed:
+For a simple substitution case, it can be **faster** than sed:
 
 ```bash
-time (cat words_alpha.txt | sed "s/test/banana/g" > out.txt)        # 0.058s
-time (cat words_alpha.txt | choose --sub test banana -t > out.txt)  # 0.206s (~4 times slower than sed)
+# making the file a single line so its easier for sed
+# since sed is line buffered and the file contains many small lines
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)                 # 0.028s
+time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -t --no-delimit > out.txt) # 0.021s
 ```
 # hist
 
 `hist` is a bash function installed with `choose`. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
 
-```bash
+```txt
   git log --oneline
   top
   cat temp.txt

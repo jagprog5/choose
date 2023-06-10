@@ -94,6 +94,8 @@ struct Arguments {
   size_t bytes_to_read = std::numeric_limits<decltype(bytes_to_read)>::max();
 
   size_t buf_size = BUF_SIZE_DEFAULT;
+  // args will set it to a default value if it is unset. max indicates unset
+  size_t buf_size_frag = std::numeric_limits<decltype(buf_size_frag)>::max();
   const char* locale = "";
 
   std::vector<char> out_delimiter = {'\n'};
@@ -111,7 +113,7 @@ struct Arguments {
   // a subset of out_set() which doesn't require storing any of the tokens.
   // instead just send straight to the output
   bool is_direct_output() const { //
-    return out_set() && !sort && !unique && !flip;
+    return out_set() && !sort && !unique && !comp_unique && !flip;
   }
 
   // a subset of is_direct_output() which allows for simplified logic and avoids
@@ -304,8 +306,12 @@ void print_help_message() {
       "                output (which is enabled via --tenacious), then a batch\n"
       "                delimiter is placed after each batch\n"
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
-      "                size of match buffer used. failing to match after the buffer is\n"
+      "                size of match buffer used. failing to match when the buffer is\n"
       "                filled results in the buffer being cleared\n"
+      "        --buf-size-frag <# bytes, default: <buf-size * 4>\n"
+      "                this option is only relevant if --match is not specified. large\n"
+      "                tokens are accumulated in a separate buffer. if this limit is\n"
+      "                surpassed, then the token accumulated thus far is discarded.\n"
       "        --comp <sep> <comp>\n"
       "                user defined comparison. less-than comparison is indicated by\n"
       "                concatenating two tokens with sep and successfully matching\n"
@@ -472,6 +478,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"filter", required_argument, NULL, 'f'},
         {"remove", required_argument, NULL, 0},
         {"buf-size", required_argument, NULL, 0},
+        {"buf-size-frag", required_argument, NULL, 0},
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
@@ -527,9 +534,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("buf-size", name) == 0) {
             long v; // NOLINT
-            // minimum is enforced via bytes_to_read check below
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
             ret.buf_size = v;
+          } else if (strcmp("buf-size-frag", name) == 0) {
+            long v; // NOLINT
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size)>::max() - 1, &arg_has_errors, name, argc, argv);
+            ret.buf_size_frag = v;
           } else if (strcmp("in", name) == 0) {
             long v; // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
@@ -824,6 +834,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     ret.bytes_to_read = ret.buf_size;
   }
 
+  if (ret.buf_size_frag == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
+    // more than the match buffer size by default, since storing is less intensive
+    ret.buf_size_frag = ret.buf_size * 4;
+  }
+
   // required. number of characters
   if (regex::options(ret.primary) & PCRE2_UTF) {
     ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
@@ -832,9 +847,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   // do checks if not unit test
   if (input == NULL) {
     // give failure on dangerous args
-    if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
+    if (!ret.match && !ret.ordered_ops.empty() && strcmp(uncompiled_output.primary, "") == 0) {
       arg_error_preamble(argc, argv);
-      fputs("A non-matchable input delimiter will discard the token thus far when the retain limit is hit.\n", stderr);
+      fputs("A non-matchable input delimiter paired with any ordered op will discard the token thus far when the retain limit is hit.\n", stderr);
       exit(EXIT_FAILURE);
     }
 

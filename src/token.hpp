@@ -30,33 +30,47 @@ struct Token {
 // writes an output delimiter between each token
 // and a batch output delimiter on finish.
 class TokenOutputStream {
-  bool first = true;
+  // has anything been written to the output yet
+  bool has_written_ = false;
+
+  // is a delimiter required before the next write
+  bool delimit_required_ = false;
+
   const Arguments& args;
 
  public:
   TokenOutputStream(const Arguments& args) : args(args) {}
 
-  void write_output(const Token& t) {
-    if (!first) {
-      str::write_f(args.output, args.out_delimiter);
-    }
-    first = false;
-    str::write_f(args.output, t.buffer);
-  }
+  bool has_written() const { return has_written_; }
+  bool delimit_required() const { return delimit_required_; }
 
-  void write_output(const char* begin, const char* end) {
-    if (!first) {
+  // write a part of a token to the output
+  void write_output_fragment(const char* begin, const char* end) {
+    if (delimit_required_) {
       str::write_f(args.output, args.out_delimiter);
     }
-    first = false;
+    delimit_required_ = false;
+    has_written_ = true;
     str::write_f(args.output, begin, end);
   }
 
+  void write_output(const char* begin, const char* end) {
+    if (delimit_required_) {
+      str::write_f(args.output, args.out_delimiter);
+    }
+    delimit_required_ = true;
+    has_written_ = true;
+    str::write_f(args.output, begin, end);
+  }
+
+  void write_output(const Token& t) { write_output(&*t.buffer.cbegin(), &*t.buffer.cend()); }
+
   void finish_output() {
-    if (!args.no_delimit && (!first || args.delimit_on_empty)) {
+    if (!args.no_delimit && (has_written_ || args.delimit_on_empty)) {
       str::write_f(args.output, args.bout_delimiter);
     }
-    first = true; // optional
+    delimit_required_ = false; // optional reset of state
+    has_written_ = false;
   }
 };
 
@@ -143,11 +157,25 @@ struct ProcessTokenContext {
   // out_count is the number of tokens that have been written to the output.
   // if args.direct_output() isn't set, then this value will mirror output.size()
   decltype(args.out) out_count;
+  std::vector<char> fragment; // for cases where a token is being built up over time
 };
 
 // this function applies the operations specified in the args to a candidate token.
 // returns true iff this should be the last token added to the output
 bool process_token(Token&& t, ProcessTokenContext& context) {
+  if (!context.fragment.empty()) {
+    if (context.fragment.size() + t.buffer.size() > context.args.buf_size_frag) {
+      // this isn't needed to keep the fragment size bounded,
+      // but it makes buf_size_frag an upper bound on the token size
+      context.fragment.clear();
+      goto skip_frag;
+    }
+    // handle a part of a token
+    str::append_to_buffer(context.fragment, &*t.buffer.cbegin(), &*t.buffer.cend());
+    t.buffer = std::move(context.fragment);
+    context.fragment = std::vector<char>();
+  }
+skip_frag:
   for (OrderedOp& op : context.args.ordered_ops) {
     if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
       std::vector<char> sub_buf = regex::substitute_global(sub_op->target, t.buffer.data(), t.buffer.size(), sub_op->replacement);
@@ -205,6 +233,17 @@ bool process_token(Token&& t, ProcessTokenContext& context) {
 
 // equivalent to process_token when args.is_basic(). it's faster and avoids a copy
 void basic_process_token(const char* begin, const char* end, ProcessTokenContext& context) {
+  if (!context.fragment.empty()) {
+    if (context.fragment.size() + (end - begin) > context.args.buf_size_frag) {
+      context.fragment.clear();
+      goto skip_frag_basic;
+    }
+    // handle a part of a token
+    str::append_to_buffer(context.fragment, begin, end);
+    begin = &*context.fragment.cbegin();
+    end = &*context.fragment.cend();
+  }
+  skip_frag_basic:
   for (const OrderedOp& op : context.args.ordered_ops) {
     const RmOrFilterOp& rf_op = std::get<RmOrFilterOp>(op);
     const char* id = rf_op.type == RmOrFilterOp::REMOVE ? "remove" : "filter";
@@ -228,6 +267,25 @@ void basic_process_token(const char* begin, const char* end, ProcessTokenContext
   if (context.out_count == context.args.out || context.out_count == context.args.in) {
     context.direct_output->finish_output();
     throw termination_request();
+  }
+  if (!context.fragment.empty()) {
+    context.fragment.clear();
+  }
+}
+
+// used for writing out parts of tokens, in a special case where extra processing isn't needed,
+// and when the buffer is completely filled
+void basic_process_fragment(const char* begin, const char* end, ProcessTokenContext& context) {
+  bool has_written = context.direct_output->has_written();
+  bool delimit_required = context.direct_output->delimit_required();
+  context.direct_output->write_output_fragment(begin, end);
+
+  if (!has_written || delimit_required) {
+    ++context.out_count;
+    if (context.out_count == context.args.out || context.out_count == context.args.in) {
+      context.direct_output->finish_output();
+      throw termination_request();
+    }
   }
 }
 
@@ -259,6 +317,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
   const bool is_match = args.match;
   const bool is_basic = args.is_basic();
+  const bool has_ops = !args.ordered_ops.empty();
 
   std::function<bool(indirect, indirect)> uniqueness_comp = 0;
 
@@ -311,7 +370,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
                           args.is_direct_output() ? //
                               std::optional(TokenOutputStream(args))
                                                   : std::nullopt,
-                          0};
+                          0, //
+                          std::vector<char>()};
 
   while (1) {
     char* write_pos = &subject[subject_size];
@@ -409,7 +469,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
         if (!is_match) {
           // keep the bytes required, either from the lookback retain for the next iteration,
-          // or because the delimiter ended there and there
+          // or because the delimiter ended there
           const char* subject_const = subject;
           new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
         }
@@ -428,15 +488,60 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           }
           subject_size -= from - to;
         } else if (subject_size == args.buf_size) {
-          subject_size = 0;
-          match_offset = 0;
-          prev_sep_end = 0;
+          // the buffer size has been filled
+          if (is_match) {
+            // count as match failure
+            match_offset = 0;
+            subject_size = 0;
+            if (!is_match) {
+              prev_sep_end = 0;
+            }
+          } else {
+            // there is not enough room in the match buffer, so we're moving the part of the token
+            // that is before the delimiter into a separate buffer or directly to the output
+            char* begin;     // NOLINT
+            const char* end; // NOLINT
+
+            if (prev_sep_end != 0) {
+              // the buffer is being retained because of lookbehind bytes.
+              // can't properly match, so results in match failure
+              begin = subject;
+              end = subject + subject_size;
+              prev_sep_end = 0;
+            } else {
+              begin = subject;
+              end = new_subject_begin_cp;
+
+              if (begin == end) {
+                // the entire buffer is composed of the partially matched delimiter
+                // results in match failure
+                begin = subject;
+                end = subject + subject_size;
+              }
+            }
+
+            if (!has_ops && is_basic) {
+              basic_process_fragment(begin, end, ptc);
+            } else {
+              if (ptc.fragment.size() + (end - begin) > args.buf_size_frag) {
+                ptc.fragment.clear();
+              } else {
+                str::append_to_buffer(ptc.fragment, begin, end);
+              }
+            }
+
+            while (end < subject + subject_size) {
+              *begin++ = *end++;
+            }
+            subject_size -= end - begin;
+            match_offset = 0;
+          }
         }
       } else {
         // no match and no more input:
         // process the last token and break from the loop
         if (!is_match) {
-          if (prev_sep_end != subject_size || args.use_input_delimiter) {
+          if (prev_sep_end != subject_size || args.use_input_delimiter || !ptc.fragment.empty()) {
             if (is_basic) {
               basic_process_token(subject + prev_sep_end, subject_effective_end, ptc);
             } else {
