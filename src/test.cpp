@@ -675,103 +675,74 @@ BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
 }
 
 BOOST_AUTO_TEST_CASE(frag_flush_in_process_token) {
+  // ensure that a fragment being queued up at the end does end up in the output
   choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-s"});
   choose_output correct_output{std::vector<choose::Token>{"aaaa", "hereisaline"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-// BOOST_AUTO_TEST_CASE(frag_flush_in_process_token) {
-  // choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-s"});
-  // choose_output correct_output{std::vector<choose::Token>{"aaaa", "hereisaline"}};
-  // BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(frag_flush_in_basic_process_token) {
+  // same as above but for basic
+  // notice the useless filter is needed so it doesn't do an optimization where the fragments are sent straight to the output
+  choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-r", "-f", ".*", "-t"});
+  choose_output correct_output{to_vec("hereisaline\naaaa\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=3", "-f", ".*"});
-//   choose_output correct_output{std::vector<choose::Token>{"", "", ""}};
+BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero) {
+  // when the buffer is filled because of lookbehind bytes, not from the previous delimiter end
+
+  // todo (?<=1)?abc
+  choose_output out = run_choose("123123", {"(?<=123)?123", "-r", "--read=1", "--buf-size=3"});
+  choose_output correct_output{std::vector<choose::Token>{"", "123", "123"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(frag_buffer_too_small_appending) {
+  choose_output out = run_choose("123123123abc", {"abc", "--read=1", "--buf-size=3", "--buf-size-frag=3"});
+  choose_output correct_output{std::vector<choose::Token>{"123"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+// BOOST_AUTO_TEST_CASE(frag_buffer_too_small_on_process_token_flush) {
+//   choose_output out = run_choose("123123123abc", {"abc", "--read=1", "--buf-size=3", "--buf-size-frag=3"});
+//   choose_output correct_output{std::vector<choose::Token>{"123"}};
 //   BOOST_REQUIRE_EQUAL(out, correct_output);
 // }
 
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_out) {
-//   // same as above, but to stdout
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=3", "-f", ".*", "-t"});
-//   choose_output correct_output{to_vec("\n\n\n")};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(process_fragments) {
+  choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-t"});
+  choose_output correct_output{to_vec("hereisaline\naaaa\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_not_enough) {
-//   // this is not enough
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=2", "-f", ".*"});
-//   choose_output correct_output{std::vector<choose::Token>{"", "", ""}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(basic_process_fragment_in_count) {
+  // ensure that fragments are counted correctly. only on completion is the in count incremented
+  choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--in=2", "-t"});
+  choose_output correct_output{to_vec("zzzzzzzzz\nhereisaline\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_not_enough_out) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=2", "-f", ".*", "-t"});
-//   choose_output correct_output{to_vec("\n\n\n")};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(buf_size_delimiter_limit) {
+  // ensure match failure behaviour on buffer full
+  choose_output out = run_choose("qwerty123testerabqwerty123tester", {"-r", "(?:123)|(?:ab)", "--read=1", "--buf-size=2", "--buf-size-frag=1000"});
+  choose_output correct_output{std::vector<choose::Token>{"qwerty123tester", "qwerty123tester"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_no_ops) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=3"});
-//   choose_output correct_output{std::vector<choose::Token>{"verylongline", "v", "very"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(buf_size_delimiter_limit_from_lookbehind_enough) {
+  // same as above, but because the lookbehind is too big
+  choose_output out = run_choose("abcd12abcd12abcd", {"-r", "(?<=cd)12", "--read=1", "--buf-size=4", "--buf-size-frag=1000"});
+  choose_output correct_output{std::vector<choose::Token>{"abcd", "abcd", "abcd"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_no_ops_out) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=3", "-t"});
-//   choose_output correct_output{to_vec("verylongline\nv\nvery\n")};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_not_enough_no_ops_out) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=2", "-t"});
-//   choose_output correct_output{to_vec("verylongline123v123very\n")};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_with_ops) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=3", "-f", ".*"});
-//   choose_output correct_output{std::vector<choose::Token>{"", "", ""}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_no_ops_not_enough_out) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=2", "-t"});
-//   choose_output correct_output{to_vec("verylongline123v123very\n")};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_no_ops_not_enough) {
-//   choose_output out = run_choose("verylongline123v123very", {"123", "--read=1", "--buf-size=2"});
-//   choose_output correct_output{std::vector<choose::Token>{"verylongline123v123very"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_no_ops_lookbehind) {
-//   choose_output out = run_choose("verylonglineaa3vaa3very", {"(?<=..)3", "-r", "--read=1", "--buf-size=3"});
-//   choose_output correct_output{std::vector<choose::Token>{"verylonglineaa", "vaa", "very"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter) {
-//   choose_output out = run_choose("this1234test", {"1234", "--read=1", "--buf-size=7"});
-//   // the retain limit came into effect part way through matching the delimiter
-//   choose_output correct_output{std::vector<choose::Token>{"4test"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_delimiter_enough) {
-//   choose_output out = run_choose("this1234test", {"1234", "--read=1", "--buf-size=8"});
-//   choose_output correct_output{std::vector<choose::Token>{"this", "test"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
-
-// BOOST_AUTO_TEST_CASE(buf_size_partial_delimiter_enough) {
-//   choose_output out = run_choose("this1234test", {"1234", "--read=6", "--buf-size=8"});
-//   choose_output correct_output{std::vector<choose::Token>{"this", "test"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(buf_size_delimiter_limit_from_lookbehind) {
+  // same as above, but because the lookbehind is too big
+  choose_output out = run_choose("abcd12abcd12abcd", {"-r", "(?<=cd)12", "--read=1", "--buf-size=3", "--buf-size-frag=1000"});
+  choose_output correct_output{std::vector<choose::Token>{"abcd12abcd12abcd"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
 BOOST_AUTO_TEST_CASE(complete_utf8) {
   // checks that the last utf8 char is completed before sending it to pcre2
@@ -783,7 +754,7 @@ BOOST_AUTO_TEST_CASE(complete_utf8) {
 
 BOOST_AUTO_TEST_CASE(utf8_lookback_separates_multibyte) {
   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
-  // lookbehind of 4 bytes, reading >=1 character at a time
+  // lookbehind of 4 bytes, reading 1 character at a time
   // the lookbehind must be correctly decremented to include the 0xE6 byte
   const char pattern[] = {'(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
   choose_output out = run_choose(ch, {"-r", "--max-lookbehind=1", "--read=1", "--utf", "--match", pattern});
