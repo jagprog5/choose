@@ -691,8 +691,6 @@ BOOST_AUTO_TEST_CASE(frag_flush_in_basic_process_token) {
 
 BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero) {
   // when the buffer is filled because of lookbehind bytes, not from the previous delimiter end
-
-  // todo (?<=1)?abc
   choose_output out = run_choose("123123", {"(?<=123)?123", "-r", "--read=1", "--buf-size=3"});
   choose_output correct_output{std::vector<choose::Token>{"", "123", "123"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -704,11 +702,19 @@ BOOST_AUTO_TEST_CASE(frag_buffer_too_small_appending) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-// BOOST_AUTO_TEST_CASE(frag_buffer_too_small_on_process_token_flush) {
-//   choose_output out = run_choose("123123123abc", {"abc", "--read=1", "--buf-size=3", "--buf-size-frag=3"});
-//   choose_output correct_output{std::vector<choose::Token>{"123"}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(frag_buffer_too_small_process_token) {
+  // checks that basic_process discards the fragment if it would exceed the fragment size
+  choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4"});
+  choose_output correct_output{std::vector<choose::Token>{}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(frag_buffer_too_small_basic_process_token) {
+  // checks that basic_process discards the fragment if it would exceed the fragment size
+  choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4", "-t", "-f", ".*"});
+  choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
 BOOST_AUTO_TEST_CASE(process_fragments) {
   choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-t"});

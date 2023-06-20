@@ -128,7 +128,7 @@ echo -n 'every other word is printed here' | choose ' ' -r -t\
 
 choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply ordering and uniqueness.
 
-For example, this command sorts the inputs and leaves only unique entries:
+For example, this command sorts the input and leaves only unique entries:
 
 <table>
 <tr>
