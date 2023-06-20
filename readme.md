@@ -22,7 +22,7 @@ scripts/uninstall.bash
 choose --help
 ```
 # Dialogs
-Dialogs can be used to select between options. By default, each option is delimited by a newline character:
+Dialogs can be used to select between tokens. By default, each token is delimited by a newline character:
 <table>
 <tr>
 <th>Command</th>
@@ -195,7 +195,7 @@ Rather than specifying how tokens are terminated, the tokens themselves can be m
 
 ```bash
 echo "aaabbbccc"\
-  | choose --match "(?<=aaa)bbb(...)" -rt
+  | choose --match "bbb(...)" -rt
 ```
 
 </td>

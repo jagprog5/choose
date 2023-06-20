@@ -261,12 +261,10 @@ void print_help_message() {
       "  . . :::::::::::::::::::::::;;:'  | >    | . . :::::::::::::::::::::::::::;;:' \n"
       "                             :'    \\======/                                :'   \n"
       "description:\n"
-      "        Splits the input into tokens, and provides a tui for selecting which\n"
-      "        tokens are sent to the output.\n"
+      "        Splits the input into tokens and provides stream manipulation and a tui\n"
+      "        selector on these tokens.\n"
       "positional argument:\n"
       "        <input delimiter, default: '\\n'>\n"
-      "                describes how to split the input into tokens. each token is\n"
-      "                displayed for selection in the interface.\n"
       "messages:\n"
       "        -h, --help\n"
       "        -v, --version\n"
@@ -306,13 +304,20 @@ void print_help_message() {
       "                output (which is enabled via --tenacious), then a batch\n"
       "                delimiter is placed after each batch\n"
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
-      "                size of match buffer used. failing to match when the buffer is\n"
-      "                filled results in the buffer being cleared\n"
+      "                size of match buffer used. patterns that require more room will\n"
+      "                never successfully match\n"
       "        --buf-size-frag <# bytes, default: <buf-size * 4>\n"
-      "                this option is only relevant if --match is not specified and any\n"
-      "                sorting, uniqueness, ordered ops, or --out is specified. large\n"
-      "                tokens are accumulated in a separate buffer. if this limit is\n"
-      "                surpassed, then the token accumulated thus far is discarded.\n"
+      "                this is only applicable if --match is not specified, meaning the\n"
+      "                input delimiter is being matched for. if the buffer is filled when\n"
+      "                attempting to complete a match, the bytes at the beginning of the\n"
+      "                buffer that have no possibility of being a part of a match are\n"
+      "                moved to free up space in the buffer. they are moved either\n"
+      "                directly to the output if the args allow for it, or to a\n"
+      "                separate buffer where they are accumulated until the token is\n"
+      "                completed. this separate buffer is cleared if its size would\n"
+      "                exceed this arg. the bytes are sent directly to the output if no\n"
+      "                ordered ops are specified, and there is no sorting, no uniqueness,\n"
+      "                no flip, and no tui used\n"
       "        --comp <sep> <comp>\n"
       "                user defined comparison. less-than comparison is indicated by\n"
       "                concatenating two tokens with sep and successfully matching\n"
@@ -324,7 +329,7 @@ void print_help_message() {
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
       "        --comp-z <comp>\n"
-      "                --comp with a null char delimiter\n"
+      "                --comp with a null char separator\n"
       "        -d, --no-delimit\n"
       "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
@@ -372,7 +377,7 @@ void print_help_message() {
       "        -t, --take [<# tokens>]\n"
       "                both --in and --out\n"
       "        --tenacious\n"
-      "                don't exit on confirmed selection\n"
+      "                don't exit on confirmed selection. each batch is flushed\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --use-delimiter\n"
@@ -847,19 +852,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   // do checks if not unit test
   if (input == NULL) {
-    // give failure on dangerous args
-    if (!ret.match && !ret.ordered_ops.empty() && strcmp(uncompiled_output.primary, "") == 0) {
-      arg_error_preamble(argc, argv);
-      fputs("A non-matchable input delimiter paired with any ordered op will discard the token thus far when the retain limit is hit.\n", stderr);
-      exit(EXIT_FAILURE);
-    }
-
-    if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
-      arg_error_preamble(argc, argv);
-      fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
-      exit(EXIT_FAILURE);
-    }
-
     if (ret.bytes_to_read == 0) {
       arg_error_preamble(argc, argv);
       fputs("the bytes to read cannot be set to zero\n", stderr);
