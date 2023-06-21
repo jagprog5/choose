@@ -164,7 +164,6 @@ struct ProcessTokenContext {
 bool process_token(Token&& t, ProcessTokenContext& context) {
   if (!context.fragment.empty()) {
     if (context.fragment.size() + t.buffer.size() > context.args.buf_size_frag) {
-      // makes buf_size_frag an upper bound on the token size
       context.fragment.clear();
       return false;
     }

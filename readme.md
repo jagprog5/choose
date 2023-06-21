@@ -1,9 +1,8 @@
+<h1 align="center" style=font-size:6em>choose</h1>
 
 [![Tests](https://github.com/jagprog5/choose/actions/workflows/tests.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/tests.yml)
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-# choose
 
 choose is a tool for creating selection dialogs and doing fancy transformations with regular expressions.
 ## Install

@@ -2,45 +2,48 @@
 
 PATH="$PATH:$HOME/.choose"
 
-hist() {
-  if [ -z "$VISUAL" ] && [ -z "$EDITOR" ]; then
-    echo "Error. Please set the VISUAL or EDITOR variable appropriately."
-    return 1
-  fi
+# if hist is already defined somewhere then do not define it
+if ! command -v hist &> /dev/null; then
+  hist() {
+    if [ -z "$VISUAL" ] && [ -z "$EDITOR" ]; then
+      echo "Error. Please set the VISUAL or EDITOR variable appropriately."
+      return 1
+    fi
 
-  # get the history lines, do various cleanup on the stream:
-  #   - remove the leading \n\t
-  #   - remove the trailing \n
-  #   - sub \n\t separator between lines to null
-  #   - remove the latest entry of the history
-  # pipe to grep for the arg, then display in choose
-  local LINE=$(builtin fc -lnr -2147483648 |
-    tail -c +3 | head -c -1 | sed -z 's/\n\t[ *]/\x0/g' |
-    {
-      IFS= read -r -d ''
-      cat
-    } | grep -zi -- "$*" |
-    choose -0ue --no-delimit --flip -p "Select a line to edit then run.")
-  
-  if [ -z "$LINE" ]; then
-    echo "empty line"
-    return 0
-  fi
+    # get the history lines, do various cleanup on the stream:
+    #   - remove the leading \n\t
+    #   - remove the trailing \n
+    #   - sub \n\t separator between lines to null
+    #   - remove the latest entry of the history
+    # pipe to grep for the arg, then display in choose
+    local LINE=$(builtin fc -lnr -2147483648 |
+      tail -c +3 | head -c -1 | sed -z 's/\n\t[ *]/\x0/g' |
+      {
+        IFS= read -r -d ''
+        cat
+      } | grep -zi -- "$*" |
+      choose -0ue --no-delimit --flip -p "Select a line to edit then run.")
+    
+    if [ -z "$LINE" ]; then
+      echo "empty line"
+      return 0
+    fi
 
-  local TEMPFILE=$(mktemp)
-  trap 'rm -f -- "$TEMPFILE"' RETURN EXIT HUP INT QUIT PIPE TERM
+    local TEMPFILE=$(mktemp)
+    trap 'rm -f -- "$TEMPFILE"' RETURN EXIT HUP INT QUIT PIPE TERM
 
-  printf "%s\n" "$LINE" >"$TEMPFILE"
+    printf "%s\n" "$LINE" >"$TEMPFILE"
 
-  "${VISUAL:-${EDITOR}}" -- "$TEMPFILE"
+    "${VISUAL:-${EDITOR}}" -- "$TEMPFILE"
 
-  if [ $? -ne 0 ]; then
-    echo "editor exited with non-zero code."
-    return 1
-  fi
+    if [ $? -ne 0 ]; then
+      echo "editor exited with non-zero code."
+      return 1
+    fi
 
-  history -s -- $(cat "$TEMPFILE")
+    history -s -- $(cat "$TEMPFILE")
 
-  # run on current shell
-  source -- "$TEMPFILE"
-}
+    # run on current shell
+    source -- "$TEMPFILE"
+  }
+fi
