@@ -304,7 +304,7 @@ choose_output run_choose(const std::vector<char>& input, const std::vector<const
 
   using duped_str = std::unique_ptr<char, str_destroyer>;
   std::vector<duped_str> duped_args;
-  duped_args.push_back(duped_str(strdup("/tester/path/to/choose")));
+  duped_args.push_back(duped_str(strdup(boost::unit_test::framework::current_test_case().full_name().c_str())));
   for (const char* p : argv) {
     // getopt might?? modify argv, making a copy just in case.
     duped_args.push_back(duped_str(strdup(p)));
