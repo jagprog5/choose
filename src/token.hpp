@@ -288,9 +288,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     size_t subject_size = 0; // how full is the buffer
     PCRE2_SIZE match_offset = 0;
     PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
-    const regex::match_data match_data = regex::create_match_data(args.primary);
+    const bool single_char_delimiter = args.in_char_delimiter.has_value();
+    const regex::match_data match_data = single_char_delimiter ? NULL : regex::create_match_data(args.primary);
     uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
-    const bool is_match = args.match;
+    // single_char_delimiter implies not match. stating below so the compiler can hopefully leverage it
+    const bool is_match = !single_char_delimiter && args.match;
     const bool is_basic = args.is_basic();
     const bool has_ops = !args.ordered_ops.empty();
 
@@ -376,19 +378,38 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     skip_read: // do another iteration but don't read in any more bytes
 
-      int match_result = regex::match(args.primary,                    //
-                                      subject,                         //
-                                      subject_effective_end - subject, //
-                                      match_data,                      //
-                                      id(is_match),                    //
-                                      match_offset,                    //
-                                      match_options);
+      int match_result;
+      const char* single_char_delimiter_pos; // points to position of match if match_result is 1
+      if (single_char_delimiter) {
+        match_result = 0;
+        single_char_delimiter_pos = subject + prev_sep_end;
+        while (single_char_delimiter_pos < subject + subject_size) {
+          if (*single_char_delimiter_pos == *args.in_char_delimiter) {
+            match_result = 1;
+            break;
+          }
+          ++single_char_delimiter_pos;
+        }
+      } else {
+        match_result = regex::match(args.primary,                    //
+                                    subject,                         //
+                                    subject_effective_end - subject, //
+                                    match_data,                      //
+                                    id(is_match),                    //
+                                    match_offset,                    //
+                                    match_options);
+      }
 
       if (match_result > 0) {
         // a complete match:
         // process the match, set the offsets, then do another iteration without
         // reading more input
-        regex::Match match = regex::get_match(subject, match_data, id(is_match));
+        regex::Match match;
+        if (single_char_delimiter) {
+          match = regex::Match{single_char_delimiter_pos, single_char_delimiter_pos + 1};
+        } else {
+          match = regex::get_match(subject, match_data, id(is_match));
+        }
         if (is_match) {
           auto match_handler = [&](const regex::Match& m) -> bool {
             if (is_basic) {
@@ -421,8 +442,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       } else {
         if (!input_done) {
           // no or partial match and input is left
-          const char* new_subject_begin; // NOLINT
-          if (match_result == 0) {
+          const char* new_subject_begin;                    // NOLINT
+          if (single_char_delimiter || match_result == 0) { // single_char_delimiter implies no partial match
             // there was no match but there is more input
             new_subject_begin = subject_effective_end;
           } else {

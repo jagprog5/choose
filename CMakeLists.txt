@@ -13,7 +13,7 @@ project(choose)
 add_executable(choose src/main.cpp)
 target_include_directories(choose PRIVATE src)
 
-target_compile_options(choose PRIVATE -Wall -Wextra -Os -fno-rtti -fno-strict-aliasing)
+target_compile_options(choose PRIVATE -Wall -Wextra -O3 -fno-rtti -fno-strict-aliasing)
 
 set(CURSES_NEED_NCURSES TRUE)
 set(CURSES_NEED_WIDE TRUE)
