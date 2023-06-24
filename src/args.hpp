@@ -50,6 +50,9 @@ using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
+  // indicates that the tokens are displayed in the tui
+  bool tui = false;
+
   bool selection_order = false;
   bool tenacious = false;
   bool use_input_delimiter = false;
@@ -75,15 +78,12 @@ struct Arguments {
   bool match = false;
   bool no_delimit = false;
   bool delimit_on_empty = false;
+
   // max is entirely valid, and the default
   typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
 
-  // max indicates unset
+  // max is entirely valid, and the default
   typename std::vector<int>::size_type out = std::numeric_limits<decltype(out)>::max();
-  // skip the interface
-  bool out_set() const { //
-    return out != std::numeric_limits<decltype(out)>::max();
-  }
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -94,6 +94,8 @@ struct Arguments {
   size_t bytes_to_read = std::numeric_limits<decltype(bytes_to_read)>::max();
 
   size_t buf_size = BUF_SIZE_DEFAULT;
+  // args will set it to a default value if it is unset. max indicates unset
+  size_t buf_size_frag = std::numeric_limits<decltype(buf_size_frag)>::max();
   const char* locale = "";
 
   std::vector<char> out_delimiter = {'\n'};
@@ -108,10 +110,9 @@ struct Arguments {
   FILE* input = 0;
   FILE* output = 0;
 
-  // a subset of out_set() which doesn't require storing any of the tokens.
-  // instead just send straight to the output
+  // a special case that doesn't require storing any tokens. send straight to output
   bool is_direct_output() const { //
-    return out_set() && !sort && !unique && !flip;
+    return !tui && !sort && !unique && !comp_unique && !flip;
   }
 
   // a subset of is_direct_output() which allows for simplified logic and avoids
@@ -259,12 +260,10 @@ void print_help_message() {
       "  . . :::::::::::::::::::::::;;:'  | >    | . . :::::::::::::::::::::::::::;;:' \n"
       "                             :'    \\======/                                :'   \n"
       "description:\n"
-      "        Splits the input into tokens, and provides a tui for selecting which\n"
-      "        tokens are sent to the output.\n"
+      "        Splits the input into tokens and provides stream manipulation and a tui\n"
+      "        selector.\n"
       "positional argument:\n"
       "        <input delimiter, default: '\\n'>\n"
-      "                describes how to split the input into tokens. each token is\n"
-      "                displayed for selection in the interface.\n"
       "messages:\n"
       "        -h, --help\n"
       "        -v, --version\n"
@@ -304,8 +303,20 @@ void print_help_message() {
       "                output (which is enabled via --tenacious), then a batch\n"
       "                delimiter is placed after each batch\n"
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
-      "                size of match buffer used. failing to match after the buffer is\n"
-      "                filled results in the buffer being cleared\n"
+      "                size of match buffer used. patterns that require more room will\n"
+      "                never successfully match\n"
+      "        --buf-size-frag <# bytes, default: <buf-size * 8>\n"
+      "                this is only applicable if --match is not specified, meaning the\n"
+      "                input delimiter is being matched for. if the buffer is filled when\n"
+      "                attempting to complete a match, the bytes at the beginning of the\n"
+      "                buffer that have no possibility of being a part of a match are\n"
+      "                moved to free up space in the buffer. they are moved either\n"
+      "                directly to the output if the args allow for it, or to a\n"
+      "                separate buffer where they are accumulated until the token is\n"
+      "                completed. this separate buffer is cleared if its size would\n"
+      "                exceed this arg. the bytes are instead sent directly to the output\n"
+      "                if no ordered ops are specified, and there is no sorting, no\n"
+      "                uniqueness, no flip, and no tui used\n"
       "        --comp <sep> <comp>\n"
       "                user defined comparison. less-than comparison is indicated by\n"
       "                concatenating two tokens with sep and successfully matching\n"
@@ -317,7 +328,7 @@ void print_help_message() {
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
       "        --comp-z <comp>\n"
-      "                --comp with a null char delimiter\n"
+      "                --comp with a null char separator\n"
       "        -d, --no-delimit\n"
       "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
@@ -326,12 +337,11 @@ void print_help_message() {
       "        -e, --end\n"
       "                begin cursor and prompt at the bottom\n"
       "        --flip\n"
-      "                reverse the token order just before displaying. this happens\n"
-      "                after all other operations\n"
+      "                reverse the token order. this happens after all other operations\n"
       "        -i, --ignore-case\n"
       "                make the input delimiter case-insensitive\n"
       "        --in <# tokens>\n"
-      "                stop reading the input once n tokens have been finalized\n"
+      "                stop reading the input once n tokens have been created\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -347,9 +357,8 @@ void print_help_message() {
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                if multiple tokens are selected (which is enabled via -m), then\n"
       "                a delimiter is placed after each token in the output\n"
-      "        --out [<# tokens>]\n"
-      "                skip the interface. select the first n tokens if arg is\n"
-      "                specified, or all tokens if unspecified\n"
+      "        --out <# tokens>\n"
+      "                send only the first n tokens to the output\n"
       "        -p, --prompt <prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the input delimiter.\n"
@@ -362,10 +371,12 @@ void print_help_message() {
       "                input order\n"
       "        --sort-reverse\n"
       "                sort each token reverse lexicographically\n"
-      "        -t, --take [<# tokens>]\n"
+      "        -t, --tui\n"
+      "                display the tokens in a selection tui. ignores --out\n"
+      "        --take <# tokens>\n"
       "                both --in and --out\n"
       "        --tenacious\n"
-      "                don't exit on confirmed selection\n"
+      "                don't exit on confirmed selection. each batch is flushed\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --use-delimiter\n"
@@ -379,7 +390,7 @@ void print_help_message() {
       "        -z, --print0\n"
       "                use null as the output delimiter\n"
       "        -0, --null, --read0\n"
-      "                use null as the input delimiter this is the same as -r and \\x00\n"
+      "                enables regex and sets the positional argument to \\x00"
       "        --\n"
       "                stop option parsing\n"
       "examples:\n"
@@ -392,6 +403,8 @@ void print_help_message() {
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
       "                -r --comp-z '^John[^\\0]*\\0(?!John)' --comp-sort\n"
+      "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --in-index\\\n"
+      "                after --rm '^c' --sub '.+' '$0 out:' --out-index after\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
       "controls:\n"
@@ -472,16 +485,18 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"filter", required_argument, NULL, 'f'},
         {"remove", required_argument, NULL, 0},
         {"buf-size", required_argument, NULL, 0},
+        {"buf-size-frag", required_argument, NULL, 0},
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
         {"in", required_argument, NULL, 0},
         {"in-index", optional_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
-        {"out", optional_argument, NULL, 0},
+        {"out", required_argument, NULL, 0},
         {"out-index", optional_argument, NULL, 0},
-        {"take", optional_argument, NULL, 't'},
+        {"take", required_argument, NULL, 0},
         // options
+        {"tui", no_argument, NULL, 't'},
         {"comp-sort", no_argument, NULL, 0},
         {"comp-unique", no_argument, NULL, 0},
         {"no-delimit", no_argument, NULL, 'd'},
@@ -527,9 +542,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("buf-size", name) == 0) {
             long v; // NOLINT
-            // minimum is enforced via bytes_to_read check below
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
             ret.buf_size = v;
+          } else if (strcmp("buf-size-frag", name) == 0) {
+            long v; // NOLINT
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size)>::max() - 1, &arg_has_errors, name, argc, argv);
+            ret.buf_size_frag = v;
           } else if (strcmp("in", name) == 0) {
             long v; // NOLINT
             parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
@@ -540,12 +558,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.max_lookbehind = v;
           } else if (strcmp("read", name) == 0) {
             long v; // NOLINT
-            // minimum value enforced below
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.bytes_to_read)>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.bytes_to_read)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.bytes_to_read = v;
           } else if (strcmp("out", name) == 0) {
             long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max(), &arg_has_errors, name, argc, argv);
             ret.out = v;
           } else if (strcmp("in-index", name) == 0) {
             UncompiledOrderedOp op; // NOLINT
@@ -608,22 +625,18 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.comp = optarg;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
+          } else if (strcmp("take", name) == 0) {
+            long v; // NOLINT
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, "take", argc, argv);
+            ret.in = v;
+            ret.out = v;
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
             arg_has_errors = true;
           }
         } else {
-          // long option without argument or with optional argument
-          if (strcmp("out", name) == 0) {
-            if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              long v; // NOLINT
-              parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max() - 1, &arg_has_errors, name, argc, argv);
-              ret.out = v;
-            } else {
-              ret.out = std::numeric_limits<decltype(ret.out)>::max() - 1;
-            }
-          } else if (strcmp("flip", name) == 0) {
+          if (strcmp("flip", name) == 0) {
             ret.flip = true;
           } else if (strcmp("comp-sort", name) == 0) {
             ret.comp_sort = true;
@@ -733,15 +746,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         ret.sort = true;
         break;
       case 't':
-        if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-          if (*optarg == '=') {
-            ++optarg;
-          }
-          long v; // NOLINT
-          parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, "take", argc, argv);
-          ret.in = v;
-        }
-        ret.out = std::numeric_limits<decltype(ret.out)>::max() - 1;
+        ret.tui = true;
         break;
       case 'u':
         ret.unique = true;
@@ -823,35 +828,18 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = ret.buf_size;
   }
+  if (ret.buf_size_frag == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
+    // more than the match buffer size by default, since storing is less intensive
+    ret.buf_size_frag = ret.buf_size * 8;
+  }
 
-  // required. number of characters
+  // bytes for number of characters
   if (regex::options(ret.primary) & PCRE2_UTF) {
     ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
   // do checks if not unit test
   if (input == NULL) {
-    // give failure on dangerous args
-    if (!ret.match && strcmp(uncompiled_output.primary, "") == 0) {
-      arg_error_preamble(argc, argv);
-      fputs("A non-matchable input delimiter will discard the token thus far when the retain limit is hit.\n", stderr);
-      exit(EXIT_FAILURE);
-    }
-
-    if ((uncompiled_output.re_options & PCRE2_LITERAL) == 0 && strcmp(uncompiled_output.primary, ".*") == 0) {
-      arg_error_preamble(argc, argv);
-      fputs("A parasitic match will result in a match failure when the retain limit is hit.\n", stderr);
-      exit(EXIT_FAILURE);
-    }
-
-    if (ret.bytes_to_read == 0) {
-      arg_error_preamble(argc, argv);
-      fputs("the bytes to read cannot be set to zero\n", stderr);
-      arg_error_preamble(argc, argv);
-      fputs("this can be caused by a small --buf-size or small --read\n", stderr);
-      exit(EXIT_FAILURE);
-    }
-
     if (regex::min_match_length(ret.primary) > ret.buf_size) {
       arg_error_preamble(argc, argv);
       fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
