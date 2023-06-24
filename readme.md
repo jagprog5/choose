@@ -32,7 +32,7 @@ Dialogs can be used to select between tokens. By default, each token is delimite
 
 ```bash
 echo $'here❗\nis\neach\noption📋'\
-  | choose -p "Pick a word!"
+  | choose --tui -p "Pick a word!"
 ```
 
 </td>
@@ -54,7 +54,7 @@ echo $'here❗\nis\neach\noption📋'\
 
 # Delimiters
 
-Instead of a newline character, a sequence or regular expression can delimit the input. Additionally, the interface can be skipped by specifying `-t` or `--out`.
+Instead of a newline character, a sequence or regular expression can delimit the input.
 
 <table>
 <tr>
@@ -66,7 +66,7 @@ Instead of a newline character, a sequence or regular expression can delimit the
 
 ```bash
 echo -n "this 1 is 2 a 3 test"\
-  | choose -r " [0-9] " -t
+  | choose -r " [0-9] "
 ```
 
 </td>
@@ -93,18 +93,18 @@ The delimiter in the output can also be set
 
 ```bash
 echo -n "this test here"\
-  | choose " " -o $'\n=-=\n' -t
+  | choose " " -o $'\n===\n'
 ```
 
 </td>
 <td>
 <pre>
 this
-=-=
+===
 test
-=-=
+===
 here
-=-=
+===
 </pre>  
 </td>
 </tr>
@@ -119,8 +119,10 @@ Transformations can be done in a specified order. This command prints every othe
 3. Substituting to remove the index
 
 ```bash
-echo -n 'every other word is printed here' | choose ' ' -r -t\
-        --in-index=after   -f '[02468]$'   --sub '(.*) [0-9]+' '$1'
+echo -n 'every other word is printed here' | \
+  choose -r ' ' --in-index=after\        # 1
+                -f '[02468]$'\           # 2
+                --sub '(.*) [0-9]+' '$1' # 3
 ```
 
 # Ordering and Uniqueness
@@ -139,7 +141,7 @@ For example, this command sorts the input and leaves only unique entries:
 
 ```bash
 echo -n "this is is test test "\
-  | choose " " -ust
+  | choose " " -us
 ```
 
 </td>
@@ -153,7 +155,7 @@ this
 </tr>
 </table>
 
-And this command sorts such that tokens that start with "John" are first, but otherwise the order is retained and tokens are unique lexicographically:
+And this command puts all tokens that start with "John" first, but otherwise the order is retained and tokens are unique lexicographically:
 
 <table>
 <tr>
@@ -165,7 +167,7 @@ And this command sorts such that tokens that start with "John" are first, but ot
 
 ```bash
 echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith"\
- | choose --comp-z '^John[^\0]*\0(?!John)' --comp-sort -rut
+ | choose --comp-z '^John[^\0]*\0(?!John)' --comp-sort -ru
 ```
 
 </td>
@@ -194,7 +196,7 @@ Rather than specifying how tokens are terminated, the tokens themselves can be m
 
 ```bash
 echo "aaabbbccc"\
-  | choose --match "bbb(...)" -rt
+  | choose --match "bbb(...)" -r
 ```
 
 </td>
@@ -214,9 +216,9 @@ For a simple grep case, its slower but comparable to [pcre2grep](https://www.pcr
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
-time (cat words_alpha.txt | grep "test" > out.txt)         # 0.008s
-time (cat words_alpha.txt | pcre2grep "test" > out.txt)    # 0.044s
-time (cat words_alpha.txt | choose -f "test" -t > out.txt) # 0.065s (50% slower than pcre2grep)
+time (cat words_alpha.txt | grep "test" > out.txt)      # 0.008s
+time (cat words_alpha.txt | pcre2grep "test" > out.txt) # 0.044s
+time (cat words_alpha.txt | choose -f "test" > out.txt) # 0.065s (50% slower than pcre2grep)
 ```
 
 For a simple substitution case, it can be **faster** than sed:
@@ -224,8 +226,8 @@ For a simple substitution case, it can be **faster** than sed:
 ```bash
 # making the file a single line so its easier for sed
 # since sed is line buffered and the file contains many small lines
-time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)                 # 0.028s
-time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -t --no-delimit > out.txt) # 0.021s
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)              # 0.028s
+time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana --no-delimit > out.txt) # 0.021s
 ```
 # hist
 
