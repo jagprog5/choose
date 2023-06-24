@@ -22,7 +22,7 @@ if ! command -v hist &> /dev/null; then
         IFS= read -r -d ''
         cat
       } | grep -zi -- "$*" |
-      choose -0ue --no-delimit --flip -p "Select a line to edit then run.")
+      choose -0uet --no-delimit --flip -p "Select a line to edit then run.")
     
     if [ -z "$LINE" ]; then
       echo "empty line"
