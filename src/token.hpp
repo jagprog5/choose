@@ -281,14 +281,14 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    const bool is_uft = regex::options(args.primary) & PCRE2_UTF;
-    const bool is_invalid_uft = regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
+    const bool single_char_delimiter = args.in_char_delimiter.has_value();
+    const bool is_uft = single_char_delimiter ? false : regex::options(args.primary) & PCRE2_UTF;
+    const bool is_invalid_uft = single_char_delimiter ? false : regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
     char subject[args.buf_size];
     size_t subject_size = 0; // how full is the buffer
     PCRE2_SIZE match_offset = 0;
     PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
-    const bool single_char_delimiter = args.in_char_delimiter.has_value();
     const regex::match_data match_data = single_char_delimiter ? NULL : regex::create_match_data(args.primary);
     uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
     // single_char_delimiter implies not match. stating below so the compiler can hopefully leverage it

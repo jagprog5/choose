@@ -338,7 +338,7 @@ void print_help_message() {
       "                never successfully match\n"
       "        --buf-size-frag <# bytes, default: <buf-size * 8>\n"
       "                this is only applicable if --match is not specified, meaning the\n"
-      "                input delimiter is being matched for. if the buffer is filled\n"
+      "                input delimiter is being matched. if the match buffer is full\n"
       "                when attempting to complete a match, the bytes at the beginning\n"
       "                of the buffer that have no possibility of being a part of a\n"
       "                match are moved to free up space in the buffer. they are moved\n"
@@ -390,7 +390,7 @@ void print_help_message() {
       "                a delimiter is placed after each token in the output\n"
       "        --out <# tokens>\n"
       "                send only the first n tokens to the output\n"
-      "        -p, --prompt <prompt>\n"
+      "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the input delimiter.\n"
       "        --read <# bytes, default: <buf-size>>\n"
@@ -398,8 +398,8 @@ void print_help_message() {
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --selection-order\n"
-      "                sort the token output based on selection order instead of the\n"
-      "                input order\n"
+      "                sort the token output based on tui selection order instead of\n"
+      "                the input order. an indicator displays the order\n"
       "        --sort-reverse\n"
       "                sort each token reverse lexicographically\n"
       "        -t, --tui\n"
@@ -413,7 +413,7 @@ void print_help_message() {
       "        --use-delimiter\n"
       "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
-      "                enable UTF-8\n"
+      "                enable regex UTF-8\n"
       "        --utf-allow-invalid\n"
       "                implies --utf, skips invalid codes\n"
       "        -y, --batch-print0\n"
@@ -428,7 +428,7 @@ void print_help_message() {
       "        echo -n \"this 1 is 2 a 3 test\" | choose -r \" [0-9] \"\n"
       "        echo -n \"1A2a3\" | choose -i \"a\"\n"
       "        echo -n \"a b c\" | choose -o, -b$'\\n' \" \" -m --tenacious\\\n"
-      "                --selection-order -p \"space, enter, escape\"\n"
+      "                --selection-order -p \"space, enter, escape\" --tui\n"
       "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
@@ -855,7 +855,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   // defaults
   if (ret.max_lookbehind == std::numeric_limits<decltype(ret.max_lookbehind)>::max()) {
-    ret.max_lookbehind = regex::max_lookbehind_size(ret.primary);
+    ret.max_lookbehind = ret.in_char_delimiter ? 0 : regex::max_lookbehind_size(ret.primary);
   }
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = ret.buf_size;
@@ -865,16 +865,18 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     ret.buf_size_frag = ret.buf_size * 8;
   }
 
-  // bytes for number of characters
-  if (regex::options(ret.primary) & PCRE2_UTF) {
-    ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
-  }
+  if (!ret.in_char_delimiter) { // only if primary is set
+    // bytes for number of characters
+    if (regex::options(ret.primary) & PCRE2_UTF) {
+      ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
+    }
 
-  if (input == NULL) { // if not unit test
-    if (regex::min_match_length(ret.primary) > ret.buf_size) {
-      arg_error_preamble(argc, argv);
-      fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
-      exit(EXIT_FAILURE);
+    if (input == NULL) { // if not unit test
+      if (!ret.in_char_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
+        arg_error_preamble(argc, argv);
+        fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+        exit(EXIT_FAILURE);
+      }
     }
   }
 

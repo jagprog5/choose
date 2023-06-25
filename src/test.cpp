@@ -982,12 +982,16 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
     argv.push_back(buf_size_arg.data());
 
     std::vector<char> positional_arg;
+    positional_arg.resize(non_zero_len_dis(gen)); // not empty
+    char* pos = &*positional_arg.begin();
     do {
-      positional_arg.resize(non_zero_len_dis(gen)); // not empty
-      for (size_t i = 0; i < positional_arg.size(); ++i) {
-        positional_arg[i] = data_dis(gen);
-      }
-    } while (positional_arg[0] == '-');
+      *pos = data_dis(gen);
+    } while (*pos == '-');
+    ++pos;
+    while (pos < &*positional_arg.end()) {
+      *pos++ = data_dis(gen);
+    }
+    *positional_arg.rbegin() = '\0';
     argv.push_back(positional_arg.data());
 
     try {
