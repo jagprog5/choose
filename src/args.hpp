@@ -105,6 +105,10 @@ struct Arguments {
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
 
+  // shortcut for if the delimiter is a single character; doesn't set/use primary.
+  // doesn't have to go through pcre2 when finding the token separation
+  std::optional<char> in_char_delimiter;
+
   // testing purposes. if null, uses stdin and stdout.
   // if not null, files must be closed by the callee
   FILE* input = 0;
@@ -175,16 +179,43 @@ struct UncompiledCodes {
   // the uncompiled args are stored here before transfer to the Arguments output.
   uint32_t re_options = PCRE2_LITERAL;
   std::vector<UncompiledOrderedOp> ordered_ops;
-  const char* primary = 0;
+
+  std::vector<char> primary;
 
   const char* comp = 0;
+
+  // disambiguate between empty and unset
+  // needed since they take default values
+  bool bout_delimiter_set = false;
+  bool primary_set = false;
 
   void compile(Arguments& output) const {
     for (const UncompiledOrderedOp& op : ordered_ops) {
       OrderedOp oo = op.compile(re_options);
       output.ordered_ops.push_back(std::move(oo));
     }
-    output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
+
+    // see if single char delimiter optimization applies
+    if (!output.match && primary.size() == 1 && !(re_options & PCRE2_UTF)) {
+      if (re_options & PCRE2_LITERAL) {
+        // if the expression is literal then any single character works
+        output.in_char_delimiter = primary[0];
+      } else {
+        // there's definitely better ways of recognizing if a regex pattern
+        // consists of a single character, but this is enough for common cases
+        auto in_range = [](char var, char low_inclusive, char high_inclusive) -> bool { //
+          return var >= low_inclusive && var <= high_inclusive;
+        };
+        char ch = primary[0];
+        if ((ch == '\n' || ch == '\0' || in_range(ch, '0', '9') || in_range(ch, 'a', 'z') || in_range(ch, 'A', 'Z'))) {
+          output.in_char_delimiter = ch;
+        }
+      }
+    }
+
+    if (!output.in_char_delimiter) {
+      output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
+    }
 
     if (comp) {
       output.comp = regex::compile(comp, re_options, "defined comp");
@@ -240,7 +271,7 @@ void parse_ul(const char* str, //
 
 // this function exits
 void print_version_message() {
-  int exit_code = puts("choose 0.1.0, "
+  int exit_code = puts("choose 0.2.0, "
     "ncurses " choose_xstr(NCURSES_VERSION_MAJOR) "." choose_xstr(NCURSES_VERSION_MINOR) "." choose_xstr(NCURSES_VERSION_PATCH) ", "
     "pcre2 " choose_xstr(PCRE2_MAJOR) "." choose_xstr(PCRE2_MINOR)) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
   exit(exit_code);
@@ -263,7 +294,7 @@ void print_help_message() {
       "        Splits the input into tokens and provides stream manipulation and a tui\n"
       "        selector.\n"
       "positional argument:\n"
-      "        <input delimiter, default: '\\n'>\n"
+      "        [<input delimiter, default: '\\n'>]\n"
       "messages:\n"
       "        -h, --help\n"
       "        -v, --version\n"
@@ -291,10 +322,10 @@ void print_help_message() {
       "                (aka the default without -r). otherwise, the replacement is a\n"
       "                regular expression.\n"
 #else
-      "                compiled with a later verion of PCRE2, then the replacement would\n"
-      "                be been done literally if the input delimiter is literal (aka the\n"
-      "                default without -r). however, this version does not support this,\n"
-      "                so the replacement is always a regex.\n"
+      "                compiled with a later verion of PCRE2, then the replacement\n"
+      "                wouldbe been done literally if the input delimiter is literal\n"
+      "                (aka the default without -r). however, this version does not\n"
+      "                support this, so the replacement is always a regex.\n"
 #endif
       "options:\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
@@ -307,16 +338,16 @@ void print_help_message() {
       "                never successfully match\n"
       "        --buf-size-frag <# bytes, default: <buf-size * 8>\n"
       "                this is only applicable if --match is not specified, meaning the\n"
-      "                input delimiter is being matched for. if the buffer is filled when\n"
-      "                attempting to complete a match, the bytes at the beginning of the\n"
-      "                buffer that have no possibility of being a part of a match are\n"
-      "                moved to free up space in the buffer. they are moved either\n"
-      "                directly to the output if the args allow for it, or to a\n"
+      "                input delimiter is being matched for. if the buffer is filled\n"
+      "                when attempting to complete a match, the bytes at the beginning\n"
+      "                of the buffer that have no possibility of being a part of a\n"
+      "                match are moved to free up space in the buffer. they are moved\n"
+      "                either directly to the output if the args allow for it, or to a\n"
       "                separate buffer where they are accumulated until the token is\n"
       "                completed. this separate buffer is cleared if its size would\n"
-      "                exceed this arg. the bytes are instead sent directly to the output\n"
-      "                if no ordered ops are specified, and there is no sorting, no\n"
-      "                uniqueness, no flip, and no tui used\n"
+      "                exceed this arg. the bytes are instead sent directly to the\n"
+      "                output if no ordered ops are specified, and there is no sorting,\n"
+      "                no uniqueness, no flip, and no tui used\n"
       "        --comp <sep> <comp>\n"
       "                user defined comparison. less-than comparison is indicated by\n"
       "                concatenating two tokens with sep and successfully matching\n"
@@ -390,7 +421,7 @@ void print_help_message() {
       "        -z, --print0\n"
       "                use null as the output delimiter\n"
       "        -0, --null, --read0\n"
-      "                enables regex and sets the positional argument to \\x00"
+      "                delimit the input on null chars\n"
       "        --\n"
       "                stop option parsing\n"
       "examples:\n"
@@ -466,7 +497,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   UncompiledCodes uncompiled_output;
   Arguments ret;
   bool arg_has_errors = false;
-  bool bout_delimiter_set = false;
   while (1) {
     int option_index = 0;
     static struct option long_options[] = {
@@ -699,9 +729,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.re_options |= PCRE2_UTF;
           } else if (strcmp("utf-allow-invalid", name) == 0) {
             uncompiled_output.re_options |= PCRE2_MATCH_INVALID_UTF;
-          } else if (strcmp("null", name) == 0 || strcmp("read0", name) == 0) {
-            uncompiled_output.re_options &= ~PCRE2_LITERAL;
-            uncompiled_output.primary = "\\x00";
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -711,7 +738,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       } break;
       case 1:
         // positional argument
-        if (uncompiled_output.primary) {
+        if (uncompiled_output.primary_set) {
           arg_error_preamble(argc, argv);
           fprintf(stderr,
                   "the positional arg must be specified once. "
@@ -719,7 +746,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
                   optind - 1, optarg);
           arg_has_errors = true;
         }
-        uncompiled_output.primary = optarg;
+        {
+          size_t len = std::strlen(optarg);
+          uncompiled_output.primary.resize(len);
+          std::memcpy(uncompiled_output.primary.data(), optarg, len * sizeof(char));
+          uncompiled_output.primary_set = true;
+        }
         break;
       case 'v':
         print_version_message();
@@ -755,14 +787,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         // these options are made available since null can't be typed as a command line arg
         // there's precedent elsewhere, e.g. find -print0 -> xargs -0
         ret.bout_delimiter = {'\0'};
-        bout_delimiter_set = true;
+        uncompiled_output.bout_delimiter_set = true;
         break;
       case 'z':
         ret.out_delimiter = {'\0'};
         break;
       case '0':
-        uncompiled_output.primary = "\\x00";
-        uncompiled_output.re_options &= ~PCRE2_LITERAL;
+        uncompiled_output.primary = {'\0'};
+        uncompiled_output.primary_set = true;
         break;
       case 'o': {
         // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'o' in opt string
@@ -775,7 +807,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         size_t len = std::strlen(optarg);
         ret.bout_delimiter.resize(len);
         std::memcpy(ret.bout_delimiter.data(), optarg, len * sizeof(char));
-        bout_delimiter_set = true;
+        uncompiled_output.bout_delimiter_set = true;
       } break;
       case 'p':
         ret.prompt = optarg;
@@ -787,11 +819,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
   }
 
-  if (!bout_delimiter_set) {
+  if (!uncompiled_output.bout_delimiter_set) {
     ret.bout_delimiter = ret.out_delimiter;
   }
 
-  if (!uncompiled_output.primary) {
+  if (!uncompiled_output.primary_set) {
     if (ret.match) {
       // this isn't needed for any mechanical reason, only that the caller isn't doing something sane.
       arg_error_preamble(argc, argv);
@@ -799,7 +831,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       arg_has_errors = true;
     }
     // default sep
-    uncompiled_output.primary = "\n";
+    uncompiled_output.primary = {'\n'};
   }
 
   if (arg_has_errors) {
@@ -838,8 +870,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
   }
 
-  // do checks if not unit test
-  if (input == NULL) {
+  if (input == NULL) { // if not unit test
     if (regex::min_match_length(ret.primary) > ret.buf_size) {
       arg_error_preamble(argc, argv);
       fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);

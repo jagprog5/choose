@@ -211,17 +211,17 @@ ccc
 
 # Speed
 
-For a simple grep case, its slower but comparable to [pcre2grep](https://www.pcre.org/current/doc/html/pcre2grep.html), which uses the same regex library:
+For a simple grep case, its **faster** than _pcre2grep 10.42_, which uses the same regex library:
 
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
 time (cat words_alpha.txt | grep "test" > out.txt)      # 0.008s
-time (cat words_alpha.txt | pcre2grep "test" > out.txt) # 0.044s
-time (cat words_alpha.txt | choose -f "test" > out.txt) # 0.065s (50% slower than pcre2grep)
+time (cat words_alpha.txt | pcre2grep "test" > out.txt) # 0.041s
+time (cat words_alpha.txt | choose -f "test" > out.txt) # 0.033s
 ```
 
-For a simple substitution case, it can be **faster** than sed:
+For a simple substitution case, it is **faster** than _GNU sed 4.4_:
 
 ```bash
 # making the file a single line so its easier for sed
@@ -229,6 +229,7 @@ For a simple substitution case, it can be **faster** than sed:
 time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)              # 0.028s
 time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana --no-delimit > out.txt) # 0.021s
 ```
+
 # hist
 
 `hist` is a bash function installed with `choose`. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).

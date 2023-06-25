@@ -28,10 +28,15 @@ struct match_data_destroyer {
 using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
-code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE) {
+code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE, PCRE2_SIZE size = PCRE2_ZERO_TERMINATED) {
+  if (pattern == NULL && size == 0) {
+    // guard against what is detected as an error in PCRE2 but I don't agree with
+    // https://github.com/PCRE2Project/pcre2/issues/270
+    pattern = (const char*)1;
+  }
   int error_number;        // NOLINT
   PCRE2_SIZE error_offset; // NOLINT
-  pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, options, &error_number, &error_offset, NULL);
+  pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, size, options, &error_number, &error_offset, NULL);
   if (re == NULL) {
     PCRE2_UCHAR buffer[256];
     pcre2_get_error_message(error_number, buffer, sizeof(buffer));
@@ -42,6 +47,10 @@ code compile(const char* pattern, uint32_t options, const char* identification, 
   // ignore the return code here. falls back to normal code
   pcre2_jit_compile(re, jit_options);
   return code(re);
+}
+
+code compile(const std::vector<char>& pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE) {
+  return compile(pattern.data(), options, identification, jit_options, pattern.size());
 }
 
 match_data create_match_data(const code& code) {
@@ -150,7 +159,7 @@ struct Match {
   const char* begin;
   const char* end;
 
-  Match(const char* begin, const char* end, const char* identification) : begin(begin), end(end) {
+  void ensure_sane(const char* identification) {
     // regarding code coverage, this does show up depending on the distribution of pcre2
     if (begin > end) {
       char msg[512];
@@ -165,10 +174,12 @@ struct Match {
 
 Match get_match(const char* subject, const match_data& match_data, const char* identification) {
   PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data.get());
-  return Match(subject + ovector[0], subject + ovector[1], identification);
+  auto m = Match{subject + ovector[0], subject + ovector[1]};
+  m.ensure_sane(identification);
+  return m;
 }
 
-// T is a handler lambda bool(const Match& or Match&&), which is called with the match and each match group
+// T is a handler lambda bool(Match&&), which is called with the match and each match group
 // the handler should return true iff no other groups should be processed
 // rc is the return value from regex::match
 // returns true iff no other matches or groups should be processed
@@ -176,7 +187,9 @@ template <typename T>
 bool get_match_and_groups(const char* subject, int rc, const match_data& match_data, T handler, const char* identification) {
   PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data.get());
   for (int i = 0; i < rc; ++i) {
-    if (handler(Match(subject + ovector[2 * i], subject + ovector[2 * i + 1], identification))) {
+    auto m = Match{subject + ovector[2 * i], subject + ovector[2 * i + 1]};
+    m.ensure_sane(identification);
+    if (handler(std::move(m))) {
       return true;
     }
   }
