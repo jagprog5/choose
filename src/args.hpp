@@ -269,6 +269,12 @@ void parse_ul(const char* str, //
   }
 }
 
+template <typename T>
+bool detect_multiply_overflow(T result, T a, T b) {
+  static_assert(std::is_unsigned<T>::value);
+  return a != 0 && result / a != b;
+}
+
 // this function exits
 void print_version_message() {
   int exit_code = puts("choose 0.2.0, "
@@ -576,7 +582,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.buf_size = v;
           } else if (strcmp("buf-size-frag", name) == 0) {
             long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size)>::max() - 1, &arg_has_errors, name, argc, argv);
+            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size_frag)>::max() - 1, &arg_has_errors, name, argc, argv);
             ret.buf_size_frag = v;
           } else if (strcmp("in", name) == 0) {
             long v; // NOLINT
@@ -863,12 +869,23 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   if (ret.buf_size_frag == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     // more than the match buffer size by default, since storing is less intensive
     ret.buf_size_frag = ret.buf_size * 8;
+    if (detect_multiply_overflow(ret.buf_size_frag, ret.buf_size, (decltype(ret.buf_size_frag))8)) {
+      arg_error_preamble(argc, argv);
+      fputs("multiply overflow on fragment buffer size (when calculating default value).\n", stderr);
+      exit(EXIT_FAILURE);
+    }
   }
 
   if (!ret.in_char_delimiter) { // only if primary is set
     // bytes for number of characters
     if (regex::options(ret.primary) & PCRE2_UTF) {
-      ret.max_lookbehind *= str::utf8::MAX_BYTES_PER_CHARACTER;
+      auto before = ret.max_lookbehind;
+      ret.max_lookbehind *= (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER;
+      if (detect_multiply_overflow(ret.max_lookbehind, before, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
+        arg_error_preamble(argc, argv);
+        fputs("multiply overflow on max lookbehind (bytes per utf8 char).\n", stderr);
+        exit(EXIT_FAILURE);
+      }
     }
 
     if (input == NULL) { // if not unit test
