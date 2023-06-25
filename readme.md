@@ -211,22 +211,23 @@ ccc
 
 # Speed
 
-For a simple grep case, its **faster** than _pcre2grep 10.42_, which uses the same regex library:
+For a simple grep task, its the same speed as pcre2grep, which uses the same regex library:
 
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
 time (cat words_alpha.txt | grep "test" > out.txt)      # 0.008s
-time (cat words_alpha.txt | pcre2grep "test" > out.txt) # 0.041s
+# pcre2grep 10.42, compiled with -O3 to be the same as choose, linked against same PCRE2
+time (cat words_alpha.txt | pcre2grep "test" > out.txt) # 0.033s
 time (cat words_alpha.txt | choose -f "test" > out.txt) # 0.033s
 ```
 
-For a simple substitution case, it is **faster** than _GNU sed 4.4_:
+For a simple substitution task, it's **faster** than sed:
 
 ```bash
-# making the file a single line so its easier for sed
-# since sed is line buffered and the file contains many small lines
-time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)              # 0.028s
+# using tr to make the file a single line, since sed is line buffered and slow otherwise
+# GNU sed 4.9.32, compiled from source with -O3 to be the same as choose
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)              # 0.026s
 time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana --no-delimit > out.txt) # 0.021s
 ```
 
