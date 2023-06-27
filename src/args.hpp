@@ -61,14 +61,12 @@ struct Arguments {
   // if sort_reverse is set, then sort should also be set at the same time
   bool sort_reverse = false;
 
-  // if sort_comp is set, then sort should also be set at the same time
-  bool comp_sort = false;
-
   // user defined comparison
-  std::vector<char> comp_sep;
   regex::code comp = 0;
   regex::match_data comp_data = 0;
   bool comp_unique = false;
+  // if comp_sort is set, then sort should also be set at the same time
+  bool comp_sort = false;
 
   bool unique = false;
   bool flip = false;
@@ -104,6 +102,7 @@ struct Arguments {
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
+  regex::match_data primary_data = 0;
 
   // shortcut for if the delimiter is a single character; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
@@ -196,7 +195,7 @@ struct UncompiledCodes {
     }
 
     // see if single char delimiter optimization applies
-    if (!output.match && primary.size() == 1 && !(re_options & PCRE2_UTF)) {
+    if (!output.match && primary.size() == 1) {
       if (re_options & PCRE2_LITERAL) {
         // if the expression is literal then any single character works
         output.in_char_delimiter = primary[0];
@@ -215,6 +214,7 @@ struct UncompiledCodes {
 
     if (!output.in_char_delimiter) {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
+      output.primary_data = regex::create_match_data(output.primary);
     }
 
     if (comp) {
@@ -354,18 +354,16 @@ void print_help_message() {
       "                exceed this arg. the bytes are instead sent directly to the\n"
       "                output if no ordered ops are specified, and there is no sorting,\n"
       "                no uniqueness, no flip, and no tui used\n"
-      "        --comp <sep> <comp>\n"
-      "                user defined comparison. less-than comparison is indicated by\n"
-      "                concatenating two tokens with sep and successfully matching\n"
-      "                against comp. required by --comp-sort and --comp-unique\n"
+      "        --comp <less than comparison>\n"
+      "                user defined comparison. pairs of tokens are evaluated. if only\n"
+      "                one matches, then it is less than the other. required by\n"
+      "                --comp-sort and --comp-unique\n"
       "        --comp-sort\n"
       "                requires --comp. does a stable sort using the comparison.\n"
       "                ignores --sort. can use --sort-reverse\n"
       "        --comp-unique\n"
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
-      "        --comp-z <comp>\n"
-      "                --comp with a null char separator\n"
       "        -d, --no-delimit\n"
       "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
@@ -407,7 +405,7 @@ void print_help_message() {
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
       "        --sort-reverse\n"
-      "                sort each token reverse lexicographically\n"
+      "                sort the tokens in reverse order\n"
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
       "        --take <# tokens>\n"
@@ -439,7 +437,7 @@ void print_help_message() {
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
-      "                -r --comp-z '^John[^\\0]*\\0(?!John)' --comp-sort\n"
+      "                -r --comp '^John' --comp-sort\n"
       "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --in-index\\\n"
       "                after --rm '^c' --sub '.+' '$0 out:' --out-index after\n"
       "        # some options are only available via prefix\n"
@@ -515,7 +513,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"batch-delimiter", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
         {"comp", required_argument, NULL, 0},
-        {"comp-z", required_argument, NULL, 0},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
@@ -644,20 +641,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               uncompiled_output.ordered_ops.push_back(op);
             }
           } else if (strcmp("comp", name) == 0) {
-            if (optind >= argc) {
-              // ran off end
-              arg_error_preamble(argc, argv);
-              fputs("option '--comp' requires two arguments\n", stderr);
-              arg_has_errors = true;
-            } else {
-              ++optind;
-              size_t len = std::strlen(argv[optind - 2]);
-              ret.comp_sep.resize(len);
-              std::memcpy(ret.comp_sep.data(), argv[optind - 2], len * sizeof(char));
-              uncompiled_output.comp = argv[optind - 1];
-            }
-          } else if (strcmp("comp-z", name) == 0) {
-            ret.comp_sep = {'\0'};
             uncompiled_output.comp = optarg;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;

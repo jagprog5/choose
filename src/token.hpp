@@ -289,53 +289,60 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     size_t subject_size = 0; // how full is the buffer
     PCRE2_SIZE match_offset = 0;
     PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
-    const regex::match_data match_data = single_char_delimiter ? NULL : regex::create_match_data(args.primary);
     uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
     // single_char_delimiter implies not match. stating below so the compiler can hopefully leverage it
     const bool is_match = !single_char_delimiter && args.match;
     const bool is_basic = args.is_basic();
     const bool has_ops = !args.ordered_ops.empty();
 
-    std::function<bool(indirect, indirect)> uniqueness_comp = 0;
+    const bool is_sort_reverse = args.sort_reverse;
+    const bool is_unique = args.unique;
+    const bool is_comp_unique = args.comp_unique;
 
-    auto user_defined_comparison = [&args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    auto user_defined_comparison = [is_sort_reverse, &args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
-      if (args.sort_reverse) {
+      if (is_sort_reverse) {
         std::swap(lhs, rhs);
       }
-      Token combined;
-      str::append_to_buffer(combined.buffer, lhs->buffer);
-      str::append_to_buffer(combined.buffer, args.comp_sep);
-      str::append_to_buffer(combined.buffer, rhs->buffer);
-      int comp_result = regex::match(args.comp, combined.buffer.data(), combined.buffer.size(), args.comp_data, "user comp");
-      return comp_result > 0;
+
+      int lhs_result = regex::match(args.comp, lhs->buffer.data(), lhs->buffer.size(), args.comp_data, "user comp");
+      int rhs_result = regex::match(args.comp, rhs->buffer.data(), rhs->buffer.size(), args.comp_data, "user comp");
+      if (lhs_result && !rhs_result) {
+        return 1;
+      } else {
+        return 0;
+      }
     };
 
-    auto lexicographical_comparison = [&args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    auto lexicographical_comparison = [is_sort_reverse, &args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
-      if (args.sort_reverse) {
+      if (is_sort_reverse) {
         std::swap(lhs, rhs);
       }
       return std::lexicographical_compare( //
           lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
     };
 
-    if (args.comp_unique) {
-      uniqueness_comp = [&user_defined_comparison, &output = std::as_const(output), &args = std::as_const(args)](indirect lhs, indirect rhs) -> bool { //
+    auto uniqueness_comp = [is_unique,                            //
+                            is_comp_unique,                       //
+                            &lexicographical_comparison,          //
+                            &user_defined_comparison,             //
+                                & output = std::as_const(output), //
+                                    & args = std::as_const(args)](indirect lhs, indirect rhs) -> bool {
+      if (is_comp_unique) {
         return user_defined_comparison(output[lhs], output[rhs]);
-      };
-    } else if (args.unique) {
-      uniqueness_comp = [&lexicographical_comparison, &output = std::as_const(output)](indirect lhs, indirect rhs) -> bool { //
+      } else if (is_unique) {
         return lexicographical_comparison(output[lhs], output[rhs]);
-      };
-    }
+      } else {
+        return false; // never
+      }
+    };
 
     std::set<indirect, std::function<bool(indirect, indirect)>> uniqueness_set(uniqueness_comp);
-
     std::function<bool(indirect)> uniqueness_check = 0;
-    if (uniqueness_comp) {
+    if (is_comp_unique || is_unique) {
       uniqueness_check = [&uniqueness_set](indirect elem) -> bool { //
         return uniqueness_set.insert(elem).second;
       };
@@ -394,7 +401,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         match_result = regex::match(args.primary,                    //
                                     subject,                         //
                                     subject_effective_end - subject, //
-                                    match_data,                      //
+                                    args.primary_data,               //
                                     id(is_match),                    //
                                     match_offset,                    //
                                     match_options);
@@ -408,7 +415,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         if (single_char_delimiter) {
           match = regex::Match{single_char_delimiter_pos, single_char_delimiter_pos + 1};
         } else {
-          match = regex::get_match(subject, match_data, id(is_match));
+          match = regex::get_match(subject, args.primary_data, id(is_match));
         }
         if (is_match) {
           auto match_handler = [&](const regex::Match& m) -> bool {
@@ -421,7 +428,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               return process_token(std::move(t), ptc);
             }
           };
-          if (regex::get_match_and_groups(subject, match_result, match_data, match_handler, "match pattern")) {
+          if (regex::get_match_and_groups(subject, match_result, args.primary_data, match_handler, "match pattern")) {
             break;
           }
         } else {
@@ -448,7 +455,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             new_subject_begin = subject_effective_end;
           } else {
             // there was a partial match and there is more input
-            regex::Match match = regex::get_match(subject, match_data, id(is_match));
+            regex::Match match = regex::get_match(subject, args.primary_data, id(is_match));
             new_subject_begin = match.begin;
           }
 

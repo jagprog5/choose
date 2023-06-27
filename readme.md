@@ -167,7 +167,7 @@ And this command puts all tokens that start with "John" first, but otherwise the
 
 ```bash
 echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith"\
- | choose --comp-z '^John[^\0]*\0(?!John)' --comp-sort -ru
+ | choose --comp '^John' --comp-sort -ru
 ```
 
 </td>
@@ -216,10 +216,10 @@ For a simple grep task, its the same speed as pcre2grep, which uses the same reg
 ```bash
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
-time (cat words_alpha.txt | grep "test" > out.txt)      # 0.008s
-# pcre2grep 10.42, compiled with -O3 to be the same as choose, linked against same PCRE2
-time (cat words_alpha.txt | pcre2grep "test" > out.txt) # 0.033s
-time (cat words_alpha.txt | choose -f "test" > out.txt) # 0.033s
+time (cat words_alpha.txt | grep "test" > /dev/null)      # 0.008s
+# pcre2grep 10.42, compiled with -O3 to be the same as choose, linked with same PCRE2
+time (cat words_alpha.txt | pcre2grep "test" > /dev/null) # 0.033s
+time (cat words_alpha.txt | choose -f "test" > /dev/null) # 0.033s
 ```
 
 For a simple substitution task, it's **faster** than sed:
@@ -227,8 +227,24 @@ For a simple substitution task, it's **faster** than sed:
 ```bash
 # using tr to make the file a single line, since sed is line buffered and slow otherwise
 # GNU sed 4.9.32, compiled from source with -O3 to be the same as choose
-time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > out.txt)              # 0.026s
-time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana --no-delimit > out.txt) # 0.021s
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)    # 0.026s
+time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -d > /dev/null) # 0.021s
+```
+
+For getting unique elements, it's about the same as awk:
+
+```bash
+# GNU Awk 4.1.4
+time (cat words_alpha.txt | awk '!a[$0]++' > /dev/null) # 0.220s
+time (cat words_alpha.txt | choose -u > /dev/null)      # 0.211s
+```
+
+For sorting and uniqueness, it's **faster** than sort:
+
+```bash
+# GNU sort 8.28
+time (cat words_alpha.txt | sort -u > /dev/null)    # 0.336s
+time (cat words_alpha.txt | choose -su > /dev/null) # 0.275s
 ```
 
 # hist
