@@ -211,7 +211,7 @@ ccc
 
 # Speed
 
-For a simple grep task, its the same speed as pcre2grep, which uses the same regex library:
+For a grep-like task, its the same speed as pcre2grep, which uses the same regex library:
 
 ```bash
 # speed test. download 370000 words
@@ -222,21 +222,21 @@ time (cat words_alpha.txt | pcre2grep "test" > /dev/null) # 0.033s
 time (cat words_alpha.txt | choose -f "test" > /dev/null) # 0.033s
 ```
 
-For a simple substitution task, it's **faster** than sed:
+For a substitution task, it's **faster** than sed:
 
 ```bash
 # using tr to make the file a single line, since sed is line buffered and slow otherwise
 # GNU sed 4.9.32, compiled from source with -O3 to be the same as choose
-time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)    # 0.026s
-time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -d > /dev/null) # 0.021s
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)    # 0.025s
+time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -d > /dev/null) # 0.017s
 ```
 
-For getting unique elements, it's about the same as awk:
+For getting unique elements, it's slightly faster than awk:
 
 ```bash
 # GNU Awk 4.1.4
 time (cat words_alpha.txt | awk '!a[$0]++' > /dev/null) # 0.220s
-time (cat words_alpha.txt | choose -u > /dev/null)      # 0.211s
+time (cat words_alpha.txt | choose -u > /dev/null)      # 0.193s
 ```
 
 For sorting and uniqueness, it's **faster** than sort:
@@ -244,7 +244,7 @@ For sorting and uniqueness, it's **faster** than sort:
 ```bash
 # GNU sort 8.28
 time (cat words_alpha.txt | sort -u > /dev/null)    # 0.336s
-time (cat words_alpha.txt | choose -su > /dev/null) # 0.275s
+time (cat words_alpha.txt | choose -su > /dev/null) # 0.254s
 ```
 
 # hist

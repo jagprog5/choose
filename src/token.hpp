@@ -325,12 +325,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
     };
 
-    auto uniqueness_comp = [is_unique,                            //
-                            is_comp_unique,                       //
-                            &lexicographical_comparison,          //
-                            &user_defined_comparison,             //
-                                & output = std::as_const(output), //
-                                    & args = std::as_const(args)](indirect lhs, indirect rhs) -> bool {
+    auto uniqueness_comp = [&](indirect lhs, indirect rhs) -> bool {
       if (is_comp_unique) {
         return user_defined_comparison(output[lhs], output[rhs]);
       } else if (is_unique) {
@@ -340,7 +335,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    std::set<indirect, std::function<bool(indirect, indirect)>> uniqueness_set(uniqueness_comp);
+    std::set<indirect, decltype(uniqueness_comp)> uniqueness_set(uniqueness_comp);
     std::function<bool(indirect)> uniqueness_check = 0;
     if (is_comp_unique || is_unique) {
       uniqueness_check = [&uniqueness_set](indirect elem) -> bool { //

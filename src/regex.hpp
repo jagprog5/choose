@@ -28,12 +28,16 @@ struct match_data_destroyer {
 using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
-code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE, PCRE2_SIZE size = PCRE2_ZERO_TERMINATED) {
+void apply_null_guard(const char*& pattern, PCRE2_SIZE size) {
+  // guard against what is detected as an error in PCRE2 but I don't agree with
+  // https://github.com/PCRE2Project/pcre2/issues/270
   if (pattern == NULL && size == 0) {
-    // guard against what is detected as an error in PCRE2 but I don't agree with
-    // https://github.com/PCRE2Project/pcre2/issues/270
-    pattern = (const char*)1;
+    ++pattern;
   }
+}
+
+code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE, PCRE2_SIZE size = PCRE2_ZERO_TERMINATED) {
+  apply_null_guard(pattern, size);
   int error_number;        // NOLINT
   PCRE2_SIZE error_offset; // NOLINT
   pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, size, options, &error_number, &error_offset, NULL);
@@ -70,6 +74,7 @@ int match(const code& re, //
           const char* identification,
           PCRE2_SIZE start_offset = 0,
           uint32_t match_options = 0) {
+  apply_null_guard(subject, subject_length);
   int rc = pcre2_match(re.get(), (PCRE2_SPTR)subject, subject_length, start_offset, match_options, match_data.get(), NULL);
   if (rc == PCRE2_ERROR_PARTIAL) {
     return -1;
@@ -110,6 +115,7 @@ std::vector<char> substitute_global(const code& re, //
                                     const char* subject,
                                     PCRE2_SIZE subject_length,
                                     const char* replacement) {
+  apply_null_guard(subject, subject_length);
   uint32_t sub_flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
 #ifdef PCRE2_SUBSTITUTE_LITERAL
   if (options(re) & PCRE2_LITERAL) {
