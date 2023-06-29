@@ -74,7 +74,7 @@ struct Arguments {
   // match is false indicates that Arguments::primary is the delimiter after tokens.
   // else, it matches the tokens themselves
   bool match = false;
-  bool no_delimit = false;
+  bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
   // max is entirely valid, and the default
@@ -104,9 +104,9 @@ struct Arguments {
   regex::code primary = 0;
   regex::match_data primary_data = 0;
 
-  // shortcut for if the delimiter is a single character; doesn't set/use primary.
+  // shortcut for if the delimiter is a single byte; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
-  std::optional<char> in_char_delimiter;
+  std::optional<char> in_byte_delimiter;
 
   // testing purposes. if null, uses stdin and stdout.
   // if not null, files must be closed by the callee
@@ -194,25 +194,25 @@ struct UncompiledCodes {
       output.ordered_ops.push_back(std::move(oo));
     }
 
-    // see if single char delimiter optimization applies
+    // see if single byte delimiter optimization applies
     if (!output.match && primary.size() == 1) {
       if (re_options & PCRE2_LITERAL) {
-        // if the expression is literal then any single character works
-        output.in_char_delimiter = primary[0];
+        // if the expression is literal then any single byte works
+        output.in_byte_delimiter = primary[0];
       } else {
         // there's definitely better ways of recognizing if a regex pattern
-        // consists of a single character, but this is enough for common cases
+        // consists of a single byte, but this is enough for common cases
         auto in_range = [](char var, char low_inclusive, char high_inclusive) -> bool { //
           return var >= low_inclusive && var <= high_inclusive;
         };
         char ch = primary[0];
         if ((ch == '\n' || ch == '\0' || in_range(ch, '0', '9') || in_range(ch, 'a', 'z') || in_range(ch, 'A', 'Z'))) {
-          output.in_char_delimiter = ch;
+          output.in_byte_delimiter = ch;
         }
       }
     }
 
-    if (!output.in_char_delimiter) {
+    if (!output.in_byte_delimiter) {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
       output.primary_data = regex::create_match_data(output.primary);
     }
@@ -307,8 +307,8 @@ void print_help_message() {
       "ordered operations can be specified multiple times and are applied in the order\n"
       "they are stated. they are applied before any sorting or uniqueness options.\n"
       "        -f, --filter <target>\n"
-      "                remove tokens that don't match. it inherits the same match\n"
-      "                options as the input delimiter\n"
+      "                remove tokens that don't match. inherits the same match options\n"
+      "                as the input delimiter\n"
       "        --in-index [before|after]\n"
       "                on each token, insert the input index\n"
       "        --out-index [before|after]\n"
@@ -317,7 +317,7 @@ void print_help_message() {
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
       "                apply a global text substitution on each token. the target\n"
-      "                inherits the same match options as the input delimiter. "
+      "                inherits the same match options as the input delimiter."
 #ifdef PCRE2_SUBSTITUTE_LITERAL
       "the\n"
 #else
@@ -357,20 +357,21 @@ void print_help_message() {
       "        --comp <less than comparison>\n"
       "                user defined comparison. pairs of tokens are evaluated. if only\n"
       "                one matches, then it is less than the other. required by\n"
-      "                --comp-sort and --comp-unique\n"
+      "                --comp-sort and --comp-unique. inherits the same match options\n"
+      "                as the input delimiter\n"
       "        --comp-sort\n"
       "                requires --comp. does a stable sort using the comparison.\n"
       "                ignores --sort. can use --sort-reverse\n"
       "        --comp-unique\n"
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
-      "        -d, --no-delimit\n"
+      "        --delimit-not-at-end\n"
       "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
       "        --delimit-on-empty\n"
       "                even if the output would be empty, place a batch delimiter\n"
       "        -e, --end\n"
-      "                begin cursor and prompt at the bottom\n"
+      "                begin cursor and prompt at the bottom of the tui\n"
       "        --flip\n"
       "                reverse the token order. this happens after all other operations\n"
       "        -i, --ignore-case\n"
@@ -392,7 +393,7 @@ void print_help_message() {
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out <# tokens>\n"
-      "                send only the first n tokens to the output\n"
+      "                send only the first n tokens to the output or tui\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the input delimiter.\n"
@@ -400,6 +401,8 @@ void print_help_message() {
       "                the number of bytes read from stdin per iteration\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
+      "        --sed\n"
+      "                applies both --delimit-not-at-end and --use-delimiter\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -410,7 +413,7 @@ void print_help_message() {
       "        --take <# tokens>\n"
       "                both --in and --out\n"
       "        --tenacious\n"
-      "                don't exit on confirmed selection. each batch is flushed\n"
+      "                don't exit on tui confirmed selection. each batch is flushed\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --use-delimiter\n"
@@ -425,6 +428,7 @@ void print_help_message() {
       "                use null as the output delimiter\n"
       "        -0, --null, --read0\n"
       "                delimit the input on null chars\n"
+      "        --0-auto-completion-strings\n"
       "        --\n"
       "                stop option parsing\n"
       "examples:\n"
@@ -531,7 +535,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"tui", no_argument, NULL, 't'},
         {"comp-sort", no_argument, NULL, 0},
         {"comp-unique", no_argument, NULL, 0},
-        {"no-delimit", no_argument, NULL, 'd'},
+        {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
         {"flip", no_argument, NULL, 0},
@@ -542,6 +546,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"regex", no_argument, NULL, 'r'},
         {"sort", no_argument, NULL, 's'},
         {"selection-order", no_argument, NULL, 0},
+        {"sed", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
@@ -552,16 +557,19 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"print0", no_argument, NULL, 'z'},
         {"null", no_argument, NULL, '0'},
         {"read0", no_argument, NULL, '0'},
+        {"0-auto-completion-strings", no_argument, NULL, 0},
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:t::rdeimrsuyz0", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:treimrsuyz0", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
 
     switch (c) {
       default:
+        arg_error_preamble(argc, argv);
+        fprintf(stderr, "unknown error\n");
         arg_has_errors = true;
         break;
       case 0: {
@@ -654,6 +662,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             arg_has_errors = true;
           }
         } else {
+          // long option without argument
           if (strcmp("flip", name) == 0) {
             ret.flip = true;
           } else if (strcmp("comp-sort", name) == 0) {
@@ -661,6 +670,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.sort = true;
           } else if (strcmp("comp-unique", name) == 0) {
             ret.comp_unique = true;
+          } else if (strcmp("delimit-not-at-end", name) == 0) {
+            ret.delimit_not_at_end = true;
           } else if (strcmp("delimit-on-empty", name) == 0) {
             ret.delimit_on_empty = true;
           } else if (strcmp("match", name) == 0) {
@@ -673,6 +684,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.sort_reverse = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
+          } else if (strcmp("sed", name) == 0) {
+            ret.use_input_delimiter = true;
+            ret.delimit_not_at_end = true;
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("in-index", name) == 0) {
@@ -717,6 +731,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.re_options |= PCRE2_UTF;
           } else if (strcmp("utf-allow-invalid", name) == 0) {
             uncompiled_output.re_options |= PCRE2_MATCH_INVALID_UTF;
+          } else if (strcmp("0-auto-completion-strings", name) == 0) {
+            const option* pos = long_options;
+            while (pos->name) {
+              fputs("--", stdout);
+              puts(pos->name);
+              ++pos;
+            }
+            exit(0);
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -746,9 +768,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'h':
         print_help_message();
-        break;
-      case 'd':
-        ret.no_delimit = true;
         break;
       case 'e':
         ret.end = true;
@@ -843,7 +862,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   // defaults
   if (ret.max_lookbehind == std::numeric_limits<decltype(ret.max_lookbehind)>::max()) {
-    ret.max_lookbehind = ret.in_char_delimiter ? 0 : regex::max_lookbehind_size(ret.primary);
+    ret.max_lookbehind = ret.in_byte_delimiter ? 0 : regex::max_lookbehind_size(ret.primary);
   }
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = ret.buf_size;
@@ -858,7 +877,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
   }
 
-  if (!ret.in_char_delimiter) { // only if primary is set
+  if (!ret.in_byte_delimiter) { // only if primary is set
     // bytes for number of characters
     if (regex::options(ret.primary) & PCRE2_UTF) {
       auto before = ret.max_lookbehind;
@@ -871,7 +890,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
 
     if (input == NULL) { // if not unit test
-      if (!ret.in_char_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
+      if (!ret.in_byte_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
         arg_error_preamble(argc, argv);
         fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
         exit(EXIT_FAILURE);

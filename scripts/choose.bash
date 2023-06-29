@@ -2,6 +2,15 @@
 
 PATH="$PATH:$HOME/.choose"
 
+__choose_script_completion() {
+    local curr_arg
+    curr_arg=${COMP_WORDS[COMP_CWORD]}
+    completions=$(choose --0-auto-completion-strings)
+    COMPREPLY=($(compgen -W "${completions[*]}" -- "$curr_arg"))
+}
+
+complete -F __choose_script_completion choose
+
 # if hist is already defined somewhere then do not define it
 if ! command -v hist &> /dev/null; then
   hist() {
@@ -22,7 +31,7 @@ if ! command -v hist &> /dev/null; then
         IFS= read -r -d ''
         cat
       } | grep -zi -- "$*" |
-      choose -0uet --no-delimit --flip -p "Select a line to edit then run.")
+      choose -0uet --delimit-not-at-end --flip -p "Select a line to edit then run.")
     
     if [ -z "$LINE" ]; then
       echo "empty line"
