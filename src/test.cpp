@@ -473,7 +473,7 @@ BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
 // ========================
 
 BOOST_AUTO_TEST_CASE(no_delimit) {
-  choose_output out = run_choose("a\nb\nc", {"--no-delimit"});
+  choose_output out = run_choose("a\nb\nc", {"--delimit-not-at-end"});
   choose_output correct_output{to_vec("a\nb\nc")}; // no newline at end
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -486,7 +486,7 @@ BOOST_AUTO_TEST_CASE(delimit_on_empty) {
 
 BOOST_AUTO_TEST_CASE(no_delimit_delimit_on_empty) {
   // checking precedence
-  choose_output out = run_choose("", {"--no-delimit", "--delimit-on-empty"});
+  choose_output out = run_choose("", {"--delimit-not-at-end", "--delimit-on-empty"});
   choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -788,7 +788,9 @@ BOOST_AUTO_TEST_CASE(invalid_utf8_overlong_byte) {
 
 BOOST_AUTO_TEST_CASE(ensure_completed_utf8_multibytes_gives_err) {
   const char ch[] = {(char)0b10000000, 0};
-  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "--read=1"}), std::runtime_error);
+  // abc required since single byte delimiter optimization turns off utf implicitly
+  // inside matching logic
+  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "--read=1", "abc"}), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -860,7 +862,9 @@ BOOST_AUTO_TEST_CASE(compilation_failure) {
 BOOST_AUTO_TEST_CASE(match_failure) {
   // in this case some utf8 failure
   const char ch[] = {(char)0xFF, '\0'};
-  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf"}), std::runtime_error);
+  // abc delimiter to not have single byte optimization.
+  // required to actually put the error causing text through pcre2
+  BOOST_REQUIRE_THROW(run_choose(ch, {"--utf", "abc"}), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(sub_failure) {
@@ -969,7 +973,8 @@ BOOST_AUTO_TEST_CASE(create_token_fuzz) {
     if (bool_dis(gen)) {
       argv.push_back("--utf-allow-invalid");
     }
-    argv.push_back("--buf-size=100"); // half max data size
+    argv.push_back("--buf-size=80"); // less than half max data size
+    argv.push_back("--buf-size-frag=80");
     std::vector<char> buf_size_arg = to_vec("--read=");
     buf_size_arg.resize(strlen("--read=") + 4); // three digit number then null
     sprintf(buf_size_arg.data() + strlen("--read="), "%zu", non_zero_len_dis(gen));

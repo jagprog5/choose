@@ -65,7 +65,7 @@ class TokenOutputStream {
   void write_output(const Token& t) { write_output(&*t.buffer.cbegin(), &*t.buffer.cend()); }
 
   void finish_output() {
-    if (!args.no_delimit && (has_written_ || args.delimit_on_empty)) {
+    if (!args.delimit_not_at_end && (has_written_ || args.delimit_on_empty)) {
       str::write_f(args.output, args.bout_delimiter);
     }
     delimit_required_ = false; // optional reset of state
@@ -103,7 +103,7 @@ class BatchOutputStream {
   }
 
   void finish_output() {
-    if (!args.no_delimit && (!first_batch || args.delimit_on_empty)) {
+    if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
       str::write_optional_buffer(args.output, output, args.bout_delimiter);
     }
     str::finish_optional_buffer(args.output, output);
@@ -161,7 +161,7 @@ struct ProcessTokenContext {
 
 // this function applies the operations specified in the args to a candidate token.
 // returns true iff this should be the last token added to the output
-bool process_token(Token&& t, ProcessTokenContext& context) {
+bool normal_process_token(Token&& t, ProcessTokenContext& context) {
   if (!context.fragment.empty()) {
     if (context.fragment.size() + t.buffer.size() > context.args.buf_size_frag) {
       context.fragment.clear();
@@ -270,9 +270,12 @@ void basic_process_token(const char* begin, const char* end, ProcessTokenContext
 
 } // namespace
 
-// reads from args.input, and returns the tokens if args.tui. else, then writes
-// the output to args.output and then throws a termination_request exception,
-// which the callee should handle (exit unless unit test)
+// reads from args.input
+// if args.tui:
+//      returns the tokens
+// else
+//      writes to args.output, then throws a termination_request exception,
+//      which the caller should handle (exit unless unit test)
 std::vector<Token> create_tokens(choose::Arguments& args) {
   std::vector<Token> output;
   // edge case on process_token logic. it processes the token, increments, then checks if the limit is hit.
@@ -281,17 +284,17 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    const bool single_char_delimiter = args.in_char_delimiter.has_value();
-    const bool is_uft = single_char_delimiter ? false : regex::options(args.primary) & PCRE2_UTF;
-    const bool is_invalid_uft = single_char_delimiter ? false : regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
+    const bool single_byte_delimiter = args.in_byte_delimiter.has_value();
+    const bool is_utf = single_byte_delimiter ? false : regex::options(args.primary) & PCRE2_UTF;
+    const bool is_invalid_utf = single_byte_delimiter ? false : regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
 
     char subject[args.buf_size];
     size_t subject_size = 0; // how full is the buffer
     PCRE2_SIZE match_offset = 0;
     PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
     uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
-    // single_char_delimiter implies not match. stating below so the compiler can hopefully leverage it
-    const bool is_match = !single_char_delimiter && args.match;
+    // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
+    const bool is_match = !single_byte_delimiter && args.match;
     const bool is_basic = args.is_basic();
     const bool has_ops = !args.ordered_ops.empty();
 
@@ -352,6 +355,17 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
                             0, //
                             std::vector<char>()};
 
+    auto process_token = [&](const char* begin, const char* end) -> bool {
+      if (is_basic) {
+        basic_process_token(begin, end, ptc);
+        return false;
+      } else {
+        Token t;
+        str::append_to_buffer(t.buffer, begin, end);
+        return normal_process_token(std::move(t), ptc);
+      }
+    };
+
     while (1) {
       char* write_pos = &subject[subject_size];
       size_t bytes_to_read = std::min(args.bytes_to_read, args.buf_size - subject_size);
@@ -365,10 +379,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       // don't separate multibyte at end of subject
       const char* subject_effective_end; // NOLINT
-      if (is_uft && !input_done) {
+      if (is_utf && !input_done) {
         subject_effective_end = str::utf8::last_completed_character_end(subject, subject + subject_size);
         if (subject_effective_end == NULL) {
-          if (is_invalid_uft) {
+          if (is_invalid_utf) {
             subject_effective_end = subject + subject_size;
           } else {
             throw std::runtime_error("utf8 decoding error");
@@ -381,16 +395,16 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     skip_read: // do another iteration but don't read in any more bytes
 
       int match_result;
-      const char* single_char_delimiter_pos; // points to position of match if match_result is 1
-      if (single_char_delimiter) {
+      const char* single_byte_delimiter_pos; // points to position of match if match_result is 1
+      if (single_byte_delimiter) {
         match_result = 0;
-        single_char_delimiter_pos = subject + prev_sep_end;
-        while (single_char_delimiter_pos < subject + subject_size) {
-          if (*single_char_delimiter_pos == *args.in_char_delimiter) {
+        single_byte_delimiter_pos = subject + prev_sep_end;
+        while (single_byte_delimiter_pos < subject + subject_size) {
+          if (*single_byte_delimiter_pos == *args.in_byte_delimiter) {
             match_result = 1;
             break;
           }
-          ++single_char_delimiter_pos;
+          ++single_byte_delimiter_pos;
         }
       } else {
         match_result = regex::match(args.primary,                    //
@@ -407,34 +421,19 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         // process the match, set the offsets, then do another iteration without
         // reading more input
         regex::Match match;
-        if (single_char_delimiter) {
-          match = regex::Match{single_char_delimiter_pos, single_char_delimiter_pos + 1};
+        if (single_byte_delimiter) {
+          match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
         } else {
           match = regex::get_match(subject, args.primary_data, id(is_match));
         }
         if (is_match) {
-          auto match_handler = [&](const regex::Match& m) -> bool {
-            if (is_basic) {
-              basic_process_token(m.begin, m.end, ptc);
-              return false;
-            } else {
-              Token t;
-              str::append_to_buffer(t.buffer, m.begin, m.end);
-              return process_token(std::move(t), ptc);
-            }
-          };
+          auto match_handler = [&](const regex::Match& m) -> bool { return process_token(m.begin, m.end); };
           if (regex::get_match_and_groups(subject, match_result, args.primary_data, match_handler, "match pattern")) {
             break;
           }
         } else {
-          if (is_basic) {
-            basic_process_token(subject + prev_sep_end, match.begin, ptc);
-          } else {
-            Token t;
-            str::append_to_buffer(t.buffer, subject + prev_sep_end, match.begin);
-            if (process_token(std::move(t), ptc)) {
-              break;
-            }
+          if (process_token(subject + prev_sep_end, match.begin)) {
+            break;
           }
           prev_sep_end = match.end - subject;
         }
@@ -445,7 +444,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         if (!input_done) {
           // no or partial match and input is left
           const char* new_subject_begin;                    // NOLINT
-          if (single_char_delimiter || match_result == 0) { // single_char_delimiter implies no partial match
+          if (single_byte_delimiter || match_result == 0) { // single_byte_delimiter implies no partial match
             // there was no match but there is more input
             new_subject_begin = subject_effective_end;
           } else {
@@ -460,7 +459,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (new_subject_begin < subject) {
             new_subject_begin = subject;
           }
-          if (is_uft) {
+          if (is_utf) {
             // don't separate multibyte at begin of subject
             new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, subject, subject_effective_end);
           }
@@ -538,14 +537,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           // process the last token and break from the loop
           if (!is_match) {
             if (prev_sep_end != subject_size || args.use_input_delimiter || !ptc.fragment.empty()) {
-              if (is_basic) {
-                basic_process_token(subject + prev_sep_end, subject_effective_end, ptc);
-              } else {
-                std::vector<char> v;
-                str::append_to_buffer(v, subject + prev_sep_end, subject_effective_end);
-                Token t{std::move(v)};
-                process_token(std::move(t), ptc);
-              }
+              // at this point subject_effective_end is subject + subject_size (since input_done)
+              process_token(subject + prev_sep_end, subject_effective_end);
             }
           }
           break;
@@ -572,13 +565,16 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     }
   } // scope for goto
 
+  if (output.size() > args.out) {
+    output.resize(args.out);
+  }
+
 skip_all:
 
   if (!args.tui) {
     choose::TokenOutputStream tos(args);
-    auto pos = output.begin();
-    while (pos != output.end() && args.out-- > 0) {
-      tos.write_output(*pos++);
+    for (const Token& t : output) {
+      tos.write_output(t);
     }
     tos.finish_output();
     throw termination_request();
