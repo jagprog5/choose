@@ -146,6 +146,19 @@ const char* id(bool is_match) {
   }
 }
 
+void drop_warning(Arguments& args) {
+  if (args.can_drop_warn) {
+    args.can_drop_warn = false;
+    if (fileno(args.output) == STDOUT_FILENO) { // not unit test
+      fputs(
+          "Warning: bytes were dropped from overlong token. "
+          "Set --no-warn, or increase --buf-size-frag, "
+          "or set the delimiter to something matched more frequently.\n",
+          stderr);
+    }
+  }
+}
+
 using indirect = std::vector<Token>::size_type; // an index into output
 
 struct ProcessTokenContext {
@@ -164,6 +177,7 @@ struct ProcessTokenContext {
 bool normal_process_token(Token&& t, ProcessTokenContext& context) {
   if (!context.fragment.empty()) {
     if (context.fragment.size() + t.buffer.size() > context.args.buf_size_frag) {
+      drop_warning(context.args);
       context.fragment.clear();
       return false;
     }
@@ -231,6 +245,7 @@ bool normal_process_token(Token&& t, ProcessTokenContext& context) {
 void basic_process_token(const char* begin, const char* end, ProcessTokenContext& context) {
   if (!context.fragment.empty()) {
     if (context.fragment.size() + (end - begin) > context.args.buf_size_frag) {
+      drop_warning(context.args);
       context.fragment.clear();
       return;
     }
@@ -492,44 +507,43 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               match_offset = 0;
               subject_size = 0;
             } else {
-              // there is not enough room in the match buffer, so we're moving the part of the token
-              // that is before the delimiter into a separate buffer or directly to the output
-              char* begin;     // NOLINT
-              const char* end; // NOLINT
+              // there is not enough room in the match buffer. moving the part
+              // of the token at the beginning that won't be a part of a
+              // successful match. moved to either a separate (fragment) buffer
+              // or directly to the output
 
-              if (prev_sep_end != 0) {
+              auto process_fragment = [&](const char* begin, const char* end) {
+                if (!has_ops && is_basic) {
+                  ptc.direct_output->write_output_fragment(begin, end);
+                } else {
+                  if (ptc.fragment.size() + (end - begin) > args.buf_size_frag) {
+                    drop_warning(args);
+                    ptc.fragment.clear();
+                  } else {
+                    str::append_to_buffer(ptc.fragment, begin, end);
+                  }
+                }
+              };
+
+              if (prev_sep_end != 0 || subject == retain_marker) {
                 // the buffer is being retained because of lookbehind bytes.
                 // can't properly match, so results in match failure
-                begin = subject;
-                end = subject + subject_size;
+                process_fragment(subject + prev_sep_end, subject + subject_size);
                 prev_sep_end = 0;
+                match_offset = 0;
+                subject_size = 0;
               } else {
-                begin = subject;
-                end = retain_marker;
-
-                if (begin == end) {
-                  // the entire buffer is composed of the partially matched delimiter
-                  // results in match failure
-                  begin = subject;
-                  end = subject + subject_size;
+                // the buffer is being retained because of the previous delimiter
+                // end position. write part
+                process_fragment(subject, retain_marker);
+                const char* remove_until = retain_marker;
+                char* begin = subject;
+                while (remove_until < subject + subject_size) {
+                  *begin++ = *remove_until++;
                 }
+                subject_size -= remove_until - begin;
+                match_offset = 0;
               }
-
-              if (!has_ops && is_basic) {
-                ptc.direct_output->write_output_fragment(begin, end);
-              } else {
-                if (ptc.fragment.size() + (end - begin) > args.buf_size_frag) {
-                  ptc.fragment.clear();
-                } else {
-                  str::append_to_buffer(ptc.fragment, begin, end);
-                }
-              }
-
-              while (end < subject + subject_size) {
-                *begin++ = *end++;
-              }
-              subject_size -= end - begin;
-              match_offset = 0;
             }
           }
         } else {

@@ -686,7 +686,13 @@ BOOST_AUTO_TEST_CASE(frag_flush_in_basic_process_token) {
 BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero) {
   // when the buffer is filled because of lookbehind bytes, not from the previous delimiter end
   choose_output out = run_choose("123123", {"(?<=123)?123", "-r", "--read=1", "--buf-size=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"", "123", "123"}};
+  choose_output correct_output{std::vector<choose::Token>{"", ""}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero_2) {
+  choose_output out = run_choose("123123", {"(?<=123)123", "-r", "--read=1", "--buf-size=3", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"123123"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

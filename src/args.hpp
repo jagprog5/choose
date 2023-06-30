@@ -113,6 +113,9 @@ struct Arguments {
   FILE* input = 0;
   FILE* output = 0;
 
+  // disable or allow warning
+  bool can_drop_warn = true;
+
   // a special case that doesn't require storing any tokens. send straight to output
   bool is_direct_output() const { //
     return !tui && !sort && !unique && !comp_unique && !flip;
@@ -390,6 +393,7 @@ void print_help_message() {
       "                the max number of characters that the pattern can look before\n"
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
+      "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out <# tokens>\n"
@@ -402,7 +406,9 @@ void print_help_message() {
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sed\n"
-      "                applies both --delimit-not-at-end and --use-delimiter\n"
+      "                applies both --delimit-not-at-end and --use-delimiter. this\n"
+      "                makes the output end with a delimiter when the input also ends\n"
+      "                with a delimiter\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -543,6 +549,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
+        {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sort", no_argument, NULL, 's'},
         {"selection-order", no_argument, NULL, 0},
@@ -676,6 +683,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.delimit_on_empty = true;
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
+          } else if (strcmp("no-warn", name) == 0) {
+            ret.can_drop_warn = false;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;

@@ -7,8 +7,6 @@
 #include <memory>
 #include <stdexcept>
 
-// pcre2 thin wrapper
-
 namespace choose {
 
 namespace regex {
@@ -32,7 +30,7 @@ void apply_null_guard(const char*& pattern, PCRE2_SIZE size) {
   // guard against what is detected as an error in PCRE2 but I don't agree with
   // https://github.com/PCRE2Project/pcre2/issues/270
   if (pattern == NULL && size == 0) {
-    ++pattern;
+    pattern = (const char*)1;
   }
 }
 
