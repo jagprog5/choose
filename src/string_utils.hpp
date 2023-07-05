@@ -286,34 +286,6 @@ void finish_optional_buffer(FILE* f, const std::optional<std::vector<char>>& out
   }
 }
 
-// writes the ascii representation of value into v, separated by a space, at the beginning or end
-void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
-  size_t extension = value == 0 ? 1 : (size_t(std::log10(value)) + 1);
-  extension += 1; // +1 for space
-  size_t new_size = v.size() + extension;
-  v.resize(new_size);
-  if (align_before) {
-    // move the entire buffer forward
-    char* to_ptr = &*v.rbegin();
-    const char* from_ptr = &*v.rbegin() - extension;
-    while (from_ptr >= &*v.begin()) {
-      *to_ptr-- = *from_ptr--;
-    }
-    sprintf(&*v.begin(), "%zu", value);
-    // overwrite the null written by sprintf
-    *(v.begin() + (ptrdiff_t)(extension - 1)) = ' ';
-  } else {
-    char* ptr = &*v.end() - extension;
-    *ptr++ = ' ';
-    if (extension > 2) { // aka value > 9
-      sprintf(ptr, "%zu", value / 10);
-    }
-    // overwrite the null written by sprintf
-    // NOLINTNEXTLINE narrowing to char is ok for value in range [0-9]
-    *v.rbegin() = (char)(value % 10) + '0';
-  }
-}
-
 namespace utf8 {
 
 static constexpr int MAX_BYTES_PER_CHARACTER = 4;

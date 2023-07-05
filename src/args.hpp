@@ -6,42 +6,13 @@
 #include <csignal>
 #include <cstring>
 #include <limits>
-#include <variant>
 #include <vector>
-
 // for version
 #include <ncursesw/curses.h>
 
-#include "regex.hpp"
-#include "string_utils.hpp"
+#include "ordered_op.hpp"
 
 namespace choose {
-
-struct RmOrFilterOp {
-  enum Type { REMOVE, FILTER };
-  Type type;
-  regex::code arg;
-  regex::match_data match_data;
-};
-
-struct SubOp {
-  regex::code target;
-  const char* replacement;
-};
-
-struct IndexOp {
-  enum Align { BEFORE, AFTER };
-  enum Type { INPUT, OUTPUT };
-  IndexOp(Type type, Align align) : index(type == INPUT ? 0 : std::numeric_limits<size_t>::max()), align(align) {}
-  // index is only used if this is an input op.
-  // if it is set to max, this indicates that it is an output op
-  size_t index;
-  Align align;
-
-  bool is_output_index_op() const { return index == std::numeric_limits<size_t>::max(); }
-};
-
-using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
@@ -113,22 +84,12 @@ struct Arguments {
   FILE* input = 0;
   FILE* output = 0;
 
+  // disable or allow warning
+  bool can_drop_warn = true;
+
   // a special case that doesn't require storing any tokens. send straight to output
   bool is_direct_output() const { //
     return !tui && !sort && !unique && !comp_unique && !flip;
-  }
-
-  // a subset of is_direct_output() which allows for simplified logic and avoids
-  // a copy of the input
-  bool is_basic() const {
-    bool has_modifying_op = false;
-    for (const auto& op : ordered_ops) {
-      if (!std::get_if<RmOrFilterOp>(&op)) {
-        has_modifying_op = true;
-        break;
-      }
-    }
-    return is_direct_output() && !has_modifying_op;
   }
 };
 
@@ -167,9 +128,7 @@ struct UncompiledOrderedOp {
     if (type == SUBSTITUTE) {
       return SubOp{std::move(code), arg1};
     }
-    // RM or FILTER
-    regex::match_data data = regex::create_match_data(code);
-    return RmOrFilterOp{type == REMOVE ? RmOrFilterOp::REMOVE : RmOrFilterOp::FILTER, std::move(code), std::move(data)};
+    return RmOrFilterOp(type == REMOVE ? RmOrFilterOp::REMOVE : RmOrFilterOp::FILTER, std::move(code));
   }
 };
 
@@ -365,6 +324,10 @@ void print_help_message() {
       "        --comp-unique\n"
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
+      "        -d, --delimit-same\n"
+      "                applies both --delimit-not-at-end and --use-delimiter. this\n"
+      "                makes the output end with a delimiter when the input also ends\n"
+      "                with a delimiter\n"
       "        --delimit-not-at-end\n"
       "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
@@ -390,6 +353,7 @@ void print_help_message() {
       "                the max number of characters that the pattern can look before\n"
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
+      "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out <# tokens>\n"
@@ -401,8 +365,6 @@ void print_help_message() {
       "                the number of bytes read from stdin per iteration\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
-      "        --sed\n"
-      "                applies both --delimit-not-at-end and --use-delimiter\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -535,6 +497,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"tui", no_argument, NULL, 't'},
         {"comp-sort", no_argument, NULL, 0},
         {"comp-unique", no_argument, NULL, 0},
+        {"delimit-same", no_argument, NULL, 'd'},
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
@@ -543,10 +506,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
+        {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sort", no_argument, NULL, 's'},
         {"selection-order", no_argument, NULL, 0},
-        {"sed", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
@@ -561,15 +524,13 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:treimrsuyz0", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimrsuyz0", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
 
     switch (c) {
       default:
-        arg_error_preamble(argc, argv);
-        fprintf(stderr, "unknown error\n");
         arg_has_errors = true;
         break;
       case 0: {
@@ -676,6 +637,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.delimit_on_empty = true;
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
+          } else if (strcmp("no-warn", name) == 0) {
+            ret.can_drop_warn = false;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -684,9 +647,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.sort_reverse = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
-          } else if (strcmp("sed", name) == 0) {
-            ret.use_input_delimiter = true;
-            ret.delimit_not_at_end = true;
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("in-index", name) == 0) {
@@ -768,6 +728,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'h':
         print_help_message();
+        break;
+      case 'd':
+        ret.use_input_delimiter = true;
+        ret.delimit_not_at_end = true;
         break;
       case 'e':
         ret.end = true;

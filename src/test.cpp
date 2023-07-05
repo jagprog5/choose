@@ -177,30 +177,34 @@ BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {
+  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::BEFORE);
   std::vector<char> empty;
-  str::apply_index_op(empty, 123, true);
+  op.apply(empty, 123);
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
   std::vector<char> val_zero;
-  str::apply_index_op(val_zero, 0, true); // log edge case
+  op.apply(val_zero, 0); // log edge case
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
 
+  auto in_op = IndexOp(IndexOp::INPUT, IndexOp::BEFORE);
+  in_op.in_index = 123; // used
   std::vector<char> not_empty{'a', 'b', 'c'};
-  str::apply_index_op(not_empty, 123, true);
+  in_op.apply(not_empty, 999);
   BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_after) {
+  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::AFTER);
   std::vector<char> empty;
-  str::apply_index_op(empty, 123, false);
+  op.apply(empty, 123);
   BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
 
   std::vector<char> less_than_10;
-  str::apply_index_op(less_than_10, 9, false);
+  op.apply(less_than_10, 9);
   BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
-  str::apply_index_op(not_empty, 123, false);
+  op.apply(not_empty, 123);
   BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
 }
 
@@ -356,20 +360,19 @@ BOOST_AUTO_TEST_CASE(simple) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(simple_basic_output) {
-  // see args.is_basic(); also tests delimiters
+BOOST_AUTO_TEST_CASE(delimiters) {
   choose_output out = run_choose("first\nsecond\nthird", {"--output-delimiter", " ", "--batch-delimiter=\n"});
   choose_output correct_output{to_vec("first second third\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_rm_filter) {
+BOOST_AUTO_TEST_CASE(output_in_limit) {
   choose_output out = run_choose("first\nsecond\nthird", {"--in=2"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_in_limit) {
+BOOST_AUTO_TEST_CASE(output_rm_filter) {
   choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--rm=second", "--filter=first"});
   choose_output correct_output{to_vec("first\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -387,15 +390,15 @@ BOOST_AUTO_TEST_CASE(zero_no_tui) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_accumulation) {
-  // basic output avoids a copy when it can, but it still accumulates the input on no/partial delimiter match.
+BOOST_AUTO_TEST_CASE(output_accumulation) {
+  // the output avoids a copy when it can, but it still accumulates the input on no/partial delimiter match.
   // this is needed because an entire token needs to be accumulated before a filter can be applied
   choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "-f", "s"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_match) {
+BOOST_AUTO_TEST_CASE(output_match) {
   choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "--match"});
   choose_output correct_output{to_vec("aaa\naaa\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -503,9 +506,9 @@ BOOST_AUTO_TEST_CASE(flip) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(direct_but_not_basic_limit) {
-  choose_output out = run_choose("a\nb\nc", {"--sub", "c", "d", "--out=2"});
-  choose_output correct_output{to_vec("a\nb\n")};
+BOOST_AUTO_TEST_CASE(direct_limit) {
+  choose_output out = run_choose("a\nb\nc", {"--sub", "b", "e", "--sub", "e", "f", "--out=2"});
+  choose_output correct_output{to_vec("a\nf\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -669,14 +672,6 @@ BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
 }
 
 BOOST_AUTO_TEST_CASE(frag_flush_in_process_token) {
-  // ensure that a fragment being queued up at the end does end up in the output
-  choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-s", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"aaaa", "hereisaline"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(frag_flush_in_basic_process_token) {
-  // same as above but for basic
   // notice the useless filter is needed so it doesn't do an optimization where the fragments are sent straight to the output
   choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-r", "-f", ".*"});
   choose_output correct_output{to_vec("hereisaline\naaaa\n")};
@@ -686,7 +681,13 @@ BOOST_AUTO_TEST_CASE(frag_flush_in_basic_process_token) {
 BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero) {
   // when the buffer is filled because of lookbehind bytes, not from the previous delimiter end
   choose_output out = run_choose("123123", {"(?<=123)?123", "-r", "--read=1", "--buf-size=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"", "123", "123"}};
+  choose_output correct_output{std::vector<choose::Token>{"", ""}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero_2) {
+  choose_output out = run_choose("123123", {"(?<=123)123", "-r", "--read=1", "--buf-size=3", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"123123"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -697,16 +698,9 @@ BOOST_AUTO_TEST_CASE(frag_buffer_too_small_appending) {
 }
 
 BOOST_AUTO_TEST_CASE(frag_buffer_too_small_process_token) {
-  // checks that basic_process discards the fragment if it would exceed the fragment size
+  // checks that process_token discards the fragment if it would exceed the fragment size
   choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(frag_buffer_too_small_basic_process_token) {
-  // checks that basic_process discards the fragment if it would exceed the fragment size
-  choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4", "-f", ".*"});
-  choose_output correct_output{to_vec("")};
+  choose_output correct_output{std::vector<choose::Token>{""}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -716,7 +710,7 @@ BOOST_AUTO_TEST_CASE(process_fragments) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_process_fragment_in_count) {
+BOOST_AUTO_TEST_CASE(process_fragment_in_count) {
   // ensure that fragments are counted correctly. only on completion is the in count incremented
   choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--in=2"});
   choose_output correct_output{to_vec("zzzzzzzzz\nhereisaline\n")};

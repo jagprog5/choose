@@ -38,7 +38,7 @@ struct UIState {
   int selection_rows = 0; // the screen height available to the selection
 
   // the indices of the tokens selected by the user
-  std::vector<int> selections = {};
+  std::vector<decltype(tokens)::size_type> selections = {};
   // word wrapped lines which display the prompt text
   std::vector<std::vector<wchar_t>> prompt_lines = {};
 
@@ -398,7 +398,7 @@ struct UIState {
 
   void loop() {
     on_resize();
-    while (true) {
+    while (1) {
       draw_tui();
       if (!handle_user_input()) {
         break;

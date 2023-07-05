@@ -227,8 +227,8 @@ For a substitution task, it's **faster** than sed:
 ```bash
 # using tr to make the file a single line, since sed is line buffered and slow otherwise
 # GNU sed 4.9.32, compiled from source with -O3 to be the same as choose
-time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)       # 0.025s
-time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana --sed > /dev/null) # 0.017s
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)    # 0.025s
+time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -d > /dev/null) # 0.017s
 ```
 
 For getting unique elements, it's slightly faster than awk:
