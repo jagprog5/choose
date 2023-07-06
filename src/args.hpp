@@ -276,7 +276,7 @@ void print_help_message() {
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
       "                apply a global text substitution on each token. the target\n"
-      "                inherits the same match options as the input delimiter."
+      "                inherits the same match options as the input delimiter. "
 #ifdef PCRE2_SUBSTITUTE_LITERAL
       "the\n"
 #else
@@ -294,10 +294,10 @@ void print_help_message() {
 #endif
       "options:\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
-      "                selecting multiple tokens and sending them to the output\n"
-      "                together is a \"batch\". if multiple batches are send to the\n"
-      "                output (which is enabled via --tenacious), then a batch\n"
-      "                delimiter is placed after each batch\n"
+      "                a batch is a group of tokens. typically the output consists\n"
+      "                of a single batch. if --tui and --tenacious are specified\n"
+      "                then the output can consist of multiple batches. a batch\n"
+      "                delimiter is placed after every batch.\n"
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
       "                size of match buffer used. patterns that require more room will\n"
       "                never successfully match\n"
@@ -375,7 +375,8 @@ void print_help_message() {
       "        --take <# tokens>\n"
       "                both --in and --out\n"
       "        --tenacious\n"
-      "                don't exit on tui confirmed selection. each batch is flushed\n"
+      "                on tui confirmed selection, do not exit; but still flush the\n"
+      "                current selection to the output as a batch\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --use-delimiter\n"

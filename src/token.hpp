@@ -67,8 +67,8 @@ struct TokenOutputStream {
       str::write_f(args.output, args.out_delimiter);
     }
     delimit_required_ = true;
-    ++out_count;
     handler(args.output, begin, end);
+    ++out_count;
   }
 
   void write_output(const Token& t) { //
@@ -92,20 +92,17 @@ struct BatchOutputStream {
   bool first_batch = true;
 
   const Arguments& args;
-  std::optional<std::vector<char>> output;
 
-  BatchOutputStream(const Arguments& args, //
-                    std::optional<std::vector<char>>&& output)
-      : args(args), output(std::move(output)) {}
+  BatchOutputStream(const Arguments& args) : args(args) {}
 
   void write_output(const Token& t) {
     if (!first_within_batch) {
-      str::write_optional_buffer(args.output, output, args.out_delimiter);
+      str::write_f(args.output, args.out_delimiter);
     } else if (!first_batch) {
-      str::write_optional_buffer(args.output, output, args.bout_delimiter);
+      str::write_f(args.output, args.bout_delimiter);
     }
     first_within_batch = false;
-    str::write_optional_buffer(args.output, output, t.buffer);
+    str::write_f(args.output, t.buffer);
   }
 
   void finish_batch() {
@@ -115,14 +112,11 @@ struct BatchOutputStream {
 
   void finish_output() {
     if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
-      str::write_optional_buffer(args.output, output, args.bout_delimiter);
+      str::write_f(args.output, args.bout_delimiter);
     }
-    str::finish_optional_buffer(args.output, output);
     first_within_batch = true; // optional reset of state
     first_batch = true;
   }
-
-  bool uses_buffer() const { return output.has_value(); }
 };
 
 // leads to an exit unless this is a unit test

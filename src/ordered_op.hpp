@@ -107,9 +107,8 @@ struct IndexOp {
       char* ptr = &*v.end() - extension;
       *ptr++ = ' ';
       size_t without_last = index / 10;
-      // aka index > 9. index when divided by 10 must take one fewer byte or it
-      // will overrun
-      if (extension > 2) {
+      // index when divided by 10 must take one fewer byte
+      if (without_last != 0) {
         sprintf(ptr, "%zu", without_last);
       }
       // overwrite the null written by sprintf
@@ -126,21 +125,14 @@ struct IndexOp {
   void direct_apply(FILE* out, const char* begin, const char* end, size_t out_index) {
     size_t index = this->is_output_index_op() ? out_index : this->in_index;
 
-    auto write_index = [&]() {
-      size_t buf_size = IndexOp::space_required(index) + 1; // +1 for null char
-      char buf[buf_size];
-      sprintf(buf, "%zu", index);
-      fputs(buf, out);
-    };
-
     if (this->align == IndexOp::BEFORE) {
-      write_index();
+      fprintf(out, "%zu ", index);
     }
 
     str::write_f(out, begin, end);
 
     if (this->align != IndexOp::BEFORE) {
-      write_index();
+      fprintf(out, " %zu", index);
     }
 
     if (!this->is_output_index_op()) {

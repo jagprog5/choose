@@ -193,10 +193,8 @@ struct UIState {
 
     if (args.tenacious) {
       selections.clear();
-      if (!os.uses_buffer()) {
-        if (fflush(args.output) == EOF) {
-          throw std::runtime_error("output err");
-        }
+      if (fflush(args.output) == EOF) {
+        throw std::runtime_error("output err");
       }
     } else {
       os.finish_output();
@@ -442,10 +440,7 @@ int main(int argc, char* const* argv) {
       std::move(args),             //
       std::move(tokens),           //
       output_is_tty,               //
-      choose::BatchOutputStream(   //
-          state.args,              //
-          std::move(stream_output) //
-          ),
+      choose::BatchOutputStream(state.args),
   };
 
   try {
