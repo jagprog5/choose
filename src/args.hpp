@@ -47,6 +47,8 @@ struct Arguments {
   bool match = false;
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
+  // sed not null implies match. used for stream editing
+  const char* sed = 0;
 
   // max is entirely valid, and the default
   typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
@@ -87,9 +89,14 @@ struct Arguments {
   // disable or allow warning
   bool can_drop_warn = true;
 
-  // a special case that doesn't require storing any tokens. send straight to output
-  bool is_direct_output() const { //
-    return !tui && !sort && !unique && !comp_unique && !flip;
+  // a special case where the tokens can be sent directly to the output as they are received
+  bool is_direct_output() const {
+    return !tui && !sort && !flip;
+  }
+
+  // a subset of is_direct_output where the tokens don't need to be stored at all
+  bool tokens_not_stored() const { //
+    return is_direct_output() && !unique && !comp_unique;
   }
 };
 
@@ -268,10 +275,10 @@ void print_help_message() {
       "        -f, --filter <target>\n"
       "                remove tokens that don't match. inherits the same match options\n"
       "                as the input delimiter\n"
-      "        --in-index [before|after]\n"
-      "                on each token, insert the input index\n"
-      "        --out-index [before|after]\n"
-      "                on each token, insert the output index\n"
+      "        --in-index [b[efore]|a[fter]]\n"
+      "                on each token, insert the input index. defaults to before\n"
+      "        --out-index [b[efore]|a[fter]]\n"
+      "                on each token, insert the output index. defaults to before\n"
       "        --rm, --remove <target>\n"
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
@@ -365,6 +372,10 @@ void print_help_message() {
       "                the number of bytes read from stdin per iteration\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
+      "        --sed <replacement>\n"
+      "                implies --match and -d. applies a global substitution. this is\n"
+      "                preferred to --sub in cases where it is not necessary to split\n"
+      "                the input into tokens before the replacement occurs.\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -493,6 +504,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"locale", required_argument, NULL, 0},
         {"out", required_argument, NULL, 0},
         {"out-index", optional_argument, NULL, 0},
+        {"sed", required_argument, NULL, 0},
         {"take", required_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
@@ -609,6 +621,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               op.arg1 = argv[optind - 1];
               uncompiled_output.ordered_ops.push_back(op);
             }
+          } else if (strcmp("sed", name) == 0) {
+            ret.use_input_delimiter = true;
+            ret.delimit_not_at_end = true;
+            ret.match = true;
+            ret.sed = optarg;
           } else if (strcmp("comp", name) == 0) {
             uncompiled_output.comp = optarg;
           } else if (strcmp("locale", name) == 0) {
@@ -624,7 +641,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             arg_has_errors = true;
           }
         } else {
-          // long option without argument
+          // long option without argument or optional argument
           if (strcmp("flip", name) == 0) {
             ret.flip = true;
           } else if (strcmp("comp-sort", name) == 0) {

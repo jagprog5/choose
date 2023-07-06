@@ -181,7 +181,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
+  // sed implies is_match
+  const bool is_sed = args.sed && is_match;
   const bool is_direct_output = args.is_direct_output();
+  const bool tokens_not_stored = args.tokens_not_stored();
   const bool has_ops = !args.ordered_ops.empty();
 
   const bool is_sort_reverse = args.sort_reverse;
@@ -194,9 +197,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
 
-  // based on the args, some variable here are used
-  TokenOutputStream direct_output(args); //  is_direct_output, this is used
-  std::vector<Token> output;             // !is_direct_output, this is used
+  TokenOutputStream direct_output(args); //  if is_direct_output, this is used
+  std::vector<Token> output;             // !tokens_not_stored, this is used
 
   // edge case on logic
   if (args.out == 0 || args.in == 0) {
@@ -285,7 +287,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return false;
           }
         } else {
-          if (is_direct_output && &op == &*args.ordered_ops.rbegin()) {
+          if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
                 sub_op->direct_apply(out, begin, end);
@@ -307,7 +309,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               if (!t_is_set) {
                 str::append_to_buffer(t.buffer, begin, end);
               }
-              in_op.apply(t.buffer, is_direct_output ? direct_output.out_count : output.size());
+              in_op.apply(t.buffer, tokens_not_stored ? direct_output.out_count : output.size());
             }
             t_is_set = true;
             begin = &*t.buffer.cbegin();
@@ -315,6 +317,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           }
         }
       }
+
+      // todo
 
       if (is_direct_output) {
         direct_output.write_output(begin, end);
@@ -404,6 +408,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           match = regex::get_match(subject, args.primary_data, id(is_match));
         }
         if (is_match) {
+          // if (is_sed) {
+            // write out everything before the match
+          // }
           auto match_handler = [&](const regex::Match& m) -> bool { //
             return process_token(m.begin, m.end);
           };
@@ -477,7 +484,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               // or directly to the output
 
               auto process_fragment = [&](const char* begin, const char* end) {
-                if (!has_ops && is_direct_output) {
+                if (!has_ops && tokens_not_stored) {
                   direct_output.write_output_fragment(begin, end);
                 } else {
                   if (fragment.size() + (end - begin) > args.buf_size_frag) {
