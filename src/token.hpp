@@ -255,15 +255,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     // this lambda applies the operations specified in the args to a candidate token.
     // returns true iff this should be the last token added to the output
     auto process_token = [&](const char* begin, const char* end) -> bool {
-      struct DeferClear {
-        std::vector<char>& v;
-        DeferClear(std::vector<char>& v) : v(v) {}
-        ~DeferClear() {
-          if (!v.empty()) {
-            v.clear();
-          }
-        }
-      } defer_clear(fragment);
+      bool t_is_set = false;
+      Token t;
 
       if (!fragment.empty()) {
         if (fragment.size() + (end - begin) > args.buf_size_frag) {
@@ -273,13 +266,30 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           end = begin;
         } else {
           str::append_to_buffer(fragment, begin, end);
-          begin = &*fragment.cbegin();
-          end = &*fragment.cend();
+          t.buffer = std::move(fragment);
+          t_is_set = true;
+          fragment = std::vector<char>();
+          begin = &*t.buffer.cbegin();
+          end = &*t.buffer.cend();
         }
       }
 
-      bool t_is_set = false;
-      Token t;
+      auto append_and_check_unique = [&]() -> bool {
+        if (!t_is_set) {
+          str::append_to_buffer(t.buffer, begin, end);
+        }
+
+        output.push_back(std::move(t));
+        if (args.unique || args.comp_unique) {
+          // some form on uniqueness is being used
+          if (!uniqueness_check(output.size() - 1)) {
+            // the element is not unique. nothing was added to the uniqueness set
+            output.pop_back();
+            return false;
+          }
+        }
+        return true;
+      };
 
       for (OrderedOp& op : args.ordered_ops) {
         if (RmOrFilterOp* rf_op = std::get_if<RmOrFilterOp>(&op)) {
@@ -317,29 +327,32 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           }
         }
       }
-
+      
       // todo
 
       if (is_direct_output) {
-        direct_output.write_output(begin, end);
-      after_direct_apply:
-        if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
-          direct_output.finish_output();
-          throw termination_request();
+        if (tokens_not_stored) {
+
+        } else {
+
         }
-        return false;
+      } else {
+
       }
 
-      if (!t_is_set) {
-        str::append_to_buffer(t.buffer, begin, end);
-      }
-
-      output.push_back(std::move(t));
-      if (args.unique || args.comp_unique) {
-        // some form on uniqueness is being used
-        if (!uniqueness_check(output.size() - 1)) {
-          // the element is not unique. nothing was added to the uniqueness set
-          output.pop_back();
+      if (is_direct_output) {
+        if (!tokens_not_stored) {
+          if (!append_and_check_unique()) {
+            return false;
+          }
+        }
+        direct_output.write_output(begin, end);
+        if (tokens_not_stored) {
+        after_direct_apply:
+          if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
+            direct_output.finish_output();
+            throw termination_request();
+          }
           return false;
         }
       }
@@ -409,7 +422,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
         if (is_match) {
           // if (is_sed) {
-            // write out everything before the match
+          // write out everything before the match
           // }
           auto match_handler = [&](const regex::Match& m) -> bool { //
             return process_token(m.begin, m.end);
