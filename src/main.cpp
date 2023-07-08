@@ -193,9 +193,7 @@ struct UIState {
 
     if (args.tenacious) {
       selections.clear();
-      if (fflush(args.output) == EOF) {
-        throw std::runtime_error("output err");
-      }
+      choose::str::flush_f(args.output);
     } else {
       os.finish_output();
     }

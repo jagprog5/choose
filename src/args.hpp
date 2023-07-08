@@ -7,6 +7,7 @@
 #include <cstring>
 #include <limits>
 #include <vector>
+#include <optional>
 // for version
 #include <ncursesw/curses.h>
 
@@ -41,6 +42,7 @@ struct Arguments {
 
   bool unique = false;
   bool flip = false;
+  bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
   // else, it matches the tokens themselves
@@ -344,6 +346,9 @@ void print_help_message() {
       "                begin cursor and prompt at the bottom of the tui\n"
       "        --flip\n"
       "                reverse the token order. this happens after all other operations\n"
+      "        --flush\n"
+      "                makes the input unbuffered, and the output is flushed after each\n"
+      "                token is written\n"
       "        -i, --ignore-case\n"
       "                make the input delimiter case-insensitive\n"
       "        --in <# tokens>\n"
@@ -515,6 +520,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
         {"flip", no_argument, NULL, 0},
+        {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
@@ -644,6 +650,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           // long option without argument or optional argument
           if (strcmp("flip", name) == 0) {
             ret.flip = true;
+          } else if (strcmp("flush", name) == 0) {
+            ret.flush = true;
           } else if (strcmp("comp-sort", name) == 0) {
             ret.comp_sort = true;
             ret.sort = true;

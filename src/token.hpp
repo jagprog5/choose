@@ -125,24 +125,6 @@ struct termination_request : public std::exception {};
 
 namespace {
 
-// returns number of bytes read from file
-size_t get_n_bytes(FILE* f, size_t n, char* out) {
-  // assertion is guaranteed in the cli arg parsing and min_match_length logic.
-  // it makes sure that create_tokens always makes progress
-  assert(n != 0);
-  size_t read_ret = fread(out, sizeof(char), n, f);
-  if (read_ret == 0) {
-    if (feof(f)) {
-      return read_ret;
-    } else {
-      // no need to check ferror here, since we never read zero elements
-      const char* err_string = strerror(errno);
-      throw std::runtime_error(err_string);
-    }
-  }
-  return read_ret;
-}
-
 const char* id(bool is_match) {
   if (is_match) {
     return "match pattern";
@@ -186,6 +168,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_direct_output = args.is_direct_output();
   const bool tokens_not_stored = args.tokens_not_stored();
   const bool has_ops = !args.ordered_ops.empty();
+  const bool flush = args.flush;
 
   const bool is_sort_reverse = args.sort_reverse;
   const bool is_unique = args.unique;
@@ -274,11 +257,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
       }
 
-      auto append_and_check_unique = [&]() -> bool {
-        if (!t_is_set) {
-          str::append_to_buffer(t.buffer, begin, end);
-        }
-
+      auto check_unique_then_append = [&]() -> bool {
         output.push_back(std::move(t));
         if (args.unique || args.comp_unique) {
           // some form on uniqueness is being used
@@ -327,44 +306,47 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           }
         }
       }
-      
-      // todo
 
-      if (is_direct_output) {
-        if (tokens_not_stored) {
-
-        } else {
-
-        }
-      } else {
-
+      if (!tokens_not_stored && !t_is_set) {
+        str::append_to_buffer(t.buffer, begin, end);
       }
 
       if (is_direct_output) {
         if (!tokens_not_stored) {
-          if (!append_and_check_unique()) {
+          if (!check_unique_then_append()) {
             return false;
           }
         }
         direct_output.write_output(begin, end);
-        if (tokens_not_stored) {
-        after_direct_apply:
-          if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
-            direct_output.finish_output();
-            throw termination_request();
-          }
+      after_direct_apply:
+        if (flush) {
+          choose::str::flush_f(args.output);
+        }
+        if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
+          direct_output.finish_output();
+          throw termination_request();
+        }
+        return false;
+      } else {
+        if (!check_unique_then_append()) {
           return false;
         }
+        return output.size() == args.in;
       }
-
-      return output.size() == args.in;
     };
 
     while (1) {
       char* write_pos = &subject[subject_size];
       size_t bytes_to_read = std::min(args.bytes_to_read, args.buf_size - subject_size);
-      size_t bytes_read = get_n_bytes(args.input, bytes_to_read, write_pos);
-      bool input_done = bytes_read != bytes_to_read;
+      size_t bytes_read; // NOLINT
+      bool input_done; // NOLINT
+      if (flush) {
+        bytes_read = str::get_bytes_unbuffered(fileno(args.input), bytes_to_read, write_pos);
+        input_done = bytes_read == 0;
+      } else {
+        bytes_read = str::get_bytes(args.input, bytes_to_read, write_pos);
+        input_done = bytes_read != bytes_to_read;
+      }
       subject_size += bytes_read;
       if (input_done) {
         // required to make end anchors like \Z match at the end of the input

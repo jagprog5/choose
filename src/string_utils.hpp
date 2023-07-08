@@ -5,8 +5,6 @@
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
-#include <iostream>
-#include <optional>
 #include <vector>
 
 namespace choose {
@@ -268,22 +266,32 @@ void write_f(FILE* f, const std::vector<char>& v) {
   write_f(f, &*v.cbegin(), &*v.cend());
 }
 
-// choose either outputs to stdout, or it queues up all the output and sends it later
-void write_optional_buffer(FILE* f, std::optional<std::vector<char>>& output, const std::vector<char>& in) {
-  if (output) {
-    std::vector<char>& v = *output;
-    append_to_buffer(v, &*in.cbegin(), &*in.cend());
-  } else {
-    write_f(f, in);
+void flush_f(FILE* f) {
+  if (fflush(f) == EOF) {
+    throw std::runtime_error("output err");
   }
 }
 
-// write the queued up output
-void finish_optional_buffer(FILE* f, const std::optional<std::vector<char>>& output) {
-  if (output) {
-    const std::vector<char>& q = *output;
-    write_f(f, q);
+size_t get_bytes(FILE* f, size_t n, char* out) {
+  size_t read_ret = fread(out, sizeof(char), n, f);
+  if (read_ret == 0) {
+    if (feof(f)) {
+      return read_ret;
+    } else if (ferror(f)) {
+      const char* err_string = strerror(errno);
+      throw std::runtime_error(err_string);
+    }
   }
+  return read_ret;
+}
+
+size_t get_bytes_unbuffered(int fileno, size_t n, char* out) {
+  ssize_t read_ret = read(fileno, out, n);
+  if (read_ret == -1) {
+    const char* err_string = strerror(errno);
+    throw std::runtime_error(err_string);
+  }
+  return (size_t)read_ret;
 }
 
 namespace utf8 {
