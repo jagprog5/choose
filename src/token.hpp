@@ -163,9 +163,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
-  // sed implies is_match
-  const bool is_sed = args.sed && is_match;
   const bool is_direct_output = args.is_direct_output();
+  // sed implies is_direct_output and is_match
+  const bool is_sed = is_direct_output && is_match && args.sed;
   const bool tokens_not_stored = args.tokens_not_stored();
   const bool has_ops = !args.ordered_ops.empty();
   const bool flush = args.flush;
@@ -177,10 +177,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
   PCRE2_SIZE match_offset = 0;
-  PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
+  PCRE2_SIZE prev_match_end = 0; // only used if !args.match or args.sed
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
 
-  TokenOutputStream direct_output(args); //  if is_direct_output, this is used
+  // if sed, the output is written directly via fwrite
+  TokenOutputStream direct_output(args); //  if is_direct_output and !sed, this is used
   std::vector<Token> output;             // !tokens_not_stored, this is used
 
   // edge case on logic
@@ -281,13 +282,21 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
                 sub_op->direct_apply(out, begin, end);
               };
-              direct_output.write_output(begin, end, direct_apply_sub);
+              if (is_sed) {
+                direct_apply_sub(args.output, begin, end);
+              } else {
+                direct_output.write_output(begin, end, direct_apply_sub);
+              }
             } else {
               IndexOp& in_op = std::get<IndexOp>(op);
               auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
                 in_op.direct_apply(out, begin, end, direct_output.out_count);
               };
-              direct_output.write_output(begin, end, direct_apply_index);
+              if (is_sed) {
+                direct_apply_index(args.output, begin, end);
+              } else {
+                direct_output.write_output(begin, end, direct_apply_index);
+              }
             }
             goto after_direct_apply;
           } else {
@@ -374,7 +383,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       const char* single_byte_delimiter_pos; // points to position of match if match_result is 1
       if (single_byte_delimiter) {
         match_result = 0;
-        single_byte_delimiter_pos = subject + prev_sep_end;
+        single_byte_delimiter_pos = subject + prev_match_end;
         while (single_byte_delimiter_pos < subject + subject_size) {
           if (*single_byte_delimiter_pos == *args.in_byte_delimiter) {
             match_result = 1;
@@ -403,9 +412,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           match = regex::get_match(subject, args.primary_data, id(is_match));
         }
         if (is_match) {
-          // if (is_sed) {
-          // write out everything before the match
-          // }
+          if (is_sed) {
+            // write everything before the match
+            str::write_f(args.output, subject + prev_match_end, match.begin);
+          }
           auto match_handler = [&](const regex::Match& m) -> bool { //
             return process_token(m.begin, m.end);
           };
@@ -413,11 +423,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             break;
           }
         } else {
-          if (process_token(subject + prev_sep_end, match.begin)) {
+          if (process_token(subject + prev_match_end, match.begin)) {
             break;
           }
-          prev_sep_end = match.end - subject;
         }
+        prev_match_end = match.end - subject;
         // set the start offset to just after the match
         match_offset = match.end - subject;
         goto skip_read;
@@ -452,12 +462,19 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             // keep the bytes required, either from the lookback retain for the next iteration,
             // or because the delimiter ended there
             const char* subject_const = subject;
-            new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
+            new_subject_begin = std::min(new_subject_begin, subject_const + prev_match_end);
           }
 
           // cut out the excess from the beginning and adjust the offsets
           match_offset = new_subject_begin_cp - new_subject_begin;
-          prev_sep_end -= new_subject_begin - subject;
+
+          if (is_sed) {
+            if (subject + prev_match_end < new_subject_begin) {
+              // write out the part that is being discarded
+              str::write_f(args.output, subject + prev_match_end, new_subject_begin);
+            }
+          }
+          prev_match_end -= new_subject_begin - subject;
 
           char* to = subject;
           const char* from = new_subject_begin;
@@ -468,10 +485,26 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             subject_size -= from - to;
           } else if (subject_size == args.buf_size) {
             // the buffer size has been filled
+
+            auto clear_except_trailing_incomplete_multibyte = [&]() {
+              if (is_utf && subject + subject_size != subject_effective_end) {
+                subject_size = (subject + subject_size) - subject_effective_end;
+                for (size_t i = 0; i < subject_size; ++i) {
+                  subject[i] = subject[(args.buf_size - subject_size) + i];
+                }
+              } else {
+                subject_size = 0;
+              }
+            };
+
             if (is_match) {
               // count as match failure
+              if (is_sed) {
+                str::write_f(args.output, subject + prev_match_end, subject_effective_end);
+                prev_match_end = 0;
+              }
               match_offset = 0;
-              subject_size = 0;
+              clear_except_trailing_incomplete_multibyte();
             } else {
               // there is not enough room in the match buffer. moving the part
               // of the token at the beginning that won't be a part of a
@@ -491,13 +524,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
                 }
               };
 
-              if (prev_sep_end != 0 || subject == retain_marker) {
+              if (prev_match_end != 0 || subject == retain_marker) {
                 // the buffer is being retained because of lookbehind bytes.
                 // can't properly match, so results in match failure
-                process_fragment(subject + prev_sep_end, subject + subject_size);
-                prev_sep_end = 0;
+                process_fragment(subject + prev_match_end, subject_effective_end);
+                prev_match_end = 0;
                 match_offset = 0;
-                subject_size = 0;
+                clear_except_trailing_incomplete_multibyte();
               } else {
                 // the buffer is being retained because of the previous delimiter
                 // end position. write part
@@ -516,10 +549,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           // no match and no more input:
           // process the last token and break from the loop
           if (!is_match) {
-            if (prev_sep_end != subject_size || args.use_input_delimiter || !fragment.empty()) {
+            if (prev_match_end != subject_size || args.use_input_delimiter || !fragment.empty()) {
               // at this point subject_effective_end is subject + subject_size (since input_done)
-              process_token(subject + prev_sep_end, subject_effective_end);
+              process_token(subject + prev_match_end, subject_effective_end);
             }
+          } else if (is_sed) {
+            str::write_f(args.output, subject + prev_match_end, subject_effective_end);
           }
           break;
         }

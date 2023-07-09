@@ -47,10 +47,10 @@ struct Arguments {
   // match is false indicates that Arguments::primary is the delimiter after tokens.
   // else, it matches the tokens themselves
   bool match = false;
+  // a modifier on match that also sends everything not included in the match
+  bool sed = false;
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
-  // sed not null implies match. used for stream editing
-  const char* sed = 0;
 
   // max is entirely valid, and the default
   typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
@@ -357,7 +357,7 @@ void print_help_message() {
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
       "        --multiline\n"
-      "                implies --regex. enable multiline matching. (affects ^ and $)\n"
+      "                implies --regex. enable multiline matching (affects ^ and $).\n"
       "        --match\n"
       "                the positional argument matches the tokens instead of the\n"
       "                delimiter. the match and each match group is a token\n"
@@ -377,10 +377,9 @@ void print_help_message() {
       "                the number of bytes read from stdin per iteration\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
-      "        --sed <replacement>\n"
-      "                implies --match and -d. applies a global substitution. this is\n"
-      "                preferred to --sub in cases where it is not necessary to split\n"
-      "                the input into tokens before the replacement occurs.\n"
+      "        --sed\n"
+      "                implies --match. in addition to the matched tokens, write\n"
+      "                everything else from the input to the output.\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -509,7 +508,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"locale", required_argument, NULL, 0},
         {"out", required_argument, NULL, 0},
         {"out-index", optional_argument, NULL, 0},
-        {"sed", required_argument, NULL, 0},
         {"take", required_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
@@ -527,6 +525,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"match", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
+        {"sed", no_argument, NULL, 0},
         {"sort", no_argument, NULL, 's'},
         {"selection-order", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
@@ -627,11 +626,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               op.arg1 = argv[optind - 1];
               uncompiled_output.ordered_ops.push_back(op);
             }
-          } else if (strcmp("sed", name) == 0) {
-            ret.use_input_delimiter = true;
-            ret.delimit_not_at_end = true;
-            ret.match = true;
-            ret.sed = optarg;
           } else if (strcmp("comp", name) == 0) {
             uncompiled_output.comp = optarg;
           } else if (strcmp("locale", name) == 0) {
@@ -668,6 +662,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
+          } else if (strcmp("sed", name) == 0) {
+            ret.match = true;
+            ret.sed = true;
           } else if (strcmp("sort-reverse", name) == 0) {
             ret.sort = true;
             ret.sort_reverse = true;
@@ -883,6 +880,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       if (!ret.in_byte_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
         arg_error_preamble(argc, argv);
         fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+        exit(EXIT_FAILURE);
+      }
+
+      if (ret.sed && !ret.is_direct_output()) {
+        arg_error_preamble(argc, argv);
+        fputs("--sed is incompatible with options that prevents direct output, including: sorting, flip, and tui.\n", stderr);
         exit(EXIT_FAILURE);
       }
     }
