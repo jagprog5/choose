@@ -348,7 +348,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       char* write_pos = &subject[subject_size];
       size_t bytes_to_read = std::min(args.bytes_to_read, args.buf_size - subject_size);
       size_t bytes_read; // NOLINT
-      bool input_done; // NOLINT
+      bool input_done;   // NOLINT
       if (flush) {
         bytes_read = str::get_bytes_unbuffered(fileno(args.input), bytes_to_read, write_pos);
         input_done = bytes_read == 0;
@@ -459,7 +459,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           const char* retain_marker = new_subject_begin;
 
           if (!is_match) {
-            // keep the bytes required, either from the lookback retain for the next iteration,
+            // keep the bytes required, either from the lookbehind retain,
             // or because the delimiter ended there
             const char* subject_const = subject;
             new_subject_begin = std::min(new_subject_begin, subject_const + prev_match_end);
@@ -487,12 +487,24 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             // the buffer size has been filled
 
             auto clear_except_trailing_incomplete_multibyte = [&]() {
-              if (is_utf && subject + subject_size != subject_effective_end) {
+              if (is_utf //
+                  && subject + subject_size != subject_effective_end //
+                  && subject != subject_effective_end) {
+                // "is_utf"
+                //    in utf mode
+                // "subject + subject_size != subject_effective_end"
+                //    if the end of the buffer contains an incomplete multibyte
+                // "subject != subject_effective_end"
+                //    if clearing up to that point would do anything (entire buffer is incomplete multibyte)
+                // then:
+                //    clear the entire buffer not including the incomplete multibyte
+                //    at the end (that wasn't used yet)
                 subject_size = (subject + subject_size) - subject_effective_end;
                 for (size_t i = 0; i < subject_size; ++i) {
                   subject[i] = subject[(args.buf_size - subject_size) + i];
                 }
               } else {
+                // clear the buffer
                 subject_size = 0;
               }
             };
