@@ -330,7 +330,7 @@ const char* last_character_start(const char* begin, const char* end) {
     }
 
     if (!is_continuation(*pos)) {
-      break;
+      return pos;
     }
 
     if (--left == 0) {
@@ -338,8 +338,6 @@ const char* last_character_start(const char* begin, const char* end) {
     }
     --pos;
   }
-
-  return pos;
 }
 
 // returns NULL on error
@@ -352,12 +350,10 @@ const char* last_completed_character_end(const char* begin, const char* end) {
   if (len == -1 || pos + len > end) {
     return pos;
   }
-
   return pos + len;
 }
 
-// pos is in range [begin,end).
-// pos might be decremented till begin. begin is an inclusive lower bound.
+// pos is in range [begin,end].
 // it is assumed that end is a character start -> if pos is end, then end is returned.
 // if an error occurs, then pos is returned
 const char* decrement_until_character_start(const char* pos, const char* begin, const char* end) {

@@ -177,7 +177,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
   PCRE2_SIZE match_offset = 0;
-  PCRE2_SIZE prev_match_end = 0; // only used if !args.match or args.sed
+  PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
 
   // if sed, the output is written directly via fwrite
@@ -318,6 +318,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       if (!tokens_not_stored && !t_is_set) {
         str::append_to_buffer(t.buffer, begin, end);
+        begin = &*t.buffer.cbegin(); // not needed since it now points to a copy
+        end = &*t.buffer.cend();     // but keeps things clean
       }
 
       if (is_direct_output) {
@@ -326,13 +328,19 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return false;
           }
         }
-        direct_output.write_output(begin, end);
+        if (is_sed) {
+          str::write_f(args.output, begin, end);
+        } else {
+          direct_output.write_output(begin, end);
+        }
       after_direct_apply:
         if (flush) {
           choose::str::flush_f(args.output);
         }
         if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
-          direct_output.finish_output();
+          if (!is_sed) {
+            direct_output.finish_output();
+          }
           throw termination_request();
         }
         return false;
@@ -383,7 +391,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       const char* single_byte_delimiter_pos; // points to position of match if match_result is 1
       if (single_byte_delimiter) {
         match_result = 0;
-        single_byte_delimiter_pos = subject + prev_match_end;
+        single_byte_delimiter_pos = subject + prev_sep_end;
         while (single_byte_delimiter_pos < subject + subject_size) {
           if (*single_byte_delimiter_pos == *args.in_byte_delimiter) {
             match_result = 1;
@@ -413,21 +421,24 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
         if (is_match) {
           if (is_sed) {
-            // write everything before the match
-            str::write_f(args.output, subject + prev_match_end, match.begin);
-          }
-          auto match_handler = [&](const regex::Match& m) -> bool { //
-            return process_token(m.begin, m.end);
-          };
-          if (regex::get_match_and_groups(subject, match_result, args.primary_data, match_handler, "match pattern")) {
-            break;
+            str::write_f(args.output, subject + match_offset, match.begin);
+            if (process_token(match.begin, match.end)) {
+              break;
+            }
+          } else {
+            auto match_handler = [&](const regex::Match& m) -> bool { //
+              return process_token(m.begin, m.end);
+            };
+            if (regex::get_match_and_groups(subject, match_result, args.primary_data, match_handler, "match pattern")) {
+              break;
+            }
           }
         } else {
-          if (process_token(subject + prev_match_end, match.begin)) {
+          if (process_token(subject + prev_sep_end, match.begin)) {
             break;
           }
+          prev_sep_end = match.end - subject;
         }
-        prev_match_end = match.end - subject;
         // set the start offset to just after the match
         match_offset = match.end - subject;
         goto skip_read;
@@ -462,19 +473,21 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             // keep the bytes required, either from the lookbehind retain,
             // or because the delimiter ended there
             const char* subject_const = subject;
-            new_subject_begin = std::min(new_subject_begin, subject_const + prev_match_end);
+            new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
           }
 
           // cut out the excess from the beginning and adjust the offsets
-          match_offset = new_subject_begin_cp - new_subject_begin;
 
-          if (is_sed) {
-            if (subject + prev_match_end < new_subject_begin) {
+          if (!is_match) {
+            prev_sep_end -= new_subject_begin - subject;
+          } else if (is_sed) {
+            if (subject + match_offset < new_subject_begin) {
               // write out the part that is being discarded
-              str::write_f(args.output, subject + prev_match_end, new_subject_begin);
+              str::write_f(args.output, subject + match_offset, new_subject_begin);
             }
           }
-          prev_match_end -= new_subject_begin - subject;
+
+          match_offset = new_subject_begin_cp - new_subject_begin;
 
           char* to = subject;
           const char* from = new_subject_begin;
@@ -512,8 +525,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             if (is_match) {
               // count as match failure
               if (is_sed) {
-                str::write_f(args.output, subject + prev_match_end, subject_effective_end);
-                prev_match_end = 0;
+                str::write_f(args.output, subject + match_offset, subject_effective_end);
               }
               match_offset = 0;
               clear_except_trailing_incomplete_multibyte();
@@ -536,11 +548,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
                 }
               };
 
-              if (prev_match_end != 0 || subject == retain_marker) {
+              if (prev_sep_end != 0 || subject == retain_marker) {
                 // the buffer is being retained because of lookbehind bytes.
                 // can't properly match, so results in match failure
-                process_fragment(subject + prev_match_end, subject_effective_end);
-                prev_match_end = 0;
+                process_fragment(subject + prev_sep_end, subject_effective_end);
+                prev_sep_end = 0;
                 match_offset = 0;
                 clear_except_trailing_incomplete_multibyte();
               } else {
@@ -561,12 +573,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           // no match and no more input:
           // process the last token and break from the loop
           if (!is_match) {
-            if (prev_match_end != subject_size || args.use_input_delimiter || !fragment.empty()) {
+            if (prev_sep_end != subject_size || args.use_input_delimiter || !fragment.empty()) {
               // at this point subject_effective_end is subject + subject_size (since input_done)
-              process_token(subject + prev_match_end, subject_effective_end);
+              process_token(subject + prev_sep_end, subject_effective_end);
             }
           } else if (is_sed) {
-            str::write_f(args.output, subject + prev_match_end, subject_effective_end);
+            str::write_f(args.output, subject + match_offset, subject_effective_end);
           }
           break;
         }

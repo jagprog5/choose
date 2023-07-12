@@ -378,8 +378,8 @@ void print_help_message() {
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sed\n"
-      "                implies --match. in addition to the matched tokens, write\n"
-      "                everything else from the input to the output.\n"
+      "                like --match, but also writes everything around the tokens, and\n"
+      "                the match groups aren't used as individual tokens\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -877,6 +877,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
 
     if (input == NULL) { // if not unit test
+      // these aren't needed, but make sure the user is doing something sane
       if (!ret.in_byte_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
         arg_error_preamble(argc, argv);
         fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
