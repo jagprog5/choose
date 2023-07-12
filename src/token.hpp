@@ -278,7 +278,15 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           }
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
-            if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
+            if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
+              std::vector<char> out;
+              rep_op->apply(out, subject, subject + subject_size, args.primary_data, args.primary);
+              if (is_sed) {
+                str::write_f(args.output, out);
+              } else {
+                direct_output.write_output(&*out.cbegin(), &*out.cend());
+              }
+            } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
                 sub_op->direct_apply(out, begin, end);
               };
@@ -300,7 +308,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             }
             goto after_direct_apply;
           } else {
-            if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
+            if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
+              rep_op->apply(t.buffer, subject, subject + subject_size, args.primary_data, args.primary);
+            } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               sub_op->apply(t.buffer, begin, end);
             } else {
               IndexOp& in_op = std::get<IndexOp>(op);

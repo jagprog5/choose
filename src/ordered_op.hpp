@@ -68,6 +68,19 @@ struct SubOp {
   }
 };
 
+struct ReplaceOp {
+  const char* replacement;
+  ReplaceOp(const char* replacement) : replacement(replacement) {}
+
+  void apply(std::vector<char>& out,        //
+             const char* subj_begin,             //
+             const char* subj_end,               //
+             const regex::match_data& data, //
+             const regex::code& re) {
+    out = regex::substitute_on_match(data, re, subj_begin, subj_end - subj_begin, this->replacement);
+  }
+};
+
 struct IndexOp {
   enum Align { BEFORE, AFTER };
   enum Type { INPUT, OUTPUT };
@@ -108,7 +121,7 @@ struct IndexOp {
       *ptr++ = ' ';
       size_t without_last = index / 10;
       // index when divided by 10 must take one fewer byte
-      if (without_last != 0) {
+      if (without_last != 0) { // aka greater than 9
         sprintf(ptr, "%zu", without_last);
       }
       // overwrite the null written by sprintf
@@ -141,6 +154,6 @@ struct IndexOp {
   }
 };
 
-using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
+using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, IndexOp>;
 
 } // namespace choose
