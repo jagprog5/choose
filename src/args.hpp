@@ -6,8 +6,8 @@
 #include <csignal>
 #include <cstring>
 #include <limits>
-#include <vector>
 #include <optional>
+#include <vector>
 // for version
 #include <ncursesw/curses.h>
 
@@ -35,7 +35,6 @@ struct Arguments {
 
   // user defined comparison
   regex::code comp = 0;
-  regex::match_data comp_data = 0;
   bool comp_unique = false;
   // if comp_sort is set, then sort should also be set at the same time
   bool comp_sort = false;
@@ -77,7 +76,6 @@ struct Arguments {
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
-  regex::match_data primary_data = 0;
 
   // shortcut for if the delimiter is a single byte; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
@@ -92,9 +90,7 @@ struct Arguments {
   bool can_drop_warn = true;
 
   // a special case where the tokens can be sent directly to the output as they are received
-  bool is_direct_output() const {
-    return !tui && !sort && !flip;
-  }
+  bool is_direct_output() const { return !tui && !sort && !flip; }
 
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
@@ -183,12 +179,10 @@ struct UncompiledCodes {
 
     if (!output.in_byte_delimiter) {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
-      output.primary_data = regex::create_match_data(output.primary);
     }
 
     if (comp) {
       output.comp = regex::compile(comp, re_options, "defined comp");
-      output.comp_data = regex::create_match_data(output.comp);
     }
   }
 };
@@ -896,31 +890,29 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
   }
 
-  if (!ret.in_byte_delimiter) { // only if primary is set
-    // bytes for number of characters
-    if (regex::options(ret.primary) & PCRE2_UTF) {
-      auto before = ret.max_lookbehind;
-      ret.max_lookbehind *= (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER;
-      if (detect_multiply_overflow(ret.max_lookbehind, before, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
-        arg_error_preamble(argc, argv);
-        fputs("multiply overflow on max lookbehind (bytes per utf8 char).\n", stderr);
-        exit(EXIT_FAILURE);
-      }
+  // bytes for number of characters
+  if (ret.primary && regex::options(ret.primary) & PCRE2_UTF) {
+    auto before = ret.max_lookbehind;
+    ret.max_lookbehind *= (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER;
+    if (detect_multiply_overflow(ret.max_lookbehind, before, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
+      arg_error_preamble(argc, argv);
+      fputs("multiply overflow on max lookbehind (bytes per utf8 char).\n", stderr);
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  if (input == NULL) { // if not unit test
+    // these aren't needed, but make sure the user is doing something sane
+    if (ret.primary && regex::min_match_length(ret.primary) > ret.buf_size) {
+      arg_error_preamble(argc, argv);
+      fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+      exit(EXIT_FAILURE);
     }
 
-    if (input == NULL) { // if not unit test
-      // these aren't needed, but make sure the user is doing something sane
-      if (!ret.in_byte_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
-        arg_error_preamble(argc, argv);
-        fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
-        exit(EXIT_FAILURE);
-      }
-
-      if (ret.sed && !ret.is_direct_output()) {
-        arg_error_preamble(argc, argv);
-        fputs("--sed is incompatible with options that prevents direct output, including: sorting, flip, and tui.\n", stderr);
-        exit(EXIT_FAILURE);
-      }
+    if (ret.sed && !ret.is_direct_output()) {
+      arg_error_preamble(argc, argv);
+      fputs("--sed is incompatible with options that prevents direct output, including: sorting, flip, and tui.\n", stderr);
+      exit(EXIT_FAILURE);
     }
   }
 

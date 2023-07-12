@@ -435,9 +435,9 @@ int main(int argc, char* const* argv) {
   choose::nc::screen screen;
 
   UIState state{
-      std::move(args),             //
-      std::move(tokens),           //
-      output_is_tty,               //
+      std::move(args),   //
+      std::move(tokens), //
+      output_is_tty,     //
       choose::BatchOutputStream(state.args),
   };
 

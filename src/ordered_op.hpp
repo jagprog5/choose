@@ -73,8 +73,8 @@ struct ReplaceOp {
   ReplaceOp(const char* replacement) : replacement(replacement) {}
 
   void apply(std::vector<char>& out,        //
-             const char* subj_begin,             //
-             const char* subj_end,               //
+             const char* subj_begin,        //
+             const char* subj_end,          //
              const regex::match_data& data, //
              const regex::code& re) {
     out = regex::substitute_on_match(data, re, subj_begin, subj_end - subj_begin, this->replacement);

@@ -158,8 +158,9 @@ using indirect = std::vector<Token>::size_type; // an index into output
 //      which the caller should handle (exit unless unit test)
 std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool single_byte_delimiter = args.in_byte_delimiter.has_value();
-  const bool is_utf = single_byte_delimiter ? false : regex::options(args.primary) & PCRE2_UTF;
-  const bool is_invalid_utf = single_byte_delimiter ? false : regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF;
+  const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
+  const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
+  regex::match_data primary_data = args.primary ? regex::create_match_data(args.primary) : NULL;
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
@@ -173,6 +174,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_sort_reverse = args.sort_reverse;
   const bool is_unique = args.unique;
   const bool is_comp_unique = args.comp_unique;
+
+  regex::match_data comp_data = args.comp ? regex::create_match_data(args.comp) : NULL;
 
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
@@ -190,15 +193,15 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto user_defined_comparison = [is_sort_reverse, &args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    auto user_defined_comparison = [is_sort_reverse, &comp_data = std::as_const(comp_data), &args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
       if (is_sort_reverse) {
         std::swap(lhs, rhs);
       }
 
-      int lhs_result = regex::match(args.comp, lhs->buffer.data(), lhs->buffer.size(), args.comp_data, "user comp");
-      int rhs_result = regex::match(args.comp, rhs->buffer.data(), rhs->buffer.size(), args.comp_data, "user comp");
+      int lhs_result = regex::match(args.comp, lhs->buffer.data(), lhs->buffer.size(), comp_data, "user comp");
+      int rhs_result = regex::match(args.comp, rhs->buffer.data(), rhs->buffer.size(), comp_data, "user comp");
       if (lhs_result && !rhs_result) {
         return 1;
       } else {
@@ -280,7 +283,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
               std::vector<char> out;
-              rep_op->apply(out, subject, subject + subject_size, args.primary_data, args.primary);
+              rep_op->apply(out, subject, subject + subject_size, primary_data, args.primary);
               if (is_sed) {
                 str::write_f(args.output, out);
               } else {
@@ -309,7 +312,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             goto after_direct_apply;
           } else {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
-              rep_op->apply(t.buffer, subject, subject + subject_size, args.primary_data, args.primary);
+              rep_op->apply(t.buffer, subject, subject + subject_size, primary_data, args.primary);
             } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               sub_op->apply(t.buffer, begin, end);
             } else {
@@ -413,7 +416,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         match_result = regex::match(args.primary,                    //
                                     subject,                         //
                                     subject_effective_end - subject, //
-                                    args.primary_data,               //
+                                    primary_data,                    //
                                     id(is_match),                    //
                                     match_offset,                    //
                                     match_options);
@@ -427,7 +430,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         if (single_byte_delimiter) {
           match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
         } else {
-          match = regex::get_match(subject, args.primary_data, id(is_match));
+          match = regex::get_match(subject, primary_data, id(is_match));
         }
         if (is_match) {
           if (is_sed) {
@@ -439,7 +442,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             auto match_handler = [&](const regex::Match& m) -> bool { //
               return process_token(m.begin, m.end);
             };
-            if (regex::get_match_and_groups(subject, match_result, args.primary_data, match_handler, "match pattern")) {
+            if (regex::get_match_and_groups(subject, match_result, primary_data, match_handler, "match pattern")) {
               break;
             }
           }
@@ -461,7 +464,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             new_subject_begin = subject_effective_end;
           } else {
             // there was a partial match and there is more input
-            regex::Match match = regex::get_match(subject, args.primary_data, id(is_match));
+            regex::Match match = regex::get_match(subject, primary_data, id(is_match));
             new_subject_begin = match.begin;
           }
 
@@ -510,7 +513,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             // the buffer size has been filled
 
             auto clear_except_trailing_incomplete_multibyte = [&]() {
-              if (is_utf //
+              if (is_utf                                             //
                   && subject + subject_size != subject_effective_end //
                   && subject != subject_effective_end) {
                 // "is_utf"
