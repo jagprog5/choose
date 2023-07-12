@@ -217,7 +217,7 @@ For a grep-like task, its the same speed as pcre2grep, which uses the same regex
 # speed test. download 370000 words
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
 time (cat words_alpha.txt | grep "test" > /dev/null)      # 0.008s
-# pcre2grep 10.42, compiled with -O3 to be the same as choose, linked with same PCRE2
+# pcre2grep 10.42, compiled with -O3 to be the same as choose, linked with same PCRE2.
 time (cat words_alpha.txt | pcre2grep "test" > /dev/null) # 0.033s
 time (cat words_alpha.txt | choose -f "test" > /dev/null) # 0.033s
 ```
@@ -225,18 +225,23 @@ time (cat words_alpha.txt | choose -f "test" > /dev/null) # 0.033s
 For a substitution task, it's **faster** than sed:
 
 ```bash
-# using tr to make the file a single line, since sed is line buffered and slow otherwise
-# GNU sed 4.9.32, compiled from source with -O3 to be the same as choose
-time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)    # 0.025s
-time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -d > /dev/null) # 0.017s
+# using tr to make the file a single line, since sed is line buffered and slow otherwise.
+# GNU sed 4.9.32, compiled from source with -O3 to be the same as choose.
+time (cat words_alpha.txt | tr '\n' ' ' | sed "s/test/banana/g" > /dev/null)              # 0.025s
+
+# choose has two different ways of applying a substitution.
+# the first way uses the input and output delimiters, but the output must be literal.
+time (cat words_alpha.txt | tr '\n' ' ' | choose test -o banana -d > /dev/null)           # 0.017s
+# the second way is a general substitution.
+time (cat words_alpha.txt | tr '\n' ' ' | choose --sed test --replace banana > /dev/null) # 0.016s
 ```
 
-For getting unique elements, it's slightly faster than awk:
+For getting unique elements, it's **faster** than awk:
 
 ```bash
 # GNU Awk 4.1.4
 time (cat words_alpha.txt | awk '!a[$0]++' > /dev/null) # 0.220s
-time (cat words_alpha.txt | choose -u > /dev/null)      # 0.193s
+time (cat words_alpha.txt | choose -u > /dev/null)      # 0.138s
 ```
 
 For sorting and uniqueness, it's **faster** than sort:
@@ -244,7 +249,7 @@ For sorting and uniqueness, it's **faster** than sort:
 ```bash
 # GNU sort 8.28
 time (cat words_alpha.txt | sort -u > /dev/null)    # 0.336s
-time (cat words_alpha.txt | choose -su > /dev/null) # 0.254s
+time (cat words_alpha.txt | choose -su > /dev/null) # 0.200s
 ```
 
 # hist
