@@ -2,7 +2,6 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <cassert>
-#include <cerrno>
 #include <csignal>
 #include <cstring>
 #include <limits>
@@ -12,6 +11,7 @@
 #include <ncursesw/curses.h>
 
 #include "ordered_op.hpp"
+#include "numeric_utils.hpp"
 
 namespace choose {
 
@@ -167,11 +167,8 @@ struct UncompiledCodes {
       } else {
         // there's definitely better ways of recognizing if a regex pattern
         // consists of a single byte, but this is enough for common cases
-        auto in_range = [](char var, char low_inclusive, char high_inclusive) -> bool { //
-          return var >= low_inclusive && var <= high_inclusive;
-        };
         char ch = primary[0];
-        if ((ch == '\n' || ch == '\0' || in_range(ch, '0', '9') || in_range(ch, 'a', 'z') || in_range(ch, 'A', 'Z'))) {
+        if ((ch == '\n' || ch == '\0' || num::in(ch, '0', '9') || num::in(ch, 'a', 'z') || num::in(ch, 'A', 'Z'))) {
           output.in_byte_delimiter = ch;
         }
       }
@@ -187,55 +184,16 @@ struct UncompiledCodes {
   }
 };
 
-void arg_error_preamble(int argc, const char* const* argv, FILE* err = stderr) {
+// prefixes error message with the path of this executable
+void arg_error_preamble(int argc, const char* const* argv) {
   const char* me; // NOLINT initialized below
   if (argc > 0 && argv && *argv) {
     me = *argv;
   } else {
     me = "choose";
   }
-  fputs(me, err);
-  fputs(": ", err);
-}
-
-// parse a non-negative long, placed in out, from null terminating string, str.
-// on parse or range error, arg_has_errors is set to true, and an error is
-// printed to err, which includes the name and args; out will have been written
-// to but should not be used
-void parse_ul(const char* str, //
-              long* out,
-              unsigned long min_inclusive,
-              unsigned long max_inclusive,
-              bool* arg_has_errors,
-              const char* name,
-              int argc,
-              const char* const* argv,
-              FILE* err = stderr) {
-  // based off https://stackoverflow.com/a/14176593/15534181
-  char* temp; // NOLINT initialized by strtol
-  errno = 0;
-  // atoi/atol gives UB for value out of range
-  // strtoul is trash and doesn't handle negative values in a sane way
-  *out = std::strtol(str, &temp, 0);
-  if (temp == str || *temp != '\0' || ((*out == LONG_MIN || *out == LONG_MAX) && errno == ERANGE)) {
-    if (err) {
-      arg_error_preamble(argc, argv, err);
-      fprintf(stderr, "--%s parse error\n", name);
-    }
-    *arg_has_errors = true;
-  } else if (*out < 0 || (unsigned long)*out < min_inclusive || (unsigned long)*out > max_inclusive) {
-    if (err) {
-      arg_error_preamble(argc, argv, err);
-      fprintf(stderr, "--%s value out of range\n", name);
-    }
-    *arg_has_errors = true;
-  }
-}
-
-template <typename T>
-bool detect_multiply_overflow(T result, T a, T b) {
-  static_assert(std::is_unsigned<T>::value);
-  return a != 0 && result / a != b;
+  fputs(me, stderr);
+  fputs(": ", stderr);
 }
 
 // this function exits
@@ -244,10 +202,6 @@ void print_version_message() {
     "ncurses " choose_xstr(NCURSES_VERSION_MAJOR) "." choose_xstr(NCURSES_VERSION_MINOR) "." choose_xstr(NCURSES_VERSION_PATCH) ", "
     "pcre2 " choose_xstr(PCRE2_MAJOR) "." choose_xstr(PCRE2_MINOR)) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
   exit(exit_code);
-}
-
-void sigint_handler(int) {
-  // signal sent to child process. wait for pclose to finish
 }
 
 // this function exits
@@ -443,7 +397,8 @@ void print_help_message() {
     exit(EXIT_FAILURE);
   }
 
-  if (signal(SIGINT, sigint_handler) == SIG_IGN) {
+  // signal sent to child process. wait for pclose to finish
+  if (signal(SIGINT, [](int) {}) == SIG_IGN) {
     signal(SIGINT, SIG_IGN);
   }
 
@@ -557,34 +512,28 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         // long option
         const char* name = long_options[option_index].name;
         if (optarg) {
+          auto on_num_err = [&]() {
+            arg_error_preamble(argc, argv);
+            fprintf(stderr, "--%s parse error\n", name);
+            arg_has_errors = true;
+          };
+
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             UncompiledOrderedOp op{UncompiledOrderedOp::REMOVE, optarg, NULL};
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("buf-size", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
-            ret.buf_size = v;
+            ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size_frag)>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.buf_size_frag = v;
+            ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
           } else if (strcmp("in", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
-            ret.in = v;
+            ret.in = num::parse_unsigned<decltype(ret.in)>(on_num_err, optarg);
           } else if (strcmp("max-lookbehind", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.max_lookbehind)>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.max_lookbehind = v;
+            ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
           } else if (strcmp("read", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.bytes_to_read)>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.bytes_to_read = v;
+            ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
           } else if (strcmp("out", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max(), &arg_has_errors, name, argc, argv);
-            ret.out = v;
+            ret.out = num::parse_unsigned<decltype(ret.out)>(on_num_err, optarg);
           } else if (strcmp("in-index", name) == 0) {
             UncompiledOrderedOp op; // NOLINT
             op.type = UncompiledOrderedOp::INPUT_INDEX;
@@ -647,10 +596,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, "take", argc, argv);
-            ret.in = v;
-            ret.out = v;
+            ret.in = num::parse_unsigned<decltype(ret.in)>(on_num_err, optarg);
+            ret.out = ret.in;
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -875,15 +822,16 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   // defaults
   if (ret.max_lookbehind == std::numeric_limits<decltype(ret.max_lookbehind)>::max()) {
-    ret.max_lookbehind = ret.in_byte_delimiter ? 0 : regex::max_lookbehind_size(ret.primary);
+    ret.max_lookbehind = ret.primary ? regex::max_lookbehind_size(ret.primary) : 0;
   }
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = ret.buf_size;
   }
   if (ret.buf_size_frag == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     // more than the match buffer size by default, since storing is less intensive
-    ret.buf_size_frag = ret.buf_size * 8;
-    if (detect_multiply_overflow(ret.buf_size_frag, ret.buf_size, (decltype(ret.buf_size_frag))8)) {
+    if (auto mul_result = num::mul_overflow(ret.buf_size, (decltype(ret.buf_size))8)) {
+      ret.buf_size_frag = *mul_result;
+    } else {
       arg_error_preamble(argc, argv);
       fputs("multiply overflow on fragment buffer size (when calculating default value).\n", stderr);
       exit(EXIT_FAILURE);
@@ -892,9 +840,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   // bytes for number of characters
   if (ret.primary && regex::options(ret.primary) & PCRE2_UTF) {
-    auto before = ret.max_lookbehind;
-    ret.max_lookbehind *= (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER;
-    if (detect_multiply_overflow(ret.max_lookbehind, before, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
+    if (auto mul_result = num::mul_overflow(ret.max_lookbehind, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
+      ret.max_lookbehind = *mul_result;
+    } else {
       arg_error_preamble(argc, argv);
       fputs("multiply overflow on max lookbehind (bytes per utf8 char).\n", stderr);
       exit(EXIT_FAILURE);
@@ -903,10 +851,16 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   if (input == NULL) { // if not unit test
     // these aren't needed, but make sure the user is doing something sane
-    if (ret.primary && regex::min_match_length(ret.primary) > ret.buf_size) {
-      arg_error_preamble(argc, argv);
-      fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
-      exit(EXIT_FAILURE);
+    if (ret.primary) {
+      auto min = regex::min_match_length(ret.primary);
+      if (regex::options(ret.primary) & PCRE2_UTF) {
+        min *= str::utf8::MAX_BYTES_PER_CHARACTER;
+      }
+      if (min > ret.buf_size) {
+        arg_error_preamble(argc, argv);
+        fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+        exit(EXIT_FAILURE);
+      }
     }
 
     if (ret.sed && !ret.is_direct_output()) {

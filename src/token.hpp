@@ -48,7 +48,7 @@ struct TokenOutputStream {
   // write a part of a token to the output.
   // the last part of a token must instead use write_output
   void write_output_fragment(const char* begin, const char* end) {
-    if (delimit_required_) {
+    if (delimit_required_ && !args.sed) {
       str::write_f(args.output, args.out_delimiter);
     }
     delimit_required_ = false;
@@ -63,7 +63,7 @@ struct TokenOutputStream {
   void write_output(const char* begin, //
                     const char* end,
                     T handler = TokenOutputStream::default_write) {
-    if (delimit_required_) {
+    if (delimit_required_ && !args.sed) {
       str::write_f(args.output, args.out_delimiter);
     }
     delimit_required_ = true;
@@ -77,7 +77,7 @@ struct TokenOutputStream {
 
   // call after all other writing has finished
   void finish_output() {
-    if (!args.delimit_not_at_end && (out_count || args.delimit_on_empty)) {
+    if (!args.delimit_not_at_end && (out_count || args.delimit_on_empty) && !args.sed) {
       str::write_f(args.output, args.bout_delimiter);
     }
     delimit_required_ = false; // optional reset of state
@@ -284,30 +284,18 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
               std::vector<char> out;
               rep_op->apply(out, subject, subject + subject_size, primary_data, args.primary);
-              if (is_sed) {
-                str::write_f(args.output, out);
-              } else {
-                direct_output.write_output(&*out.cbegin(), &*out.cend());
-              }
+              direct_output.write_output(&*out.cbegin(), &*out.cend());
             } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
                 sub_op->direct_apply(out, begin, end);
               };
-              if (is_sed) {
-                direct_apply_sub(args.output, begin, end);
-              } else {
-                direct_output.write_output(begin, end, direct_apply_sub);
-              }
+              direct_output.write_output(begin, end, direct_apply_sub);
             } else {
               IndexOp& in_op = std::get<IndexOp>(op);
               auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
                 in_op.direct_apply(out, begin, end, direct_output.out_count);
               };
-              if (is_sed) {
-                direct_apply_index(args.output, begin, end);
-              } else {
-                direct_output.write_output(begin, end, direct_apply_index);
-              }
+              direct_output.write_output(begin, end, direct_apply_index);
             }
             goto after_direct_apply;
           } else {
@@ -341,19 +329,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return false;
           }
         }
-        if (is_sed) {
-          str::write_f(args.output, begin, end);
-        } else {
-          direct_output.write_output(begin, end);
-        }
-      after_direct_apply:
+        direct_output.write_output(begin, end);
+after_direct_apply:
         if (flush) {
           choose::str::flush_f(args.output);
         }
         if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
-          if (!is_sed) {
-            direct_output.finish_output();
-          }
+          direct_output.finish_output();
           throw termination_request();
         }
         return false;
@@ -398,7 +380,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         subject_effective_end = subject + subject_size;
       }
 
-    skip_read: // do another iteration but don't read in any more bytes
+skip_read: // do another iteration but don't read in any more bytes
 
       int match_result;
       const char* single_byte_delimiter_pos; // points to position of match if match_result is 1
@@ -614,11 +596,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     if (args.flip) {
       std::reverse(output.begin(), output.end());
     }
-  } // scope for goto
 
-  if (output.size() > args.out) {
-    output.resize(args.out);
-  }
+    if (output.size() > args.out) {
+      output.resize(args.out);
+    }
+
+  } // scope for goto
 
 skip_all:
 

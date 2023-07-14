@@ -803,41 +803,43 @@ BOOST_AUTO_TEST_CASE(null_input_delimiter) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(parse_ul) {
-  int argc = 1;
-  const char* const argv[] = {"/tester/path/to/parse_ul"};
-  long out; // NOLINT
-  bool arg_has_errors = false;
-  choose::parse_ul("123", &out, 0, 1000, &arg_has_errors, "simple", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
-  BOOST_REQUIRE_EQUAL(out, 123);
-  choose::parse_ul("banana", &out, 0, 1000, &arg_has_errors, "simple parse error", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("-999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "-range parse err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "+range parse err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("3", &out, 3, 1000, &arg_has_errors, "-range inclusive", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
-  BOOST_REQUIRE_EQUAL(out, 3);
-  choose::parse_ul("1000", &out, 3, 1000, &arg_has_errors, "+range inclusive", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
-  BOOST_REQUIRE_EQUAL(out, 1000);
-  choose::parse_ul("2", &out, 3, 1000, &arg_has_errors, "-range exclusive err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("1001", &out, 3, 1000, &arg_has_errors, "+range exclusive err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-}
-
 BOOST_AUTO_TEST_CASE(in_index_before) {
   choose_output out = run_choose("this\nis\na\ntest", {"--in-index=before", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"0 this", "1 is", "2 a", "3 test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(numeric_utils)
+
+BOOST_AUTO_TEST_CASE(numeric_utils) {
+  BOOST_REQUIRE_EQUAL(*num::mul_overflow(7u, 15u), 105u);
+  BOOST_REQUIRE(num::mul_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
+  BOOST_REQUIRE_EQUAL(*num::add_overflow(7u, 15u), 22u);
+  BOOST_REQUIRE(num::add_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
+
+  auto should_not_be_called = []() {
+    BOOST_REQUIRE(false);
+  };
+
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "0"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "16"), 16);
+
+  int err_count = 0;
+  auto must_be_called = [&]() {
+    ++err_count;
+  };
+
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "-17"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "   123"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, NULL), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967296"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "42949672950"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967295", true, false), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "0", false, true), 0);
+  BOOST_REQUIRE_EQUAL(err_count, 7);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
