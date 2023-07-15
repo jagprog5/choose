@@ -9,12 +9,12 @@ choose is a tool for creating selection dialogs and doing fancy transformations 
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
 git clone https://github.com/jagprog5/choose.git && cd choose
-scripts/install.bash
+make install
 source ~/.bashrc
 ```
 ## Uninstall
 ```bash
-scripts/uninstall.bash
+make uninstall
 ```
 ## Documentation
 ```bash
@@ -208,6 +208,26 @@ ccc
 </td>
 </tr>
 </table>
+
+# Stream Editing
+
+There's a few different ways that choose can edit a stream. This way is generally the best:
+
+```bash
+echo "this is a test" | choose -r --sed "\w+" --replace banana
+```
+
+In contrast, this implicitly separates the input into tokens each delimited by a newline. Then, on each token a global substitution is applied:
+
+```bash
+echo "this is a test" | choose -r --sub "\w+" banana
+```
+
+Lastly, this is a weird hack the leverages the input and output delimiters. Note that the replacement must be a literal string:
+
+```bash
+echo "this is a test" | choose -r "\w+" -o banana -d
+```
 
 # Speed
 
