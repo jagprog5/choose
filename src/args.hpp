@@ -10,8 +10,8 @@
 // for version
 #include <ncursesw/curses.h>
 
-#include "ordered_op.hpp"
 #include "numeric_utils.hpp"
+#include "ordered_op.hpp"
 
 namespace choose {
 

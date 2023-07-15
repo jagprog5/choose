@@ -914,18 +914,14 @@ BOOST_AUTO_TEST_CASE(numeric_utils) {
   BOOST_REQUIRE_EQUAL(*num::add_overflow(7u, 15u), 22u);
   BOOST_REQUIRE(num::add_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
 
-  auto should_not_be_called = []() {
-    BOOST_REQUIRE(false);
-  };
+  auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
   BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "0"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
   BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "16"), 16);
 
   int err_count = 0;
-  auto must_be_called = [&]() {
-    ++err_count;
-  };
+  auto must_be_called = [&]() { ++err_count; };
 
   BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "-17"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "   123"), 0);

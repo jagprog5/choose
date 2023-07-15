@@ -85,7 +85,7 @@ struct UIState {
 
   // also handles prompt window drawing, and initialization of windows
   void on_resize() {
-  again:
+again:
     getmaxyx(stdscr, num_rows, num_columns);
     int min_num_rows = 1;
     if (args.prompt) {

@@ -33,7 +33,7 @@ std::optional<T> add_overflow(const T& a, const T& b) {
 }
 
 // parse a non-negative T from null terminating base 10 string.
-template<typename T, typename OnErr>
+template <typename T, typename OnErr>
 T parse_unsigned(OnErr onErr, const char* str, bool zero_allowed = true, bool max_allowed = true) {
   // this function was surprisingly difficult to make.
   //  - atol gives UB for value out of range
@@ -45,7 +45,7 @@ T parse_unsigned(OnErr onErr, const char* str, bool zero_allowed = true, bool ma
     onErr();
     return 0;
   }
-  T out = 0;  
+  T out = 0;
   while (1) {
     char ch = *str++;
     if (ch == '\0') {
@@ -85,5 +85,5 @@ T parse_unsigned(OnErr onErr, const char* str, bool zero_allowed = true, bool ma
   return out;
 }
 
-}
-}
+} // namespace num
+} // namespace choose
