@@ -109,7 +109,7 @@ struct BatchOutputStream {
 
   BatchOutputStream(const Arguments& args)
       : args(args),                                        //
-        qo{isatty(fileno(args.output)) && args.tenacious ? //
+        qo{isatty(fileno(args.output)) && args.tenacious ? // NOLINT args.output can never by null here
                std::optional<std::vector<char>>(std::vector<char>())
                                                          : std::nullopt} {}
 
@@ -402,8 +402,8 @@ after_direct_apply:
 
 skip_read: // do another iteration but don't read in any more bytes
 
-      int match_result;
-      const char* single_byte_delimiter_pos; // points to position of match if match_result is 1
+      int match_result;                      // NOLINT
+      const char* single_byte_delimiter_pos; // NOLINT points to position of match if match_result is 1
       if (single_byte_delimiter) {
         match_result = 0;
         single_byte_delimiter_pos = subject + prev_sep_end;
@@ -428,7 +428,7 @@ skip_read: // do another iteration but don't read in any more bytes
         // a complete match:
         // process the match, set the offsets, then do another iteration without
         // reading more input
-        regex::Match match;
+        regex::Match match; // NOLINT
         if (single_byte_delimiter) {
           match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
         } else {

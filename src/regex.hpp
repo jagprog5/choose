@@ -220,7 +220,7 @@ struct Match {
   const char* begin;
   const char* end;
 
-  void ensure_sane(const char* identification) {
+  void ensure_sane(const char* identification) const {
     // regarding code coverage, this does show up depending on the distribution of pcre2
     if (begin > end) {
       char msg[512];
@@ -240,7 +240,7 @@ Match get_match(const char* subject, const match_data& match_data, const char* i
   return m;
 }
 
-// T is a handler lambda bool(Match&&), which is called with the match and each match group
+// T is a handler lambda bool(Match), which is called with the match and each match group
 // the handler should return true iff no other groups should be processed
 // rc is the return value from regex::match
 // returns true iff no other matches or groups should be processed
@@ -250,7 +250,7 @@ bool get_match_and_groups(const char* subject, int rc, const match_data& match_d
   for (int i = 0; i < rc; ++i) {
     auto m = Match{subject + ovector[2 * i], subject + ovector[2 * i + 1]};
     m.ensure_sane(identification);
-    if (handler(std::move(m))) {
+    if (handler(m)) {
       return true;
     }
   }

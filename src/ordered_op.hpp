@@ -45,12 +45,12 @@ struct SubOp {
       : target(std::move(target)), //
         replacement(replacement) {}
 
-  void apply(std::vector<char>& out, const char* begin, const char* end) { //
+  void apply(std::vector<char>& out, const char* begin, const char* end) const { //
     out = regex::substitute_global(target, begin, end - begin, replacement);
   }
 
   // same as apply, but no copies or moves. sent straight to the output
-  void direct_apply(FILE* out, const char* begin, const char* end) {
+  void direct_apply(FILE* out, const char* begin, const char* end) const {
     regex::match_data data = regex::create_match_data(this->target);
     const char* offset = begin;
     while (offset < end) {
@@ -76,7 +76,7 @@ struct ReplaceOp {
              const char* subj_begin,        //
              const char* subj_end,          //
              const regex::match_data& data, //
-             const regex::code& re) {
+             const regex::code& re) const {
     out = regex::substitute_on_match(data, re, subj_begin, subj_end - subj_begin, this->replacement);
   }
 };

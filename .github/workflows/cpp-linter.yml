@@ -25,10 +25,11 @@ jobs:
             portability-*,\
             clang-analyzer-*,\
             cppcoreguidelines-*,\
+            -readability-else-after-return,\
             -readability-implicit-bool-conversion,\
             -readability-named-parameter,\
             -readability-magic-numbers,\
-            -readability-else-after-return,\
+            -readability-uppercase-literal-suffix,\
             -readability-function-cognitive-complexity,\
             -cppcoreguidelines-avoid-magic-numbers,\
             -cppcoreguidelines-macro-usage,\

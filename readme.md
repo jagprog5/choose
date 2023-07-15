@@ -223,7 +223,7 @@ In contrast, this implicitly separates the input into tokens each delimited by a
 echo "this is a test" | choose -r --sub "\w+" banana
 ```
 
-Lastly, this is a weird hack the leverages the input and output delimiters. Note that the replacement must be a literal string:
+Lastly, this is a weird hack the leverages the input and output delimiters. The replacement must be a literal string:
 
 ```bash
 echo "this is a test" | choose -r "\w+" -o banana -d

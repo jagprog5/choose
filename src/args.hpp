@@ -568,7 +568,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
                 break;
               }
             }
-            UncompiledOrderedOp op;
+            UncompiledOrderedOp op; // NOLINT
             op.type = UncompiledOrderedOp::REPLACE;
             op.arg0 = optarg;
             op.arg1 = NULL;
