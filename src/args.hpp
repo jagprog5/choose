@@ -383,7 +383,7 @@ void print_help_message() {
 #ifdef BUTTON5_PRESSED
       "mouse scroll, "
 #endif
-      "j/k\n\n"
+      "j/k\n"
       "to view the license, or report an issue, visit:\n"
       "        github.com/jagprog5/choose\n";
 

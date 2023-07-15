@@ -6,6 +6,7 @@
 #include <cwchar>
 #include <cwctype>
 #include <vector>
+#include <unistd.h>
 
 namespace choose {
 
