@@ -644,9 +644,10 @@ BOOST_AUTO_TEST_CASE(flush) {
 }
 
 BOOST_AUTO_TEST_CASE(empty_match_target) {
-  // important since PCRE2_NOTEMPTY is used to prevent infinite loop; ensures progress
-  choose_output out = run_choose("aaabbbccc", {"--match", "", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
+  // important since PCRE2_NOTEMPTY_ATSTART is used to prevent infinite loop; ensures progress
+  choose_output out = run_choose("1234", {"--match", "", "-t"});
+  // one empty match in between each character and the end
+  choose_output correct_output{std::vector<choose::Token>{"", "", "", "", ""}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

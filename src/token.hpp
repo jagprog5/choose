@@ -194,7 +194,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   size_t subject_size = 0;     // how full is the buffer
   PCRE2_SIZE match_offset = 0;
   PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
-  uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
+  uint32_t match_options = PCRE2_PARTIAL_HARD;
 
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
   std::vector<Token> output;             // !tokens_not_stored, this is used
@@ -427,6 +427,11 @@ skip_read: // do another iteration but don't read in any more bytes
           match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
         } else {
           match = regex::get_match(subject, primary_data, id(is_match));
+          if (match.begin == match.end) {
+            match_options |= PCRE2_NOTEMPTY_ATSTART;
+          } else {
+            match_options &= ~PCRE2_NOTEMPTY_ATSTART;
+          }
         }
         if (is_match) {
           if (is_sed) {
