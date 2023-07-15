@@ -280,7 +280,7 @@ struct QueuedOutput {
   // if the output from the tui interface is going to that same terminal that
   // the interface is running in then it interferes. this is only an issue if
   // tenacious is enabled, since otherwise the program exits on any output
-  // selected. in this case, queue up the output, and sends it on exit. 
+  // selected. in this case, queue up the output, and sends it on exit.
   std::optional<std::vector<char>> queued;
 
   void write_output(FILE* f, const std::vector<char>& v) {
