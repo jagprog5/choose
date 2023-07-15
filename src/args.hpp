@@ -51,11 +51,8 @@ struct Arguments {
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
-  // max is entirely valid, and the default
-  typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
-
-  // max is entirely valid, and the default
-  typename std::vector<int>::size_type out = std::numeric_limits<decltype(out)>::max();
+  std::optional<typename std::vector<int>::size_type> in;
+  std::optional<typename std::vector<int>::size_type> out;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -527,13 +524,13 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("buf-size-frag", name) == 0) {
             ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
           } else if (strcmp("in", name) == 0) {
-            ret.in = num::parse_unsigned<decltype(ret.in)>(on_num_err, optarg);
+            ret.in = num::parse_unsigned<decltype(ret.in)::value_type>(on_num_err, optarg);
           } else if (strcmp("max-lookbehind", name) == 0) {
             ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
           } else if (strcmp("read", name) == 0) {
             ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
           } else if (strcmp("out", name) == 0) {
-            ret.out = num::parse_unsigned<decltype(ret.out)>(on_num_err, optarg);
+            ret.out = num::parse_unsigned<decltype(ret.out)::value_type>(on_num_err, optarg);
           } else if (strcmp("in-index", name) == 0) {
             UncompiledOrderedOp op; // NOLINT
             op.type = UncompiledOrderedOp::INPUT_INDEX;
@@ -596,7 +593,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            ret.in = num::parse_unsigned<decltype(ret.in)>(on_num_err, optarg);
+            ret.in = num::parse_unsigned<decltype(ret.in)::value_type>(on_num_err, optarg);
             ret.out = ret.in;
           } else {
             arg_error_preamble(argc, argv);

@@ -9,6 +9,14 @@
 #include "regex.hpp"
 #include "string_utils.hpp"
 
+/*
+There's a lot going on in this file. It should have complete code coverage. View with:
+
+cd build
+cmake .. -DBUILD_TESTING=true -DCODE_COVERAGE=true
+make cov-clean && make cov-show
+*/
+
 namespace choose {
 
 // Token is a thin wrapper around vector<char>. provides type clarity
@@ -33,6 +41,8 @@ struct Token {
 struct TokenOutputStream {
   // number of elements written to the output
   size_t out_count = 0;
+  // disambiguate between out_count of zero vs overflow to zero
+  bool has_written = false;
 
   // is a delimiter required before the next write
   bool delimit_required_ = false;
@@ -52,6 +62,7 @@ struct TokenOutputStream {
       str::write_f(args.output, args.out_delimiter);
     }
     delimit_required_ = false;
+    has_written = true;
     str::write_f(args.output, begin, end);
   }
 
@@ -67,6 +78,7 @@ struct TokenOutputStream {
       str::write_f(args.output, args.out_delimiter);
     }
     delimit_required_ = true;
+    has_written = true;
     handler(args.output, begin, end);
     ++out_count;
   }
@@ -77,10 +89,11 @@ struct TokenOutputStream {
 
   // call after all other writing has finished
   void finish_output() {
-    if (!args.delimit_not_at_end && (out_count || args.delimit_on_empty) && !args.sed) {
+    if (!args.delimit_not_at_end && (has_written || args.delimit_on_empty) && !args.sed) {
       str::write_f(args.output, args.bout_delimiter);
     }
     delimit_required_ = false; // optional reset of state
+    has_written = false;
     out_count = 0;
   }
 };
@@ -183,8 +196,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   PCRE2_SIZE prev_sep_end = 0; // only used if !args.match
   uint32_t match_options = PCRE2_PARTIAL_HARD | PCRE2_NOTEMPTY;
 
-  // if sed, the output is written directly via fwrite
-  TokenOutputStream direct_output(args); //  if is_direct_output and !sed, this is used
+  TokenOutputStream direct_output(args); //  if is_direct_output, this is used
   std::vector<Token> output;             // !tokens_not_stored, this is used
 
   // edge case on logic
@@ -335,6 +347,8 @@ after_direct_apply:
           choose::str::flush_f(args.output);
         }
         if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
+          // code coverage reaches here. mistakenly shows finish_output as
+          // unreached but throw is reached. weird.
           direct_output.finish_output();
           throw termination_request();
         }
@@ -417,9 +431,8 @@ skip_read: // do another iteration but don't read in any more bytes
         if (is_match) {
           if (is_sed) {
             str::write_f(args.output, subject + match_offset, match.begin);
-            if (process_token(match.begin, match.end)) {
-              break;
-            }
+            // don't check result since it throws if direct_output (implied here) and last token
+            process_token(match.begin, match.end);
           } else {
             auto match_handler = [&](const regex::Match& m) -> bool { //
               return process_token(m.begin, m.end);
@@ -472,17 +485,18 @@ skip_read: // do another iteration but don't read in any more bytes
           }
 
           // cut out the excess from the beginning and adjust the offsets
-
+          size_t old_match_offset = match_offset;
+          match_offset = new_subject_begin_cp - new_subject_begin;
           if (!is_match) {
             prev_sep_end -= new_subject_begin - subject;
           } else if (is_sed) {
-            if (subject + match_offset < new_subject_begin) {
-              // write out the part that is being discarded
-              str::write_f(args.output, subject + match_offset, new_subject_begin);
+            // write out the part that is being discarded
+            const char* begin = subject + old_match_offset;
+            const char* end = new_subject_begin + match_offset;
+            if (begin < end) {
+              str::write_f(args.output, begin, end);
             }
           }
-
-          match_offset = new_subject_begin_cp - new_subject_begin;
 
           char* to = subject;
           const char* from = new_subject_begin;
@@ -507,23 +521,26 @@ skip_read: // do another iteration but don't read in any more bytes
                 // then:
                 //    clear the entire buffer not including the incomplete multibyte
                 //    at the end (that wasn't used yet)
+                if (is_sed) {
+                  str::write_f(args.output, subject + match_offset, subject_effective_end);
+                }
                 subject_size = (subject + subject_size) - subject_effective_end;
                 for (size_t i = 0; i < subject_size; ++i) {
                   subject[i] = subject[(args.buf_size - subject_size) + i];
                 }
               } else {
                 // clear the buffer
+                if (is_sed) {
+                  str::write_f(args.output, subject + match_offset, subject + subject_size);
+                }
                 subject_size = 0;
               }
             };
 
             if (is_match) {
               // count as match failure
-              if (is_sed) {
-                str::write_f(args.output, subject + match_offset, subject_effective_end);
-              }
-              match_offset = 0;
               clear_except_trailing_incomplete_multibyte();
+              match_offset = 0;
             } else {
               // there is not enough room in the match buffer. moving the part
               // of the token at the beginning that won't be a part of a
@@ -547,9 +564,9 @@ skip_read: // do another iteration but don't read in any more bytes
                 // the buffer is being retained because of lookbehind bytes.
                 // can't properly match, so results in match failure
                 process_fragment(subject + prev_sep_end, subject_effective_end);
+                clear_except_trailing_incomplete_multibyte();
                 prev_sep_end = 0;
                 match_offset = 0;
-                clear_except_trailing_incomplete_multibyte();
               } else {
                 // the buffer is being retained because of the previous delimiter
                 // end position. write part
@@ -597,8 +614,8 @@ skip_read: // do another iteration but don't read in any more bytes
       std::reverse(output.begin(), output.end());
     }
 
-    if (output.size() > args.out) {
-      output.resize(args.out);
+    if (args.out.has_value() && output.size() > *args.out) {
+      output.resize(*args.out);
     }
 
   } // scope for goto
