@@ -177,30 +177,34 @@ BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {
+  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::BEFORE);
   std::vector<char> empty;
-  str::apply_index_op(empty, 123, true);
+  op.apply(empty, 123);
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
   std::vector<char> val_zero;
-  str::apply_index_op(val_zero, 0, true); // log edge case
+  op.apply(val_zero, 0); // log edge case
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
 
+  auto in_op = IndexOp(IndexOp::INPUT, IndexOp::BEFORE);
+  in_op.in_index = 123; // used
   std::vector<char> not_empty{'a', 'b', 'c'};
-  str::apply_index_op(not_empty, 123, true);
+  in_op.apply(not_empty, 999);
   BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_after) {
+  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::AFTER);
   std::vector<char> empty;
-  str::apply_index_op(empty, 123, false);
+  op.apply(empty, 123);
   BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
 
   std::vector<char> less_than_10;
-  str::apply_index_op(less_than_10, 9, false);
+  op.apply(less_than_10, 9);
   BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
-  str::apply_index_op(not_empty, 123, false);
+  op.apply(not_empty, 123);
   BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
 }
 
@@ -356,20 +360,19 @@ BOOST_AUTO_TEST_CASE(simple) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(simple_basic_output) {
-  // see args.is_basic(); also tests delimiters
+BOOST_AUTO_TEST_CASE(delimiters) {
   choose_output out = run_choose("first\nsecond\nthird", {"--output-delimiter", " ", "--batch-delimiter=\n"});
   choose_output correct_output{to_vec("first second third\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_rm_filter) {
+BOOST_AUTO_TEST_CASE(output_in_limit) {
   choose_output out = run_choose("first\nsecond\nthird", {"--in=2"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_in_limit) {
+BOOST_AUTO_TEST_CASE(output_rm_filter) {
   choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--rm=second", "--filter=first"});
   choose_output correct_output{to_vec("first\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -387,15 +390,15 @@ BOOST_AUTO_TEST_CASE(zero_no_tui) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_accumulation) {
-  // basic output avoids a copy when it can, but it still accumulates the input on no/partial delimiter match.
+BOOST_AUTO_TEST_CASE(output_accumulation) {
+  // the output avoids a copy when it can, but it still accumulates the input on no/partial delimiter match.
   // this is needed because an entire token needs to be accumulated before a filter can be applied
   choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "-f", "s"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_output_match) {
+BOOST_AUTO_TEST_CASE(output_match) {
   choose_output out = run_choose("firstaaasecondaaathird", {"aaa", "--read=1", "--match"});
   choose_output correct_output{to_vec("aaa\naaa\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -503,8 +506,14 @@ BOOST_AUTO_TEST_CASE(flip) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(direct_but_not_basic_limit) {
-  choose_output out = run_choose("a\nb\nc", {"--sub", "c", "d", "--out=2"});
+BOOST_AUTO_TEST_CASE(direct_limit) {
+  choose_output out = run_choose("a\nb\nc", {"--sub", "b", "e", "--sub", "e", "f", "--out=2"});
+  choose_output correct_output{to_vec("a\nf\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit) {
+  choose_output out = run_choose("a\nb\nc", {"--sort", "--out=2"});
   choose_output correct_output{to_vec("a\nb\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -512,6 +521,57 @@ BOOST_AUTO_TEST_CASE(direct_but_not_basic_limit) {
 BOOST_AUTO_TEST_CASE(ordered_ops) {
   choose_output out = run_choose("this\nis\nrra\ntest", {"-r", "--sub", "is", "rr", "--rm", "test", "--filter", "rr$", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"thrr", "rr"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(replace_op_last) {
+  choose_output out = run_choose("zzzzabczzzz", {"--sed", "-r", "[^z]", "--replace", "q"});
+  choose_output correct_output{to_vec("zzzzqqqzzzz")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(replace_op_no_last) {
+  choose_output out = run_choose("zzzzabczzzz", {"--sed", "-r", "[^z]", "--replace", "q", "--sub", "q", "0"});
+  choose_output correct_output{to_vec("zzzz000zzzz")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sed_with_limit) {
+  // this is a weird combination of args. should be allowed though
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in=2"});
+  choose_output correct_output{to_vec("aaaa1bbbb2")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sed_buffer_full) {
+  const char* ch = "zzzzzzzzaaaaaazzzzzbbbbzzzzzzz";
+  choose_output out = run_choose(ch, {"--sed", "-r", "(?:aaaaaa|bbbb)", "--buf-size=4"});
+  choose_output correct_output{to_vec(ch)};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sed_beginning_discarded) {
+  // niche code coverage check when beginning part is discarded
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in=2", "--read=2"});
+  choose_output correct_output{to_vec("aaaa1bbbb2")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sed_beginning_discarded_with_lookbehind) {
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "(?<=[a-z])[0-9]", "--in=2", "--read=2"});
+  choose_output correct_output{to_vec("aaaa1bbbb2")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(index_op_last) {
+  choose_output out = run_choose("here are some words", {" ", "--in-index"});
+  choose_output correct_output{to_vec("0 here\n1 are\n2 some\n3 words\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(index_op_after_last) {
+  choose_output out = run_choose("here are some words", {" ", "--in-index=after"});
+  choose_output correct_output{to_vec("here 0\nare 1\nsome 2\nwords 3\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -576,10 +636,24 @@ BOOST_AUTO_TEST_CASE(delimiter_no_match) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(direct_but_tokens_stored) {
+  choose_output out = run_choose("this\nis\nis\na\ntest", {"-u", "--out=3"});
+  choose_output correct_output{to_vec("this\nis\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(flush) {
+  // this is difficult to test other than manual, with a script that produces output with delays
+  choose_output out = run_choose("here\nis\nsome\ninput", {"--flush"});
+  choose_output correct_output{to_vec("here\nis\nsome\ninput\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(empty_match_target) {
-  // important since PCRE2_NOTEMPTY is used to prevent infinite loop; ensures progress
-  choose_output out = run_choose("aaabbbccc", {"--match", "", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
+  // important since PCRE2_NOTEMPTY_ATSTART is used to prevent infinite loop; ensures progress
+  choose_output out = run_choose("1234", {"--match", "", "-t"});
+  // one empty match in between each character and the end
+  choose_output correct_output{std::vector<choose::Token>{"", "", "", "", ""}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -662,6 +736,30 @@ BOOST_AUTO_TEST_CASE(buf_size_match_enough) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(buf_size_trailing_incomplete_multibyte) {
+  const char subject[] = {'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, 'a', '\0'};
+  const char match_target[] = {'(', '?', ':', 'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, '|', 'a', ')', '\0'};
+  choose_output out = run_choose(subject, {"--utf", "--match", "-r", match_target, "--buf-size=5"});
+  choose_output correct_output{to_vec("a\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(buf_size_sed_trailing_incomplete_multibyte) {
+  const char subject[] = {'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, 'a', '\0'};
+  const char match_target[] = {'(', '?', ':', 'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, '|', 'a', ')', '\0'};
+  choose_output out = run_choose(subject, {"--utf", "--sed", "-r", match_target, "--buf-size=5"});
+  choose_output correct_output{to_vec(subject)};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(buf_size_entirely_composed_incomplete_multibyte) {
+  const char ch[] = {(char)0xEF, (char)0xBB, (char)0xBF};
+  // this checks two things:
+  // 1. no spin lock from being unable to clear the buffer
+  // 2. the third byte causes a UTF-8 error on next iteration.
+  BOOST_REQUIRE_THROW(choose_output out = run_choose(ch, {ch, "--utf", "--buf-size=2"}), std::runtime_error);
+}
+
 BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
   choose_output out = run_choose("aaa1234aaaa1234aaaa", {"--match", "1234", "--read=4", "--buf-size=4", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"1234", "1234"}};
@@ -669,14 +767,6 @@ BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
 }
 
 BOOST_AUTO_TEST_CASE(frag_flush_in_process_token) {
-  // ensure that a fragment being queued up at the end does end up in the output
-  choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-s", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"aaaa", "hereisaline"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(frag_flush_in_basic_process_token) {
-  // same as above but for basic
   // notice the useless filter is needed so it doesn't do an optimization where the fragments are sent straight to the output
   choose_output out = run_choose("hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "-r", "-f", ".*"});
   choose_output correct_output{to_vec("hereisaline\naaaa\n")};
@@ -703,16 +793,9 @@ BOOST_AUTO_TEST_CASE(frag_buffer_too_small_appending) {
 }
 
 BOOST_AUTO_TEST_CASE(frag_buffer_too_small_process_token) {
-  // checks that basic_process discards the fragment if it would exceed the fragment size
+  // checks that process_token discards the fragment if it would exceed the fragment size
   choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(frag_buffer_too_small_basic_process_token) {
-  // checks that basic_process discards the fragment if it would exceed the fragment size
-  choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4", "-f", ".*"});
-  choose_output correct_output{to_vec("")};
+  choose_output correct_output{std::vector<choose::Token>{""}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -722,7 +805,7 @@ BOOST_AUTO_TEST_CASE(process_fragments) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(basic_process_fragment_in_count) {
+BOOST_AUTO_TEST_CASE(process_fragment_in_count) {
   // ensure that fragments are counted correctly. only on completion is the in count incremented
   choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--in=2"});
   choose_output correct_output{to_vec("zzzzzzzzz\nhereisaline\n")};
@@ -815,41 +898,39 @@ BOOST_AUTO_TEST_CASE(null_input_delimiter) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(parse_ul) {
-  int argc = 1;
-  const char* const argv[] = {"/tester/path/to/parse_ul"};
-  long out; // NOLINT
-  bool arg_has_errors = false;
-  choose::parse_ul("123", &out, 0, 1000, &arg_has_errors, "simple", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
-  BOOST_REQUIRE_EQUAL(out, 123);
-  choose::parse_ul("banana", &out, 0, 1000, &arg_has_errors, "simple parse error", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("-999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "-range parse err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("999999999999999999999999999999999999999999999999999999999999999999", &out, 0, 1000, &arg_has_errors, "+range parse err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("3", &out, 3, 1000, &arg_has_errors, "-range inclusive", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
-  BOOST_REQUIRE_EQUAL(out, 3);
-  choose::parse_ul("1000", &out, 3, 1000, &arg_has_errors, "+range inclusive", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, false);
-  BOOST_REQUIRE_EQUAL(out, 1000);
-  choose::parse_ul("2", &out, 3, 1000, &arg_has_errors, "-range exclusive err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-  choose::parse_ul("1001", &out, 3, 1000, &arg_has_errors, "+range exclusive err", argc, argv, 0);
-  BOOST_REQUIRE_EQUAL(arg_has_errors, true);
-  arg_has_errors = false;
-}
-
 BOOST_AUTO_TEST_CASE(in_index_before) {
   choose_output out = run_choose("this\nis\na\ntest", {"--in-index=before", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"0 this", "1 is", "2 a", "3 test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(numeric_utils)
+
+BOOST_AUTO_TEST_CASE(numeric_utils) {
+  BOOST_REQUIRE_EQUAL(*num::mul_overflow(7u, 15u), 105u);
+  BOOST_REQUIRE(num::mul_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
+  BOOST_REQUIRE_EQUAL(*num::add_overflow(7u, 15u), 22u);
+  BOOST_REQUIRE(num::add_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
+
+  auto should_not_be_called = []() { BOOST_REQUIRE(false); };
+
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "0"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "16"), 16);
+
+  int err_count = 0;
+  auto must_be_called = [&]() { ++err_count; };
+
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "-17"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "   123"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, NULL), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967296"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "42949672950"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967295", true, false), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "0", false, true), 0);
+  BOOST_REQUIRE_EQUAL(err_count, 7);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -875,148 +956,6 @@ BOOST_AUTO_TEST_CASE(match_failure) {
 
 BOOST_AUTO_TEST_CASE(sub_failure) {
   BOOST_REQUIRE_THROW(run_choose("test", {"-r", "--sub", "test", "${"}), std::runtime_error);
-}
-
-BOOST_AUTO_TEST_SUITE_END()
-
-#include <random>
-
-// this does not ensure correctness, but can catch crashes
-BOOST_AUTO_TEST_SUITE(fuzz)
-
-BOOST_AUTO_TEST_CASE(create_prompt_lines_fuzz) {
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<char> data_dis(-128, 127);
-  std::uniform_int_distribution<size_t> non_zero_len_dis(1, 200);
-  std::uniform_int_distribution<size_t> data_len_dis(0, 200);
-
-  for (int iter = 0; iter < 1000; ++iter) {
-    std::vector<char> in;
-    in.resize(non_zero_len_dis(gen));
-    for (size_t i = 0; i < in.size(); ++i) {
-      char ch; // NOLINT
-      do {
-        ch = data_dis(gen);
-      } while (!ch);
-      in[i] = data_dis(gen);
-    }
-    if (!in.empty()) {
-      *in.rbegin() = '\0';
-    }
-
-    std::vector<std::vector<wchar_t>> out;
-    try {
-      out = str::create_prompt_lines(in.data(), data_len_dis(gen));
-    } catch (const std::exception& e) {
-      if (std::strcmp(e.what(), "decode err") == 0) {
-        continue;
-      }
-      throw;
-    }
-
-    for (const std::vector<wchar_t>& line : out) {
-      BOOST_REQUIRE(!line.empty());
-      BOOST_REQUIRE_EQUAL(*line.crbegin(), L'\0');
-    }
-  }
-}
-
-bool endsWith(const char* str, const char* ending) {
-  size_t strLen = std::strlen(str);
-  size_t endingLen = std::strlen(ending);
-  if (endingLen > strLen) {
-    return false;
-  }
-  return std::strcmp(str + (strLen - endingLen), ending) == 0;
-}
-
-BOOST_AUTO_TEST_CASE(create_token_fuzz) {
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<char> data_dis(-128, 127);
-  std::uniform_int_distribution<size_t> data_len_dis(0, 200);
-  std::uniform_int_distribution<size_t> non_zero_len_dis(1, 200);
-  std::uniform_int_distribution<> bool_dis(0, 1);
-
-  // generate the error messages as strings from pcre2 library
-  std::vector<std::vector<char>> error_strings_mem;
-  std::vector<const char*> error_strings; // points to static memory or error_strings_mem
-
-  int errorcode = 0;
-  while (1) {
-    static constexpr size_t BUF_LENGTH = 1024;
-    error_strings_mem.emplace_back();
-    error_strings_mem.rbegin()->resize(BUF_LENGTH);
-    int rc = pcre2_get_error_message(errorcode, (PCRE2_UCHAR*)error_strings_mem.rbegin()->data(), BUF_LENGTH);
-    if (rc > 0) {
-      // rc is the length of the message without the null terminator
-      error_strings_mem.rbegin()->resize(rc + 1);
-      error_strings.push_back(error_strings_mem.rbegin()->data());
-    } else if (rc == PCRE2_ERROR_BADDATA) {
-      break;
-    } else {
-      BOOST_REQUIRE(false); // PCRE2_ERROR_NOMEMORY
-    }
-  }
-
-  for (int iter = 0; iter < 1000; ++iter) {
-    std::vector<char> in;
-    in.resize(data_len_dis(gen));
-    for (size_t i = 0; i < in.size(); ++i) {
-      in[i] = data_dis(gen);
-    }
-    std::vector<const char*> argv;
-    if (bool_dis(gen)) {
-      argv.push_back("-r");
-    }
-    if (bool_dis(gen)) {
-      argv.push_back("--match");
-    }
-    if (bool_dis(gen)) {
-      argv.push_back("--utf");
-    }
-    if (bool_dis(gen)) {
-      argv.push_back("--utf-allow-invalid");
-    }
-    argv.push_back("--buf-size=80"); // less than half max data size
-    argv.push_back("--buf-size-frag=80");
-    std::vector<char> buf_size_arg = to_vec("--read=");
-    buf_size_arg.resize(strlen("--read=") + 4); // three digit number then null
-    sprintf(buf_size_arg.data() + strlen("--read="), "%zu", non_zero_len_dis(gen));
-    argv.push_back(buf_size_arg.data());
-
-    std::vector<char> positional_arg;
-    positional_arg.resize(non_zero_len_dis(gen)); // not empty
-    char* pos = &*positional_arg.begin();
-    do {
-      *pos = data_dis(gen);
-    } while (*pos == '-');
-    ++pos;
-    while (pos < &*positional_arg.end()) {
-      *pos++ = data_dis(gen);
-    }
-    *positional_arg.rbegin() = '\0';
-    argv.push_back(positional_arg.data());
-
-    try {
-      run_choose(in, argv);
-    } catch (const std::exception& e) {
-      // if it's an error from pcre2, it is ignored. unless it's explicitly one
-      // of the ones that are caused by us giving bad values
-      if (endsWith(e.what(), "bad offset value") ||           //
-          endsWith(e.what(), "bad offset into UTF string") || //
-          endsWith(e.what(), "NULL argument passed")) {
-        throw;
-      }
-      for (const char* err : error_strings) {
-        // if it's not a pcre2 err (e.g. bad alloc) then throw
-        if (!endsWith(e.what(), err)) {
-          throw;
-        }
-      }
-    }
-  }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

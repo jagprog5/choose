@@ -3,3 +3,4 @@ SpacesBeforeTrailingComments: 1
 ColumnLimit: 10000
 PointerAlignment: Left
 Standard: c++17
+IndentGotoLabels: false

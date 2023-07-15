@@ -2,46 +2,18 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <cassert>
-#include <cerrno>
 #include <csignal>
 #include <cstring>
 #include <limits>
-#include <variant>
+#include <optional>
 #include <vector>
-
 // for version
 #include <ncursesw/curses.h>
 
-#include "regex.hpp"
-#include "string_utils.hpp"
+#include "numeric_utils.hpp"
+#include "ordered_op.hpp"
 
 namespace choose {
-
-struct RmOrFilterOp {
-  enum Type { REMOVE, FILTER };
-  Type type;
-  regex::code arg;
-  regex::match_data match_data;
-};
-
-struct SubOp {
-  regex::code target;
-  const char* replacement;
-};
-
-struct IndexOp {
-  enum Align { BEFORE, AFTER };
-  enum Type { INPUT, OUTPUT };
-  IndexOp(Type type, Align align) : index(type == INPUT ? 0 : std::numeric_limits<size_t>::max()), align(align) {}
-  // index is only used if this is an input op.
-  // if it is set to max, this indicates that it is an output op
-  size_t index;
-  Align align;
-
-  bool is_output_index_op() const { return index == std::numeric_limits<size_t>::max(); }
-};
-
-using OrderedOp = std::variant<RmOrFilterOp, SubOp, IndexOp>;
 
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
@@ -63,25 +35,24 @@ struct Arguments {
 
   // user defined comparison
   regex::code comp = 0;
-  regex::match_data comp_data = 0;
   bool comp_unique = false;
   // if comp_sort is set, then sort should also be set at the same time
   bool comp_sort = false;
 
   bool unique = false;
   bool flip = false;
+  bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
   // else, it matches the tokens themselves
   bool match = false;
+  // a modifier on match that also sends everything not included in the match
+  bool sed = false;
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
-  // max is entirely valid, and the default
-  typename std::vector<int>::size_type in = std::numeric_limits<decltype(in)>::max();
-
-  // max is entirely valid, and the default
-  typename std::vector<int>::size_type out = std::numeric_limits<decltype(out)>::max();
+  std::optional<typename std::vector<int>::size_type> in;
+  std::optional<typename std::vector<int>::size_type> out;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -102,7 +73,6 @@ struct Arguments {
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
-  regex::match_data primary_data = 0;
 
   // shortcut for if the delimiter is a single byte; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
@@ -116,35 +86,28 @@ struct Arguments {
   // disable or allow warning
   bool can_drop_warn = true;
 
-  // a special case that doesn't require storing any tokens. send straight to output
-  bool is_direct_output() const { //
-    return !tui && !sort && !unique && !comp_unique && !flip;
-  }
+  // a special case where the tokens can be sent directly to the output as they are received
+  bool is_direct_output() const { return !tui && !sort && !flip; }
 
-  // a subset of is_direct_output() which allows for simplified logic and avoids
-  // a copy of the input
-  bool is_basic() const {
-    bool has_modifying_op = false;
-    for (const auto& op : ordered_ops) {
-      if (!std::get_if<RmOrFilterOp>(&op)) {
-        has_modifying_op = true;
-        break;
-      }
-    }
-    return is_direct_output() && !has_modifying_op;
+  // a subset of is_direct_output where the tokens don't need to be stored at all
+  bool tokens_not_stored() const { //
+    return is_direct_output() && !unique && !comp_unique;
   }
 };
 
 namespace {
 
 struct UncompiledOrderedOp {
-  enum Type { SUBSTITUTE, FILTER, REMOVE, INPUT_INDEX, OUTPUT_INDEX };
+  enum Type { SUBSTITUTE, FILTER, REPLACE, REMOVE, INPUT_INDEX, OUTPUT_INDEX };
   Type type;
   // arg0 or arg1 might be set to null (and not used) based on the type
   const char* arg0;
   const char* arg1;
 
   OrderedOp compile(uint32_t options) const {
+    if (type == REPLACE) {
+      return ReplaceOp(arg0);
+    }
     if (type == INPUT_INDEX || type == OUTPUT_INDEX) {
       return IndexOp(type == INPUT_INDEX ? IndexOp::INPUT : IndexOp::OUTPUT, //
                      arg0 ? IndexOp::BEFORE : IndexOp::AFTER);
@@ -160,9 +123,7 @@ struct UncompiledOrderedOp {
       if (this->type == FILTER) {
         return "filter";
       }
-      {
-        return "?"; // will never happen in the context this is used
-      }
+      return "?"; // never
     };
 
     // at this point the op can only be sub rm or filter
@@ -170,9 +131,7 @@ struct UncompiledOrderedOp {
     if (type == SUBSTITUTE) {
       return SubOp{std::move(code), arg1};
     }
-    // RM or FILTER
-    regex::match_data data = regex::create_match_data(code);
-    return RmOrFilterOp{type == REMOVE ? RmOrFilterOp::REMOVE : RmOrFilterOp::FILTER, std::move(code), std::move(data)};
+    return RmOrFilterOp(type == REMOVE ? RmOrFilterOp::REMOVE : RmOrFilterOp::FILTER, std::move(code));
   }
 };
 
@@ -205,11 +164,8 @@ struct UncompiledCodes {
       } else {
         // there's definitely better ways of recognizing if a regex pattern
         // consists of a single byte, but this is enough for common cases
-        auto in_range = [](char var, char low_inclusive, char high_inclusive) -> bool { //
-          return var >= low_inclusive && var <= high_inclusive;
-        };
         char ch = primary[0];
-        if ((ch == '\n' || ch == '\0' || in_range(ch, '0', '9') || in_range(ch, 'a', 'z') || in_range(ch, 'A', 'Z'))) {
+        if ((ch == '\n' || ch == '\0' || num::in(ch, '0', '9') || num::in(ch, 'a', 'z') || num::in(ch, 'A', 'Z'))) {
           output.in_byte_delimiter = ch;
         }
       }
@@ -217,65 +173,24 @@ struct UncompiledCodes {
 
     if (!output.in_byte_delimiter) {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
-      output.primary_data = regex::create_match_data(output.primary);
     }
 
     if (comp) {
       output.comp = regex::compile(comp, re_options, "defined comp");
-      output.comp_data = regex::create_match_data(output.comp);
     }
   }
 };
 
-void arg_error_preamble(int argc, const char* const* argv, FILE* err = stderr) {
+// prefixes error message with the path of this executable
+void arg_error_preamble(int argc, const char* const* argv) {
   const char* me; // NOLINT initialized below
   if (argc > 0 && argv && *argv) {
     me = *argv;
   } else {
     me = "choose";
   }
-  fputs(me, err);
-  fputs(": ", err);
-}
-
-// parse a non-negative long, placed in out, from null terminating string, str.
-// on parse or range error, arg_has_errors is set to true, and an error is
-// printed to err, which includes the name and args; out will have been written
-// to but should not be used
-void parse_ul(const char* str, //
-              long* out,
-              unsigned long min_inclusive,
-              unsigned long max_inclusive,
-              bool* arg_has_errors,
-              const char* name,
-              int argc,
-              const char* const* argv,
-              FILE* err = stderr) {
-  // based off https://stackoverflow.com/a/14176593/15534181
-  char* temp; // NOLINT initialized by strtol
-  errno = 0;
-  // atoi/atol gives UB for value out of range
-  // strtoul is trash and doesn't handle negative values in a sane way
-  *out = std::strtol(str, &temp, 0);
-  if (temp == str || *temp != '\0' || ((*out == LONG_MIN || *out == LONG_MAX) && errno == ERANGE)) {
-    if (err) {
-      arg_error_preamble(argc, argv, err);
-      fprintf(stderr, "--%s parse error\n", name);
-    }
-    *arg_has_errors = true;
-  } else if (*out < 0 || (unsigned long)*out < min_inclusive || (unsigned long)*out > max_inclusive) {
-    if (err) {
-      arg_error_preamble(argc, argv, err);
-      fprintf(stderr, "--%s value out of range\n", name);
-    }
-    *arg_has_errors = true;
-  }
-}
-
-template <typename T>
-bool detect_multiply_overflow(T result, T a, T b) {
-  static_assert(std::is_unsigned<T>::value);
-  return a != 0 && result / a != b;
+  fputs(me, stderr);
+  fputs(": ", stderr);
 }
 
 // this function exits
@@ -284,10 +199,6 @@ void print_version_message() {
     "ncurses " choose_xstr(NCURSES_VERSION_MAJOR) "." choose_xstr(NCURSES_VERSION_MINOR) "." choose_xstr(NCURSES_VERSION_PATCH) ", "
     "pcre2 " choose_xstr(PCRE2_MAJOR) "." choose_xstr(PCRE2_MINOR)) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
   exit(exit_code);
-}
-
-void sigint_handler(int) {
-  // signal sent to child process. wait for pclose to finish
 }
 
 // this function exits
@@ -311,37 +222,42 @@ void print_help_message() {
       "they are stated. they are applied before any sorting or uniqueness options.\n"
       "        -f, --filter <target>\n"
       "                remove tokens that don't match. inherits the same match options\n"
-      "                as the input delimiter\n"
-      "        --in-index [before|after]\n"
+      "                as the positional argument\n"
+      "        --in-index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, insert the input index\n"
-      "        --out-index [before|after]\n"
+      "        --out-index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, insert the output index\n"
+      "        --replace <replacement>\n"
+      "                a special case of the substitution op where the match target is\n"
+      "                the positional argument. --match or --sed must be specified.\n"
+      "                this op must come before all ops that edit tokens: all except rm\n"
+      "                or filter\n"
       "        --rm, --remove <target>\n"
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
       "                apply a global text substitution on each token. the target\n"
-      "                inherits the same match options as the input delimiter."
+      "                inherits the same match options as the positional argument. "
 #ifdef PCRE2_SUBSTITUTE_LITERAL
       "the\n"
 #else
       "if\n"
 #endif
 #ifdef PCRE2_SUBSTITUTE_LITERAL
-      "                replacement is done literally if the input delimiter is literal\n"
-      "                (aka the default without -r). otherwise, the replacement is a\n"
-      "                regular expression.\n"
+      "                replacement is done literally if the positional argument is\n"
+      "                literal (aka the default without -r). otherwise, the replacement\n"
+      "                is a regular expression\n"
 #else
       "                compiled with a later verion of PCRE2, then the replacement\n"
-      "                wouldbe been done literally if the input delimiter is literal\n"
-      "                (aka the default without -r). however, this version does not\n"
-      "                support this, so the replacement is always a regex.\n"
+      "                would be been done literally if the positional argument is\n"
+      "                literal (aka the default without -r). however, this version does\n"
+      "                not support this, so the replacement is always a regex\n"
 #endif
       "options:\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
-      "                selecting multiple tokens and sending them to the output\n"
-      "                together is a \"batch\". if multiple batches are send to the\n"
-      "                output (which is enabled via --tenacious), then a batch\n"
-      "                delimiter is placed after each batch\n"
+      "                a batch is a group of tokens. typically the output consists\n"
+      "                of a single batch. if --tui and --tenacious are specified\n"
+      "                then the output can consist of multiple batches. a batch\n"
+      "                delimiter is placed after every batch.\n"
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
       "                size of match buffer used. patterns that require more room will\n"
       "                never successfully match\n"
@@ -361,13 +277,17 @@ void print_help_message() {
       "                user defined comparison. pairs of tokens are evaluated. if only\n"
       "                one matches, then it is less than the other. required by\n"
       "                --comp-sort and --comp-unique. inherits the same match options\n"
-      "                as the input delimiter\n"
+      "                as the positional argument\n"
       "        --comp-sort\n"
       "                requires --comp. does a stable sort using the comparison.\n"
       "                ignores --sort. can use --sort-reverse\n"
       "        --comp-unique\n"
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
+      "        -d, --delimit-same\n"
+      "                applies both --delimit-not-at-end and --use-delimiter. this\n"
+      "                makes the output end with a delimiter when the input also ends\n"
+      "                with a delimiter\n"
       "        --delimit-not-at-end\n"
       "                don't add a batch delimiter at the end of the output. ignores\n"
       "                --delimit-on-empty\n"
@@ -377,15 +297,18 @@ void print_help_message() {
       "                begin cursor and prompt at the bottom of the tui\n"
       "        --flip\n"
       "                reverse the token order. this happens after all other operations\n"
+      "        --flush\n"
+      "                makes the input unbuffered, and the output is flushed after each\n"
+      "                token is written\n"
       "        -i, --ignore-case\n"
-      "                make the input delimiter case-insensitive\n"
+      "                make the positional argument case-insensitive\n"
       "        --in <# tokens>\n"
       "                stop reading the input once n tokens have been created\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
       "        --multiline\n"
-      "                implies --regex. enable multiline matching. (affects ^ and $)\n"
+      "                implies --regex. enable multiline matching (affects ^ and $).\n"
       "        --match\n"
       "                the positional argument matches the tokens instead of the\n"
       "                delimiter. the match and each match group is a token\n"
@@ -400,15 +323,14 @@ void print_help_message() {
       "                send only the first n tokens to the output or tui\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
-      "                use PCRE2 regex for the input delimiter.\n"
+      "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sed\n"
-      "                applies both --delimit-not-at-end and --use-delimiter. this\n"
-      "                makes the output end with a delimiter when the input also ends\n"
-      "                with a delimiter\n"
+      "                --match, but also writes everything around the tokens, and the\n"
+      "                match groups aren't used as individual tokens\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -419,7 +341,8 @@ void print_help_message() {
       "        --take <# tokens>\n"
       "                both --in and --out\n"
       "        --tenacious\n"
-      "                don't exit on tui confirmed selection. each batch is flushed\n"
+      "                on tui confirmed selection, do not exit; but still flush the\n"
+      "                current selection to the output as a batch\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --use-delimiter\n"
@@ -460,7 +383,7 @@ void print_help_message() {
 #ifdef BUTTON5_PRESSED
       "mouse scroll, "
 #endif
-      "j/k\n\n"
+      "j/k\n"
       "to view the license, or report an issue, visit:\n"
       "        github.com/jagprog5/choose\n";
 
@@ -471,7 +394,8 @@ void print_help_message() {
     exit(EXIT_FAILURE);
   }
 
-  if (signal(SIGINT, sigint_handler) == SIG_IGN) {
+  // signal sent to child process. wait for pclose to finish
+  if (signal(SIGINT, [](int) {}) == SIG_IGN) {
     signal(SIGINT, SIG_IGN);
   }
 
@@ -509,6 +433,7 @@ void print_help_message() {
 Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL) {
   UncompiledCodes uncompiled_output;
   Arguments ret;
+  // rather than stopping on error, continue to parse all the arguments and show all errors
   bool arg_has_errors = false;
   while (1) {
     int option_index = 0;
@@ -536,24 +461,27 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"locale", required_argument, NULL, 0},
         {"out", required_argument, NULL, 0},
         {"out-index", optional_argument, NULL, 0},
+        {"replace", required_argument, NULL, 0},
         {"take", required_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
         {"comp-sort", no_argument, NULL, 0},
         {"comp-unique", no_argument, NULL, 0},
+        {"delimit-same", no_argument, NULL, 'd'},
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
         {"flip", no_argument, NULL, 0},
+        {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
+        {"sed", no_argument, NULL, 0},
         {"sort", no_argument, NULL, 's'},
         {"selection-order", no_argument, NULL, 0},
-        {"sed", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
@@ -568,49 +496,41 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:treimrsuyz0", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimrsuyz0", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
 
     switch (c) {
       default:
-        arg_error_preamble(argc, argv);
-        fprintf(stderr, "unknown error\n");
         arg_has_errors = true;
         break;
       case 0: {
         // long option
         const char* name = long_options[option_index].name;
         if (optarg) {
+          auto on_num_err = [&]() {
+            arg_error_preamble(argc, argv);
+            fprintf(stderr, "--%s parse error\n", name);
+            arg_has_errors = true;
+          };
+
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             UncompiledOrderedOp op{UncompiledOrderedOp::REMOVE, optarg, NULL};
             uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("buf-size", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.buf_size)>::max(), &arg_has_errors, name, argc, argv);
-            ret.buf_size = v;
+            ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.buf_size_frag)>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.buf_size_frag = v;
+            ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
           } else if (strcmp("in", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, name, argc, argv);
-            ret.in = v;
+            ret.in = num::parse_unsigned<decltype(ret.in)::value_type>(on_num_err, optarg);
           } else if (strcmp("max-lookbehind", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.max_lookbehind)>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.max_lookbehind = v;
+            ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
           } else if (strcmp("read", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 1, std::numeric_limits<decltype(ret.bytes_to_read)>::max() - 1, &arg_has_errors, name, argc, argv);
-            ret.bytes_to_read = v;
+            ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
           } else if (strcmp("out", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.out)>::max(), &arg_has_errors, name, argc, argv);
-            ret.out = v;
+            ret.out = num::parse_unsigned<decltype(ret.out)::value_type>(on_num_err, optarg);
           } else if (strcmp("in-index", name) == 0) {
             UncompiledOrderedOp op; // NOLINT
             op.type = UncompiledOrderedOp::INPUT_INDEX;
@@ -639,6 +559,20 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             }
             op.arg1 = NULL;
             uncompiled_output.ordered_ops.push_back(op);
+          } else if (strcmp("replace", name) == 0) {
+            for (UncompiledOrderedOp op : uncompiled_output.ordered_ops) {
+              if (op.type != UncompiledOrderedOp::REMOVE && op.type != UncompiledOrderedOp::FILTER) {
+                arg_error_preamble(argc, argv);
+                fprintf(stderr, "option '--%s' can't be proceeded by an editing op\n", name);
+                arg_has_errors = true;
+                break;
+              }
+            }
+            UncompiledOrderedOp op; // NOLINT
+            op.type = UncompiledOrderedOp::REPLACE;
+            op.arg0 = optarg;
+            op.arg1 = NULL;
+            uncompiled_output.ordered_ops.push_back(op);
           } else if (strcmp("sub", name) == 0 || strcmp("substitute", name) == 0) {
             // special handing here since getopt doesn't normally support multiple arguments
             if (optind >= argc) {
@@ -659,19 +593,19 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            long v; // NOLINT
-            parse_ul(optarg, &v, 0, std::numeric_limits<decltype(ret.in)>::max(), &arg_has_errors, "take", argc, argv);
-            ret.in = v;
-            ret.out = v;
+            ret.in = num::parse_unsigned<decltype(ret.in)::value_type>(on_num_err, optarg);
+            ret.out = ret.in;
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
             arg_has_errors = true;
           }
         } else {
-          // long option without argument
+          // long option without argument or optional argument
           if (strcmp("flip", name) == 0) {
             ret.flip = true;
+          } else if (strcmp("flush", name) == 0) {
+            ret.flush = true;
           } else if (strcmp("comp-sort", name) == 0) {
             ret.comp_sort = true;
             ret.sort = true;
@@ -688,14 +622,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
+          } else if (strcmp("sed", name) == 0) {
+            ret.match = true;
+            ret.sed = true;
           } else if (strcmp("sort-reverse", name) == 0) {
             ret.sort = true;
             ret.sort_reverse = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
-          } else if (strcmp("sed", name) == 0) {
-            ret.use_input_delimiter = true;
-            ret.delimit_not_at_end = true;
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("in-index", name) == 0) {
@@ -778,6 +712,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 'h':
         print_help_message();
         break;
+      case 'd':
+        ret.use_input_delimiter = true;
+        ret.delimit_not_at_end = true;
+        break;
       case 'e':
         ret.end = true;
         break;
@@ -850,6 +788,16 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     uncompiled_output.primary = {'\n'};
   }
 
+  if (!ret.match) {
+    for (UncompiledOrderedOp op : uncompiled_output.ordered_ops) {
+      if (op.type == UncompiledOrderedOp::REPLACE) {
+        arg_error_preamble(argc, argv);
+        fputs("replacement op requires --match or --sed\n", stderr);
+        arg_has_errors = true;
+      }
+    }
+  }
+
   if (arg_has_errors) {
     exit(EXIT_FAILURE);
   }
@@ -871,39 +819,51 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
   // defaults
   if (ret.max_lookbehind == std::numeric_limits<decltype(ret.max_lookbehind)>::max()) {
-    ret.max_lookbehind = ret.in_byte_delimiter ? 0 : regex::max_lookbehind_size(ret.primary);
+    ret.max_lookbehind = ret.primary ? regex::max_lookbehind_size(ret.primary) : 0;
   }
   if (ret.bytes_to_read == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     ret.bytes_to_read = ret.buf_size;
   }
   if (ret.buf_size_frag == std::numeric_limits<decltype(ret.bytes_to_read)>::max()) {
     // more than the match buffer size by default, since storing is less intensive
-    ret.buf_size_frag = ret.buf_size * 8;
-    if (detect_multiply_overflow(ret.buf_size_frag, ret.buf_size, (decltype(ret.buf_size_frag))8)) {
+    if (auto mul_result = num::mul_overflow(ret.buf_size, (decltype(ret.buf_size))8)) {
+      ret.buf_size_frag = *mul_result;
+    } else {
       arg_error_preamble(argc, argv);
       fputs("multiply overflow on fragment buffer size (when calculating default value).\n", stderr);
       exit(EXIT_FAILURE);
     }
   }
 
-  if (!ret.in_byte_delimiter) { // only if primary is set
-    // bytes for number of characters
-    if (regex::options(ret.primary) & PCRE2_UTF) {
-      auto before = ret.max_lookbehind;
-      ret.max_lookbehind *= (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER;
-      if (detect_multiply_overflow(ret.max_lookbehind, before, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
-        arg_error_preamble(argc, argv);
-        fputs("multiply overflow on max lookbehind (bytes per utf8 char).\n", stderr);
-        exit(EXIT_FAILURE);
-      }
+  // bytes for number of characters
+  if (ret.primary && regex::options(ret.primary) & PCRE2_UTF) {
+    if (auto mul_result = num::mul_overflow(ret.max_lookbehind, (decltype(ret.max_lookbehind))str::utf8::MAX_BYTES_PER_CHARACTER)) {
+      ret.max_lookbehind = *mul_result;
+    } else {
+      arg_error_preamble(argc, argv);
+      fputs("multiply overflow on max lookbehind (bytes per utf8 char).\n", stderr);
+      exit(EXIT_FAILURE);
     }
+  }
 
-    if (input == NULL) { // if not unit test
-      if (!ret.in_byte_delimiter && regex::min_match_length(ret.primary) > ret.buf_size) {
+  if (input == NULL) { // if not unit test
+    // these aren't needed, but make sure the user is doing something sane
+    if (ret.primary) {
+      auto min = regex::min_match_length(ret.primary);
+      if (regex::options(ret.primary) & PCRE2_UTF) {
+        min *= str::utf8::MAX_BYTES_PER_CHARACTER;
+      }
+      if (min > ret.buf_size) {
         arg_error_preamble(argc, argv);
         fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
         exit(EXIT_FAILURE);
       }
+    }
+
+    if (ret.sed && !ret.is_direct_output()) {
+      arg_error_preamble(argc, argv);
+      fputs("--sed is incompatible with options that prevents direct output, including: sorting, flip, and tui.\n", stderr);
+      exit(EXIT_FAILURE);
     }
   }
 

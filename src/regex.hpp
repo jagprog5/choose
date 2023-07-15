@@ -26,9 +26,9 @@ struct match_data_destroyer {
 using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
+// guard against what is detected as an error in PCRE2 but I don't agree with
+// https://github.com/PCRE2Project/pcre2/issues/270
 void apply_null_guard(const char*& pattern, PCRE2_SIZE size) {
-  // guard against what is detected as an error in PCRE2 but I don't agree with
-  // https://github.com/PCRE2Project/pcre2/issues/270
   if (pattern == NULL && size == 0) {
     pattern = (const char*)1;
   }
@@ -108,7 +108,8 @@ uint32_t min_match_length(const code& c) {
   return out;
 }
 
-// replacement is null terminating
+// applies a global substitution on the subject.
+// replacement is null terminating.
 std::vector<char> substitute_global(const code& re, //
                                     const char* subject,
                                     PCRE2_SIZE subject_length,
@@ -159,11 +160,67 @@ std::vector<char> substitute_global(const code& re, //
   return sub_out;
 }
 
+// given a prior match, apply a substitution on the match's position. returns a
+// vector containing only the replacement section. the same subject and
+// subject_length that was passed to match should also be passed here
+std::vector<char> substitute_on_match(const match_data& data, //
+                                      const code& re,
+                                      const char* subject,
+                                      PCRE2_SIZE subject_length,
+                                      const char* replacement) {
+  apply_null_guard(subject, subject_length);
+  uint32_t sub_flags = PCRE2_SUBSTITUTE_REPLACEMENT_ONLY //
+                       | PCRE2_SUBSTITUTE_MATCHED        //
+                       | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+#ifdef PCRE2_SUBSTITUTE_LITERAL
+  if (options(re) & PCRE2_LITERAL) {
+    sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
+  }
+#endif
+  PCRE2_SIZE output_size = 0;               // initial pass calculates length of output
+  pcre2_substitute(re.get(),                //
+                   (PCRE2_SPTR)subject,     //
+                   subject_length,          //
+                   0,                       //
+                   sub_flags,               //
+                   data.get(),              //
+                   NULL,                    //
+                   (PCRE2_SPTR)replacement, //
+                   PCRE2_ZERO_TERMINATED,   //
+                   NULL,                    //
+                   &output_size);
+
+  std::vector<char> sub_out(output_size);
+  sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+
+  int sub_rc = pcre2_substitute(re.get(),                      //
+                                (PCRE2_SPTR)subject,           //
+                                subject_length,                //
+                                0,                             //
+                                sub_flags,                     //
+                                data.get(),                    //
+                                NULL,                          //
+                                (PCRE2_SPTR)replacement,       //
+                                PCRE2_ZERO_TERMINATED,         //
+                                (PCRE2_UCHAR8*)sub_out.data(), //
+                                &output_size);
+
+  if (sub_rc < 0) {
+    PCRE2_UCHAR buffer[256];
+    pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
+    char msg[512];
+    snprintf(msg, 512, "PCRE2 substitution error after match: %s", buffer);
+    throw std::runtime_error(msg);
+  }
+  sub_out.resize(sub_out.size() - 1); // pcre2_substitute always places an extra null char at the end
+  return sub_out;
+}
+
 struct Match {
   const char* begin;
   const char* end;
 
-  void ensure_sane(const char* identification) {
+  void ensure_sane(const char* identification) const {
     // regarding code coverage, this does show up depending on the distribution of pcre2
     if (begin > end) {
       char msg[512];
@@ -183,7 +240,7 @@ Match get_match(const char* subject, const match_data& match_data, const char* i
   return m;
 }
 
-// T is a handler lambda bool(Match&&), which is called with the match and each match group
+// T is a handler lambda bool(Match), which is called with the match and each match group
 // the handler should return true iff no other groups should be processed
 // rc is the return value from regex::match
 // returns true iff no other matches or groups should be processed
@@ -193,7 +250,7 @@ bool get_match_and_groups(const char* subject, int rc, const match_data& match_d
   for (int i = 0; i < rc; ++i) {
     auto m = Match{subject + ovector[2 * i], subject + ovector[2 * i + 1]};
     m.ensure_sane(identification);
-    if (handler(std::move(m))) {
+    if (handler(m)) {
       return true;
     }
   }

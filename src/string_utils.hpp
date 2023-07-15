@@ -1,12 +1,14 @@
 #pragma once
 
+#include <stdio.h>
+#include <unistd.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
-#include <iostream>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 namespace choose {
@@ -268,50 +270,55 @@ void write_f(FILE* f, const std::vector<char>& v) {
   write_f(f, &*v.cbegin(), &*v.cend());
 }
 
-// choose either outputs to stdout, or it queues up all the output and sends it later
-void write_optional_buffer(FILE* f, std::optional<std::vector<char>>& output, const std::vector<char>& in) {
-  if (output) {
-    std::vector<char>& v = *output;
-    append_to_buffer(v, &*in.cbegin(), &*in.cend());
-  } else {
-    write_f(f, in);
+void flush_f(FILE* f) {
+  if (fflush(f) == EOF) {
+    throw std::runtime_error("output err");
   }
 }
 
-// write the queued up output
-void finish_optional_buffer(FILE* f, const std::optional<std::vector<char>>& output) {
-  if (output) {
-    const std::vector<char>& q = *output;
-    write_f(f, q);
+struct QueuedOutput {
+  // if the output from the tui interface is going to that same terminal that
+  // the interface is running in then it interferes. this is only an issue if
+  // tenacious is enabled, since otherwise the program exits on any output
+  // selected. in this case, queue up the output, and sends it on exit.
+  std::optional<std::vector<char>> queued;
+
+  void write_output(FILE* f, const std::vector<char>& v) {
+    if (this->queued) {
+      append_to_buffer(*this->queued, v);
+    } else {
+      write_f(f, v);
+    }
   }
+
+  void flush_output(FILE* f) {
+    if (this->queued) {
+      write_f(f, *this->queued);
+      this->queued->clear();
+    }
+  }
+};
+
+size_t get_bytes(FILE* f, size_t n, char* out) {
+  size_t read_ret = fread(out, sizeof(char), n, f);
+  if (read_ret == 0) {
+    if (feof(f)) {
+      return read_ret;
+    } else if (ferror(f)) {
+      const char* err_string = strerror(errno);
+      throw std::runtime_error(err_string);
+    }
+  }
+  return read_ret;
 }
 
-// writes the ascii representation of value into v, separated by a space, at the beginning or end
-void apply_index_op(std::vector<char>& v, size_t value, bool align_before) {
-  size_t extension = value == 0 ? 1 : (size_t(std::log10(value)) + 1);
-  extension += 1; // +1 for space
-  size_t new_size = v.size() + extension;
-  v.resize(new_size);
-  if (align_before) {
-    // move the entire buffer forward
-    char* to_ptr = &*v.rbegin();
-    const char* from_ptr = &*v.rbegin() - extension;
-    while (from_ptr >= &*v.begin()) {
-      *to_ptr-- = *from_ptr--;
-    }
-    sprintf(&*v.begin(), "%zu", value);
-    // overwrite the null written by sprintf
-    *(v.begin() + (ptrdiff_t)(extension - 1)) = ' ';
-  } else {
-    char* ptr = &*v.end() - extension;
-    *ptr++ = ' ';
-    if (extension > 2) { // aka value > 9
-      sprintf(ptr, "%zu", value / 10);
-    }
-    // overwrite the null written by sprintf
-    // NOLINTNEXTLINE narrowing to char is ok for value in range [0-9]
-    *v.rbegin() = (char)(value % 10) + '0';
+size_t get_bytes_unbuffered(int fileno, size_t n, char* out) {
+  ssize_t read_ret = read(fileno, out, n);
+  if (read_ret == -1) {
+    const char* err_string = strerror(errno);
+    throw std::runtime_error(err_string);
   }
+  return (size_t)read_ret;
 }
 
 namespace utf8 {
@@ -350,7 +357,7 @@ const char* last_character_start(const char* begin, const char* end) {
     }
 
     if (!is_continuation(*pos)) {
-      break;
+      return pos;
     }
 
     if (--left == 0) {
@@ -358,8 +365,6 @@ const char* last_character_start(const char* begin, const char* end) {
     }
     --pos;
   }
-
-  return pos;
 }
 
 // returns NULL on error
@@ -372,12 +377,10 @@ const char* last_completed_character_end(const char* begin, const char* end) {
   if (len == -1 || pos + len > end) {
     return pos;
   }
-
   return pos + len;
 }
 
-// pos is in range [begin,end).
-// pos might be decremented till begin. begin is an inclusive lower bound.
+// pos is in range [begin,end].
 // it is assumed that end is a character start -> if pos is end, then end is returned.
 // if an error occurs, then pos is returned
 const char* decrement_until_character_start(const char* pos, const char* begin, const char* end) {
