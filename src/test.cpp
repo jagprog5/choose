@@ -569,6 +569,12 @@ BOOST_AUTO_TEST_CASE(index_op_last) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(index_op_after_last) {
+  choose_output out = run_choose("here are some words", {" ", "--in-index=after"});
+  choose_output correct_output{to_vec("here 0\nare 1\nsome 2\nwords 3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(literal_sub) {
   choose_output out = run_choose("literal substitution", {"--sub", "literal", "good", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"good substitution"}};
@@ -732,7 +738,7 @@ BOOST_AUTO_TEST_CASE(buf_size_match_enough) {
 
 BOOST_AUTO_TEST_CASE(buf_size_trailing_incomplete_multibyte) {
   const char subject[] = {'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, 'a', '\0'};
-  const char match_target[] = {'(', '?', ':', 'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, '|', 'a', ')'};
+  const char match_target[] = {'(', '?', ':', 'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, '|', 'a', ')', '\0'};
   choose_output out = run_choose(subject, {"--utf", "--match", "-r", match_target, "--buf-size=5"});
   choose_output correct_output{to_vec("a\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -740,7 +746,7 @@ BOOST_AUTO_TEST_CASE(buf_size_trailing_incomplete_multibyte) {
 
 BOOST_AUTO_TEST_CASE(buf_size_sed_trailing_incomplete_multibyte) {
   const char subject[] = {'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, 'a', '\0'};
-  const char match_target[] = {'(', '?', ':', 'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, '|', 'a', ')'};
+  const char match_target[] = {'(', '?', ':', 'z', 'z', 'z', (char)0xEF, (char)0xBB, (char)0xBF, '|', 'a', ')', '\0'};
   choose_output out = run_choose(subject, {"--utf", "--sed", "-r", match_target, "--buf-size=5"});
   choose_output correct_output{to_vec(subject)};
   BOOST_REQUIRE_EQUAL(out, correct_output);
