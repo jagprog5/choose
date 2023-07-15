@@ -105,17 +105,22 @@ struct BatchOutputStream {
   bool first_batch = true;
 
   const Arguments& args;
+  str::QueuedOutput qo;
 
-  BatchOutputStream(const Arguments& args) : args(args) {}
+  BatchOutputStream(const Arguments& args)
+      : args(args),                                        //
+        qo{isatty(fileno(args.output)) && args.tenacious ? //
+               std::optional<std::vector<char>>(std::vector<char>())
+                                                         : std::nullopt} {}
 
   void write_output(const Token& t) {
     if (!first_within_batch) {
-      str::write_f(args.output, args.out_delimiter);
+      qo.write_output(args.output, args.out_delimiter);
     } else if (!first_batch) {
-      str::write_f(args.output, args.bout_delimiter);
+      qo.write_output(args.output, args.bout_delimiter);
     }
     first_within_batch = false;
-    str::write_f(args.output, t.buffer);
+    qo.write_output(args.output, t.buffer);
   }
 
   void finish_batch() {
@@ -125,8 +130,9 @@ struct BatchOutputStream {
 
   void finish_output() {
     if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
-      str::write_f(args.output, args.bout_delimiter);
+      qo.write_output(args.output, args.bout_delimiter);
     }
+    qo.flush_output(args.output);
     first_within_batch = true; // optional reset of state
     first_batch = true;
   }

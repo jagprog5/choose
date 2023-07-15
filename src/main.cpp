@@ -17,7 +17,6 @@ void sigint_handler(int) {
 struct UIState {
   choose::Arguments args;
   std::vector<choose::Token> tokens;
-  bool output_is_tty;
   choose::BatchOutputStream os;
 
   // ncurses
@@ -50,7 +49,7 @@ struct UIState {
 
   // this modifies selection_position and scroll_position appropriately
   void apply_constraints() {
-// how close is the selection to the top or bottom while scrolling
+    // how close is the selection to the top or bottom while scrolling
 #ifdef CHOOSE_NO_SCROLL_BORDER
     static constexpr int scroll_border = 0;
 #else
@@ -165,8 +164,9 @@ again:
       choose::nc::endwin();
       return;
     }
+    bool output_is_queued = this->os.qo.queued.has_value();
     if (args.tenacious) {
-      if (output_is_tty) {
+      if (output_is_queued) {
         // output is being queued up, not being sent right now
         // no need to stop ncurses from capturing output
       } else {
@@ -193,7 +193,9 @@ again:
 
     if (args.tenacious) {
       selections.clear();
-      choose::str::flush_f(args.output);
+      if (!output_is_queued) {
+        choose::str::flush_f(args.output);
+      }
     } else {
       os.finish_output();
     }
@@ -418,13 +420,6 @@ int main(int argc, char* const* argv) {
     signal(SIGINT, SIG_IGN);
   }
 
-  bool output_is_tty = isatty(fileno(args.output));
-  // queue up output and send it at the end if the output is to the shell
-  std::optional<std::vector<char>> stream_output = {};
-  if (args.tenacious && output_is_tty) {
-    stream_output = std::vector<char>();
-  }
-
   // https://stackoverflow.com/a/44884859/15534181
   // required for ncurses to work after using stdin
   choose::file f = choose::file(fopen("/dev/tty", "r+"));
@@ -437,7 +432,6 @@ int main(int argc, char* const* argv) {
   UIState state{
       std::move(args),   //
       std::move(tokens), //
-      output_is_tty,     //
       choose::BatchOutputStream(state.args),
   };
 
