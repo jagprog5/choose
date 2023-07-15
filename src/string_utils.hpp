@@ -7,6 +7,8 @@
 #include <cwctype>
 #include <vector>
 #include <unistd.h>
+#include <exception>
+#include <stdio.h>
 
 namespace choose {
 
