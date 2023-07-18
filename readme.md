@@ -54,7 +54,7 @@ echo $'here❗\nis\neach\noption📋'\
 
 # Delimiters
 
-Instead of a newline character, a sequence or regular expression can delimit the input.
+Instead of a newline character, a literal sequence or regular expression can delimit the input.
 
 <table>
 <tr>

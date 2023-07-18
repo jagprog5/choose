@@ -1,19 +1,12 @@
-# Summary
+# Benchmarks Comparing choose to Other Tools
 
-todo
+## Input Data
 
-# Specs
-```
-5.15.90.1-microsoft-standard-WSL2 x86_64
-Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz
-7926MiB System memory DDR4
-```
+### plain_text
 
-# Input
+Each input file is the same size (50 million bytes), but the type of data is different.
 
-Each input file is the same size, but the type of data is different.
-
-This file represents an average random workload:
+This file represents an average random workload, which includes text from a novel repeated:
 ```bash
 wget https://www.gutenberg.org/files/1342/1342-0.txt
 rm -f plain_text.txt
@@ -25,7 +18,9 @@ rm 1342-0.txt
 truncate -s 50000000 plain_text.txt
 ```
 
-This file is the extreme case where every line consists of the match target:
+### test_repeated
+
+This file has the line "test" repeated. "test" is the match target used throughout, below.
 
 ```bash
 (for i in {1..10000000} ; do
@@ -33,7 +28,9 @@ This file is the extreme case where every line consists of the match target:
 done) > test_repeated.txt
 ```
 
-For filtering by uniqueness, there are two extremes. One is where the entire file consists of the same element repeatedly, which is in `test_repeated.txt`. The other is when every element is different:
+### no_duplicates
+
+For filtering by uniqueness, there are two extremes. One is where the entire file consists of the same element repeatedly, which is in `test_repeated.txt`. The other is when every element is different. This file counts upwards from 1 for each line:
 
 ```bash
 (for i in {1..6388888} ; do
@@ -41,7 +38,9 @@ For filtering by uniqueness, there are two extremes. One is where the entire fil
 done) > no_duplicates.txt
 ```
 
-This file consists of a large english dictionary in alphabetical order repeated over and over again. Intuitively it shouldn't be handled much differently from `no_duplicates.txt` in terms of speed, but it is. 
+### long_words_alpha
+
+This file consists of a large english dictionary in alphabetical order repeated. Intuitively it shouldn't be needed since the other input files have the same properties here, in particular `no_duplicates.txt` looks roughly the same. That being said, it gives some interesting results.
 
 ```bash
 wget https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
@@ -54,7 +53,54 @@ rm words_alpha.txt
 truncate -s 50000000 long_words_alpha.txt
 ```
 
-# Versions
+
+## Summary
+
+### Grepping
+
+| (ms)             | choose | pcre2grep |
+|------------------|--------|-----------|
+| plain_text       | 245    | 245       |
+| test_repeated    | 1489   | 1434      |
+| no_duplicates    | 304    | 315       |
+| long_words_alpha | 337    | 337       |
+
+`pcre2grep` and `choose` have the same speed.
+
+### Stream Editing
+
+| (ms)             | choose | sed  |
+|------------------|--------|------|
+| plain_text       | 202    | 168  |
+| test_repeated    | 3073   | 1028 |
+| no_duplicates    | 29     | 64   |
+| long_words_alpha | 178    | 151  |
+
+sed reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, sed performs extremely poorly on input files that contain many small lines (for `no_duplicates`, `sed` was 4812% slower than `choose`). To normalize the performance, `tr` is used to make the input a single large line. This is applied to all input files, and for both `sed` and `choose`, to make the context the same.
+
+After this normalization is applied, choose is slower than sed except in cases where there are few substitutions to apply.
+
+If the delimiter form of substitution is used (invoked with `choose test -o banana -d`), then it significantly outperforms both normal `choose` and `sed` on `test_repeated`. However, this invocation is cheating since the replacement string must be a literal when `choose` is invoked this way, and since the input contains the substitution target repeatedly then effect is magnified.
+
+### Uniqueness
+
+todo
+
+### Sorting + Uniqueness
+
+todo
+
+# Details
+
+
+## Specs
+```
+5.15.90.1-microsoft-standard-WSL2 x86_64
+Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz
+7926MiB System memory
+```
+
+## Versions
 
 `choose`: built normally from this repo. git: 3f3e78c
 
@@ -68,7 +114,7 @@ For `sed`, `awk`, compiling from source with -O3 or -Ofast were slower than thei
 
 `sort`: GNU coreutils 8.28
 
-# Grepping
+## Grepping Results
 
 <table>
 <tr>
@@ -111,15 +157,15 @@ perf stat pcre2grep "test" <plain_text.txt >/dev/null
 <td>
 
 ```bash
-perf stat choose -f "test" <test_repeated.txt >/dev/null
-    1514.198700 task-clock:u (msec)   #    1.000 CPUs utilized
-            174 page-faults:u         #    0.115 K/sec
-     6121141342 cycles:u              #    4.042 GHz
-    17610290437 instructions:u        #    2.88  insn per cycle
-     2722649555 branches:u            # 1798.079 M/sec
-        5820203 branch-misses:u       #    0.21% of all branches
+perf stat choose -f "test" < test_repeated.txt > /dev/null
+   1489.005200 task-clock:u (msec)   #    1.000 CPUs utilized
+           172 page-faults:u         #    0.116 K/sec
+    6119824366 cycles:u              #    4.110 GHz
+   17610232734 instructions:u        #    2.88  insn per cycle
+    2722636944 branches:u            # 1828.494 M/sec
+       6084810 branch-misses:u       #    0.22% of all branches
 
-   1.514510533 seconds time elapsed
+   1.489278046 seconds time elapsed
 ```
 </td>
 <td>
@@ -202,102 +248,14 @@ perf stat pcre2grep "test" <long_words_alpha.txt >/dev/null
 </tr>
 </table>
 
-# Stream Editing
+## Stream Editing Results
+
+### Special Cases
 
 <table>
 <tr>
-<th>choose</th>
-<th>choose (delimiters)</th>
-<th>sed</th>
-</tr>
-<tr>
-<td>
-
-```bash
-perf stat choose --sed test --replace banana <plain_text.txt >/dev/null
-    177.904700 task-clock:u (msec)   #    0.998 CPUs utilized
-           172 page-faults:u         #    0.967 K/sec
-     693789171 cycles:u              #    3.900 GHz
-    1744531288 instructions:u        #    2.51  insn per cycle
-     249849134 branches:u            # 1404.399 M/sec
-       2011794 branch-misses:u       #    0.81% of all branches
-
-   0.178198299 seconds time elapsed
-```
-</td>
-<td>
-
-```bash
-perf stat choose test -o banana -d <plain_text.txt >/dev/null
-    177.644300 task-clock:u (msec)   #    0.999 CPUs utilized
-           175 page-faults:u         #    0.985 K/sec
-     691145436 cycles:u              #    3.891 GHz
-    1807306916 instructions:u        #    2.61  insn per cycle
-     259889872 branches:u            # 1462.979 M/sec
-       1999087 branch-misses:u       #    0.77% of all branches
-
-   0.177908999 seconds time elapsed
-```
-</td>
-<td>
-
-```bash
-perf stat sed "s/test/banana/g" <plain_text.txt >/dev/null
-    155.238500 task-clock:u (msec)   #    0.998 CPUs utilized
-           111 page-faults:u         #    0.715 K/sec
-     561185246 cycles:u              #    3.615 GHz
-    1165869857 instructions:u        #    2.08  insn per cycle
-     251362578 branches:u            # 1619.203 M/sec
-       7617861 branch-misses:u       #    3.03% of all branches
-
-   0.155606800 seconds time elapsed
-```
-
-</td>
-</tr>
-<tr>
-<td>
-
-```bash
-perf stat choose --sed test --replace banana <test_repeated.txt >/dev/null
-    3065.746500 task-clock:u (msec)   #    1.000 CPUs utilized
-            173 page-faults:u         #    0.056 K/sec
-    12601093537 cycles:u              #    4.110 GHz
-    32400877383 instructions:u        #    2.57  insn per cycle
-     5682164005 branches:u            # 1853.436 M/sec
-        6022966 branch-misses:u       #    0.11% of all branches
-
-   3.066126318 seconds time elapsed
-```
-</td>
-<td>
-
-```bash
-perf stat choose test -o banana -d <test_repeated.txt >/dev/null
-    1408.920600 task-clock:u (msec)   #    1.000 CPUs utilized
-            176 page-faults:u         #    0.125 K/sec
-     5772467830 cycles:u              #    4.097 GHz
-    16810778875 instructions:u        #    2.91  insn per cycle
-     2482145419 branches:u            # 1761.735 M/sec
-        5839965 branch-misses:u       #    0.24% of all branches
-
-   1.409210694 seconds time elapsed
-```
-</td>
-<td>
-
-```bash
-perf stat sed "s/test/banana/g" <test_repeated.txt >/dev/null
-    2402.313700 task-clock:u (msec)   #    1.000 CPUs utilized
-            109 page-faults:u         #    0.045 K/sec
-     9772987703 cycles:u              #    4.068 GHz
-    26661110871 instructions:u        #    2.73  insn per cycle
-     5502775099 branches:u            # 2290.615 M/sec
-        5901251 branch-misses:u       #    0.11% of all branches
-
-   2.402897100 seconds time elapsed
-```
-</td>
+<th>choose (without tr)</th>
+<th>sed (without tr)</th>
 </tr>
 <tr>
 <td>
@@ -317,20 +275,6 @@ perf stat choose --sed test --replace banana <no_duplicates.txt >/dev/null
 <td>
 
 ```bash
-perf stat choose test -o banana -d <no_duplicates.txt >/dev/null
-        10.209100 task-clock:u (msec)   #   0.975 CPUs utilized
-           173 page-faults:u            #   0.017 M/sec
-       6581279 cycles:u                 #   0.645 GHz
-      11773483 instructions:u           #   1.79  insn per cycle
-       1893267 branches:u               # 185.449 M/sec
-         22748 branch-misses:u          #   1.20% of all branches
-
-   0.010466000 seconds time elapsed
-```
-</td>
-<td>
-
-```bash
 perf stat sed "s/test/banana/g" <no_duplicates.txt >/dev/null
     436.616900 task-clock:u (msec)   #    0.999 CPUs utilized
            105 page-faults:u         #    0.240 K/sec
@@ -341,6 +285,64 @@ perf stat sed "s/test/banana/g" <no_duplicates.txt >/dev/null
 
    0.437018000 seconds time elapsed
 ```
+</td>
+</tr>
+<tr>
+<th>choose (delimiter sub)</th>
+</tr>
+<tr>
+<td>
+
+```bash
+cat test_repeated.txt | tr '\n' ' ' | perf stat ./choose test -o banana -d >/dev/null
+   1620.451200 task-clock:u (msec)   #    1.000 CPUs utilized
+           180 page-faults:u         #    0.111 K/sec
+    6550636865 cycles:u              #    4.042 GHz
+   16810745767 instructions:u        #    2.57  insn per cycle
+    2482139150 branches:u            # 1531.758 M/sec
+       5909715 branch-misses:u       #    0.24% of all branches
+
+   1.620749112 seconds time elapsed
+```
+</td>
+</tr>
+</table>
+
+### Normal Cases
+
+<table>
+<tr>
+<th>choose</th>
+<th>sed</th>
+</tr>
+<tr>
+<td>
+
+```bash
+cat plain_text.txt | tr '\n' ' ' | perf stat choose sed test --replace banana >/dev/null
+        201.818600 task-clock:u (msec)   #    0.999 CPUs utilized
+               174 page-faults:u         #    0.862 K/sec
+         682150871 cycles:u              #    3.380 GHz
+        1744528913 instructions:u        #    2.56  insn per cycle
+         249848443 branches:u            # 1237.985 M/sec
+           2093876 branch-misses:u       #    0.84% of all branches
+
+       0.202052499 seconds time elapsed
+```
+</td>
+<td>
+
+```bash
+cat plain_text.txt | tr '\n' ' ' | perf stat sed "s/test/banana/g" >/dev/null
+    167.801100 task-clock:u (msec)   #    0.732 CPUs utilized
+          6254 page-faults:u         #    0.037 M/sec
+     457966261 cycles:u              #    2.729 GHz
+    1100177524 instructions:u        #    2.40  insn per cycle
+     273711137 branches:u            # 1631.164 M/sec
+       3749726 branch-misses:u       #    1.37% of all branches
+
+   0.229282700 seconds time elapsed
+```
 
 </td>
 </tr>
@@ -348,50 +350,97 @@ perf stat sed "s/test/banana/g" <no_duplicates.txt >/dev/null
 <td>
 
 ```bash
-perf stat choose --sed test --replace banana <long_words_alpha.txt >/dev/null
-    149.773500 task-clock:u (msec)   #    0.998 CPUs utilized
-           172 page-faults:u         #    0.001 M/sec
-     574648880 cycles:u              #    3.837 GHz
-    1483554984 instructions:u        #    2.58  insn per cycle
-     212746634 branches:u            # 1420.456 M/sec
-       2009084 branch-misses:u       #    0.94% of all branches
+cat test_repeated.txt | tr '\n' ' ' | perf stat choose --sed test --replace banana >/dev/null
+   3073.173700 task-clock:u (msec)   #    1.000 CPUs utilized
+           173 page-faults:u         #    0.056 K/sec
+   12609185588 cycles:u              #    4.103 GHz
+   32400871677 instructions:u        #    2.57  insn per cycle
+    5682162355 branches:u            # 1848.956 M/sec
+       6113574 branch-misses:u       #    0.11% of all branches
 
-   0.150035201 seconds time elapsed
+   3.073484894 seconds time elapsed
 ```
 </td>
 <td>
 
 ```bash
-perf stat choose test -o banana -d <long_words_alpha.txt >/dev/null
-    152.271100 task-clock:u (msec)   #    0.998 CPUs utilized
-           177 page-faults:u         #    0.001 M/sec
-     592787852 cycles:u              #    3.893 GHz
-    1526427091 instructions:u        #    2.57  insn per cycle
-     219458782 branches:u            # 1441.237 M/sec
-       2011472 branch-misses:u       #    0.92% of all branches
+cat test_repeated.txt | tr '\n' ' ' | perf stat sed "s/test/banana/g" >/dev/null
+   1028.177100 task-clock:u (msec)   #    0.946 CPUs utilized
+          6969 page-faults:u         #    0.007 M/sec
+    3992654364 cycles:u              #    3.883 GHz
+   12370359018 instructions:u        #    3.10  insn per cycle
+    2552417906 branches:u            # 2482.469 M/sec
+         31733 branch-misses:u       #    0.00% of all branches
 
-   0.152563101 seconds time elapsed
+   1.087033603 seconds time elapsed
+```
+</td>
+</tr>
+<tr>
+<td>
+
+```bash
+cat no_duplicates.txt | tr '\n' ' ' | perf stat choose --sed test --replace banana >/dev/null
+     29.634700 task-clock:u (msec)   #    0.341 CPUs utilized
+           174 page-faults:u         #    0.006 M/sec
+      12351289 cycles:u              #    0.417 GHz
+      11878313 instructions:u        #    0.96  insn per cycle
+       1932301 branches:u            #   65.204 M/sec
+         42279 branch-misses:u       #    2.19% of all branches
+
+       0.086829402 seconds time elapsed
 ```
 </td>
 <td>
 
 ```bash
-perf stat sed "s/test/banana/g" <long_words_alpha.txt >/dev/null
-    391.912700 task-clock:u (msec)   #    0.999 CPUs utilized
-           111 page-faults:u         #    0.283 K/sec
-    1548611992 cycles:u              #    3.951 GHz
-    3730218026 instructions:u        #    2.41  insn per cycle
-     853233847 branches:u            # 2177.102 M/sec
-      12118311 branch-misses:u       #    1.42% of all branches
+cat no_duplicates.txt | tr '\n' ' ' | perf stat sed "s/test/banana/g" >/dev/null
+     64.197900 task-clock:u (msec)   #    0.543 CPUs utilized
+          3693 page-faults:u         #    0.058 M/sec
+     110831439 cycles:u              #    1.726 GHz
+     370316620 instructions:u        #    3.34  insn per cycle
+      52406336 branches:u            #  816.325 M/sec
+         17699 branch-misses:u       #    0.03% of all branches
 
-   0.392260900 seconds time elapsed
+   0.118165890 seconds time elapsed
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+```bash
+cat long_words_alpha.txt | tr '\n' ' ' | perf stat choose --sed test --replace banana >/dev/null
+    178.899100 task-clock:u (msec)   #    0.998 CPUs utilized
+           175 page-faults:u         #    0.978 K/sec
+     590514697 cycles:u              #    3.301 GHz
+    1483567971 instructions:u        #    2.51  insn per cycle
+     212748274 branches:u            # 1189.208 M/sec
+       2081461 branch-misses:u       #    0.98% of all branches
+
+   0.179172107 seconds time elapsed
+```
+</td>
+<td>
+
+```bash
+cat long_words_alpha.txt | tr '\n' ' ' | perf stat sed "s/test/banana/g" >/dev/null
+    151.848400 task-clock:u (msec)   #    0.763 CPUs utilized
+          5885 page-faults:u         #    0.039 M/sec
+     415952744 cycles:u              #    2.739 GHz
+     992536491 instructions:u        #    2.39  insn per cycle
+     248891288 branches:u            # 1639.077 M/sec
+       3316158 branch-misses:u       #    1.33% of all branches
+
+   0.199078000 seconds time elapsed
 ```
 
 </td>
 </tr>
 </table>
 
-# Uniqueness
+## Uniqueness Results
 
 <table>
 <tr>
@@ -520,7 +569,7 @@ perf stat awk '!a[$0]++' <long_words_alpha.txt >/dev/null
 </tr>
 </table>
 
-# Sorting + Uniqueness
+## Sorting + Uniqueness Results
 
 <table>
 <tr>
