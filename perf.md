@@ -72,7 +72,7 @@ If the delimiter form of substitution is used (invoked with `choose test -o bana
 | test_repeated | 481    | 971  |
 | no_duplicates | 2343   | 1594 |
 
-`choose` is faster than `awk` except in cases where there are very few duplicates.
+`choose` is faster than `awk` except in cases where there are very few duplicates. It is possible that the load-factor on the hash map was fine-tuned for the test bench hardware.
 
 ### Sorting + Uniqueness
 
@@ -246,25 +246,6 @@ perf stat sed "s/test/banana/g" <no_duplicates.txt >/dev/null
        3097768 branch-misses:u       #    0.26% of all branches
 
    0.437018000 seconds time elapsed
-```
-</td>
-</tr>
-<tr>
-<th>choose (delimiter sub)</th>
-</tr>
-<tr>
-<td>
-
-```bash
-cat test_repeated.txt | tr '\n' ' ' | perf stat choose test -o banana -d >/dev/null
-   1620.451200 task-clock:u (msec)   #    1.000 CPUs utilized
-           180 page-faults:u         #    0.111 K/sec
-    6550636865 cycles:u              #    4.042 GHz
-   16810745767 instructions:u        #    2.57  insn per cycle
-    2482139150 branches:u            # 1531.758 M/sec
-       5909715 branch-misses:u       #    0.24% of all branches
-
-   1.620749112 seconds time elapsed
 ```
 </td>
 </tr>

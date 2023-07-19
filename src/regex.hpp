@@ -108,12 +108,33 @@ uint32_t min_match_length(const code& c) {
   return out;
 }
 
+struct SubstitutionContext {
+  // the substitution pre-allocates a block to place the result. if the result
+  // can't fit in the block, then it computes the needed size and uses that as
+  // the pre-allocated size for next time. it keeps track of the max size seen
+  // thus far.
+  PCRE2_SIZE max_replacement = 0;
+};
+
+namespace {
+
+std::runtime_error get_sub_err(int sub_rc) {
+  PCRE2_UCHAR buffer[256];
+  pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
+  char msg[512];
+  snprintf(msg, 512, "PCRE2 substitution error: %s", buffer);
+  return std::runtime_error(msg);
+}
+
+} // namespace
+
 // applies a global substitution on the subject.
 // replacement is null terminating.
 std::vector<char> substitute_global(const code& re, //
                                     const char* subject,
                                     PCRE2_SIZE subject_length,
-                                    const char* replacement) {
+                                    const char* replacement,
+                                    SubstitutionContext& context) {
   apply_null_guard(subject, subject_length);
   uint32_t sub_flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
 #ifdef PCRE2_SUBSTITUTE_LITERAL
@@ -121,43 +142,51 @@ std::vector<char> substitute_global(const code& re, //
     sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
   }
 #endif
-  PCRE2_SIZE output_size = 0;               // initial pass calculates length of output
-  pcre2_substitute(re.get(),                //
-                   (PCRE2_SPTR)subject,     //
-                   subject_length,          //
-                   0,                       //
-                   sub_flags,               //
-                   NULL,                    //
-                   NULL,                    //
-                   (PCRE2_SPTR)replacement, //
-                   PCRE2_ZERO_TERMINATED,   //
-                   NULL,                    //
-                   &output_size);
 
-  std::vector<char> sub_out(output_size);
-  sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+  std::vector<char> ret;
+  ret.resize(context.max_replacement);
+  PCRE2_SIZE output_size = context.max_replacement;
 
-  int sub_rc = pcre2_substitute(re.get(),                      //
-                                (PCRE2_SPTR)subject,           //
-                                subject_length,                //
-                                0,                             //
-                                sub_flags,                     //
-                                NULL,                          //
-                                NULL,                          //
-                                (PCRE2_SPTR)replacement,       //
-                                PCRE2_ZERO_TERMINATED,         //
-                                (PCRE2_UCHAR8*)sub_out.data(), //
+  int sub_rc = pcre2_substitute(re.get(),                  //
+                                (PCRE2_SPTR)subject,       //
+                                subject_length,            //
+                                0,                         //
+                                sub_flags,                 //
+                                NULL,                      //
+                                NULL,                      //
+                                (PCRE2_SPTR)replacement,   //
+                                PCRE2_ZERO_TERMINATED,     //
+                                (PCRE2_UCHAR8*)ret.data(), //
                                 &output_size);
 
-  if (sub_rc < 0) {
-    PCRE2_UCHAR buffer[256];
-    pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
-    char msg[512];
-    snprintf(msg, 512, "PCRE2 substitution error: %s", buffer);
-    throw std::runtime_error(msg);
+  if (sub_rc >= 0) {
+    ret.resize(output_size);
+    return ret;
+  } else if (sub_rc == PCRE2_ERROR_NOMEMORY) {
+    // second pass
+    sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    context.max_replacement = output_size;
+    ret.resize(context.max_replacement);
+    sub_rc = pcre2_substitute(re.get(),                  //
+                              (PCRE2_SPTR)subject,       //
+                              subject_length,            //
+                              0,                         //
+                              sub_flags,                 //
+                              NULL,                      //
+                              NULL,                      //
+                              (PCRE2_SPTR)replacement,   //
+                              PCRE2_ZERO_TERMINATED,     //
+                              (PCRE2_UCHAR8*)ret.data(), //
+                              &output_size);
+    if (sub_rc >= 0) {
+      ret.resize(output_size);
+      return ret;
+    } else {
+      throw get_sub_err(sub_rc);
+    }
+  } else {
+    throw get_sub_err(sub_rc);
   }
-  sub_out.resize(sub_out.size() - 1); // pcre2_substitute always places an extra null char at the end
-  return sub_out;
 }
 
 // given a prior match, apply a substitution on the match's position. returns a
@@ -167,7 +196,8 @@ std::vector<char> substitute_on_match(const match_data& data, //
                                       const code& re,
                                       const char* subject,
                                       PCRE2_SIZE subject_length,
-                                      const char* replacement) {
+                                      const char* replacement,
+                                      SubstitutionContext& context) {
   apply_null_guard(subject, subject_length);
   uint32_t sub_flags = PCRE2_SUBSTITUTE_REPLACEMENT_ONLY //
                        | PCRE2_SUBSTITUTE_MATCHED        //
@@ -177,43 +207,49 @@ std::vector<char> substitute_on_match(const match_data& data, //
     sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
   }
 #endif
-  PCRE2_SIZE output_size = 0;               // initial pass calculates length of output
-  pcre2_substitute(re.get(),                //
-                   (PCRE2_SPTR)subject,     //
-                   subject_length,          //
-                   0,                       //
-                   sub_flags,               //
-                   data.get(),              //
-                   NULL,                    //
-                   (PCRE2_SPTR)replacement, //
-                   PCRE2_ZERO_TERMINATED,   //
-                   NULL,                    //
-                   &output_size);
-
-  std::vector<char> sub_out(output_size);
-  sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-
-  int sub_rc = pcre2_substitute(re.get(),                      //
-                                (PCRE2_SPTR)subject,           //
-                                subject_length,                //
-                                0,                             //
-                                sub_flags,                     //
-                                data.get(),                    //
-                                NULL,                          //
-                                (PCRE2_SPTR)replacement,       //
-                                PCRE2_ZERO_TERMINATED,         //
-                                (PCRE2_UCHAR8*)sub_out.data(), //
+  std::vector<char> ret;
+  ret.resize(context.max_replacement);
+  PCRE2_SIZE output_size = context.max_replacement;
+  int sub_rc = pcre2_substitute(re.get(),                  //
+                                (PCRE2_SPTR)subject,       //
+                                subject_length,            //
+                                0,                         //
+                                sub_flags,                 //
+                                data.get(),                //
+                                NULL,                      //
+                                (PCRE2_SPTR)replacement,   //
+                                PCRE2_ZERO_TERMINATED,     //
+                                (PCRE2_UCHAR8*)ret.data(), //
                                 &output_size);
 
-  if (sub_rc < 0) {
-    PCRE2_UCHAR buffer[256];
-    pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
-    char msg[512];
-    snprintf(msg, 512, "PCRE2 substitution error after match: %s", buffer);
-    throw std::runtime_error(msg);
+  if (sub_rc >= 0) {
+    ret.resize(output_size);
+    return ret;
+  } else if (sub_rc == PCRE2_ERROR_NOMEMORY) {
+    // second pass
+    sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    context.max_replacement = output_size;
+    ret.resize(context.max_replacement);
+    sub_rc = pcre2_substitute(re.get(),                  //
+                              (PCRE2_SPTR)subject,       //
+                              subject_length,            //
+                              0,                         //
+                              sub_flags,                 //
+                              data.get(),                //
+                              NULL,                      //
+                              (PCRE2_SPTR)replacement,   //
+                              PCRE2_ZERO_TERMINATED,     //
+                              (PCRE2_UCHAR8*)ret.data(), //
+                              &output_size);
+    if (sub_rc >= 0) {
+      ret.resize(output_size);
+      return ret;
+    } else {
+      throw get_sub_err(sub_rc);
+    }
+  } else {
+    throw get_sub_err(sub_rc);
   }
-  sub_out.resize(sub_out.size() - 1); // pcre2_substitute always places an extra null char at the end
-  return sub_out;
 }
 
 struct Match {

@@ -372,6 +372,7 @@ void print_help_message() {
       "                -r --comp '^John' --comp-sort\n"
       "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --in-index\\\n"
       "                after --rm '^c' --sub '.+' '$0 out:' --out-index after\n"
+      "        echo -e \"this\nis\na\ntest\" | choose -r --sed \".+\" --replace banana\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
       "controls:\n"
