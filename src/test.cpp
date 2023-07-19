@@ -298,9 +298,9 @@ choose_output run_choose(const std::vector<char>& input, const std::vector<const
 #endif
 
   int input_pipe[2];
-  pipe(input_pipe);
+  (void)!pipe(input_pipe); // supress unused result
   int output_pipe[2];
-  pipe(output_pipe);
+  (void)!pipe(output_pipe);
   auto input_writer = choose::file(fdopen(input_pipe[1], "w"));
   auto input_reader = choose::file(fdopen(input_pipe[0], "r"));
   auto output_writer = choose::file(fdopen(output_pipe[1], "w"));

@@ -3,6 +3,8 @@
 #include <cassert>
 #include <optional>
 #include <set>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
 
 #include "args.hpp"
@@ -211,7 +213,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto user_defined_comparison = [is_sort_reverse, &comp_data = std::as_const(comp_data), &args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    auto user_defined_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
       if (is_sort_reverse) {
@@ -227,7 +229,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    auto lexicographical_comparison = [is_sort_reverse, &args = std::as_const(args)](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    auto set_comp = [&](indirect lhs, indirect rhs) -> bool { //
+      return user_defined_comparison(output[lhs], output[rhs]);
+    };
+
+    auto lexicographical_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
       if (is_sort_reverse) {
@@ -237,21 +243,44 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
     };
 
-    auto uniqueness_comp = [&](indirect lhs, indirect rhs) -> bool {
-      if (is_comp_unique) {
-        return user_defined_comparison(output[lhs], output[rhs]);
-      } else if (is_unique) {
-        return lexicographical_comparison(output[lhs], output[rhs]);
-      } else {
-        return false; // never
-      }
+    auto unordered_set_hash = [&](indirect val) -> size_t {
+      const Token& t = output[val];
+      auto view = std::string_view(t.buffer.data(), t.buffer.size());
+      return std::hash<std::string_view>{}(view);
     };
 
-    std::set<indirect, decltype(uniqueness_comp)> uniqueness_set(uniqueness_comp);
+    auto unordered_set_equals = [&](indirect lhs, indirect rhs) -> bool { //
+      return output[lhs] == output[rhs];
+    };
+
+    // uniqueness is applied with an unordered_set if lexicographical comparison
+    // is used. in contrast, the user defined comparison uses a std::set, as it
+    // is easier in the args to specify a comparison with regex compared to a
+    // hash with regex.
+    using set_T = std::set<indirect, decltype(set_comp)>;
+    using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
+    using unique_checker_T = std::variant<std::monostate, set_T, unordered_set_T>;
+
+    unique_checker_T unique_checker = [&]() -> unique_checker_T {
+      if (is_comp_unique) {
+        return unique_checker_T(set_T(set_comp));
+      } else if (is_unique) {
+        auto s = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
+        s.max_load_factor(0.125); // obtained experimentally. see perf.md
+        return unique_checker_T(std::move(s));
+      } else {
+        return unique_checker_T();
+      }
+    }();
 
     // returns true if output[elem] is unique
     auto uniqueness_check = [&](indirect elem) -> bool { //
-      return uniqueness_set.insert(elem).second;
+      if (unordered_set_T* uniqueness_unordered_set = std::get_if<unordered_set_T>(&unique_checker)) {
+        return uniqueness_unordered_set->insert(elem).second;
+      } else {
+        set_T& uniqueness_set = std::get<set_T>(unique_checker);
+        return uniqueness_set.insert(elem).second;
+      }
     };
 
     // for when parts of a token are accumulated
@@ -613,7 +642,11 @@ skip_read: // do another iteration but don't read in any more bytes
       throw termination_request();
     }
 
-    uniqueness_set.clear();
+    if (unordered_set_T* uniqueness_unordered_set = std::get_if<unordered_set_T>(&unique_checker)) {
+      uniqueness_unordered_set->clear();
+    } else if (set_T* uniqueness_set = std::get_if<set_T>(&unique_checker)) {
+      uniqueness_set->clear();
+    }
 
     if (args.comp_sort) {
       std::stable_sort(output.begin(), output.end(), user_defined_comparison);
