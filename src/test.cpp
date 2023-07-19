@@ -753,7 +753,7 @@ BOOST_AUTO_TEST_CASE(buf_size_sed_trailing_incomplete_multibyte) {
 }
 
 BOOST_AUTO_TEST_CASE(buf_size_entirely_composed_incomplete_multibyte) {
-  const char ch[] = {(char)0xEF, (char)0xBB, (char)0xBF};
+  const char ch[] = {(char)0xEF, (char)0xBB, (char)0xBF, 0};
   // this checks two things:
   // 1. no spin lock from being unable to clear the buffer
   // 2. the third byte causes a UTF-8 error on next iteration.
