@@ -39,18 +39,19 @@ struct RmOrFilterOp {
 
 struct SubOp {
   regex::code target;
+  regex::SubstitutionContext ctx;
   const char* replacement;
 
   SubOp(regex::code&& target, const char* replacement)
       : target(std::move(target)), //
         replacement(replacement) {}
 
-  void apply(std::vector<char>& out, const char* begin, const char* end) const { //
-    out = regex::substitute_global(target, begin, end - begin, replacement);
+  void apply(std::vector<char>& out, const char* begin, const char* end) { //
+    out = regex::substitute_global(target, begin, end - begin, replacement, this->ctx);
   }
 
   // same as apply, but no copies or moves. sent straight to the output
-  void direct_apply(FILE* out, const char* begin, const char* end) const {
+  void direct_apply(FILE* out, const char* begin, const char* end) {
     regex::match_data data = regex::create_match_data(this->target);
     const char* offset = begin;
     while (offset < end) {
@@ -61,7 +62,7 @@ struct SubOp {
       regex::Match match = regex::get_match(begin, data, "match before substitution");
       str::write_f(out, offset, match.begin);
       offset = match.end;
-      std::vector<char> replacement = regex::substitute_on_match(data, this->target, begin, end - begin, this->replacement);
+      std::vector<char> replacement = regex::substitute_on_match(data, this->target, begin, end - begin, this->replacement, this->ctx);
       str::write_f(out, replacement);
     }
     str::write_f(out, offset, end);
@@ -70,14 +71,15 @@ struct SubOp {
 
 struct ReplaceOp {
   const char* replacement;
+  regex::SubstitutionContext ctx;
   ReplaceOp(const char* replacement) : replacement(replacement) {}
 
   void apply(std::vector<char>& out,        //
              const char* subj_begin,        //
              const char* subj_end,          //
              const regex::match_data& data, //
-             const regex::code& re) const {
-    out = regex::substitute_on_match(data, re, subj_begin, subj_end - subj_begin, this->replacement);
+             const regex::code& re) {
+    out = regex::substitute_on_match(data, re, subj_begin, subj_end - subj_begin, this->replacement, this->ctx);
   }
 };
 

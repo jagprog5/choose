@@ -55,14 +55,12 @@ done) > no_duplicates.txt
 | (ms)             | choose | sed  |
 |------------------|--------|------|
 | plain_text       | 202    | 168  |
-| test_repeated    | 3073   | 1028 |
-| no_duplicates    | 29     | 64   |
+| test_repeated    | 2513   | 1028 |
+| no_duplicates    | 32     | 64   |
 
 sed reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, sed performs extremely poorly on input files that contain many small lines (for `no_duplicates`, `sed` was 4812% slower than `choose`; see special cases' results below). To normalize the performance, `tr` is used to make the input a single large line. This is applied to all input files, and for both `sed` and `choose`, to make the context the same.
 
 After this normalization is applied, choose is slower than sed except in cases where there are few substitutions to apply.
-
-If the delimiter form of substitution is used (invoked with `choose test -o banana -d`), then it significantly outperforms both normal `choose` and `sed` on `test_repeated`. However, this invocation is cheating since the replacement string must be a literal when `choose` is invoked this way, and since the input contains the substitution target repeatedly then this effect is magnified.
 
 ### Uniqueness
 
@@ -249,25 +247,6 @@ perf stat sed "s/test/banana/g" <no_duplicates.txt >/dev/null
 ```
 </td>
 </tr>
-<tr>
-<th>choose (delimiter sub)</th>
-</tr>
-<tr>
-<td>
-
-```bash
-cat test_repeated.txt | tr '\n' ' ' | perf stat choose test -o banana -d >/dev/null
-   1620.451200 task-clock:u (msec)   #    1.000 CPUs utilized
-           180 page-faults:u         #    0.111 K/sec
-    6550636865 cycles:u              #    4.042 GHz
-   16810745767 instructions:u        #    2.57  insn per cycle
-    2482139150 branches:u            # 1531.758 M/sec
-       5909715 branch-misses:u       #    0.24% of all branches
-
-   1.620749112 seconds time elapsed
-```
-</td>
-</tr>
 </table>
 
 ### Normal Cases
@@ -313,14 +292,14 @@ cat plain_text.txt | tr '\n' ' ' | perf stat sed "s/test/banana/g" >/dev/null
 
 ```bash
 cat test_repeated.txt | tr '\n' ' ' | perf stat choose --sed test --replace banana >/dev/null
-   3073.173700 task-clock:u (msec)   #    1.000 CPUs utilized
-           173 page-faults:u         #    0.056 K/sec
-   12609185588 cycles:u              #    4.103 GHz
-   32400871677 instructions:u        #    2.57  insn per cycle
-    5682162355 branches:u            # 1848.956 M/sec
-       6113574 branch-misses:u       #    0.11% of all branches
+   2513.224300 task-clock:u (msec)   #    1.000 CPUs utilized
+           174 page-faults:u         #    0.069 K/sec
+   10211540625 cycles:u              #    4.063 GHz
+   26790884965 instructions:u        #    2.62  insn per cycle
+    4542166170 branches:u            # 1807.306 M/sec
+       6077567 branch-misses:u       #    0.13% of all branches
 
-   3.073484894 seconds time elapsed
+   2.513608207 seconds time elapsed
 ```
 </td>
 <td>
@@ -343,14 +322,14 @@ cat test_repeated.txt | tr '\n' ' ' | perf stat sed "s/test/banana/g" >/dev/null
 
 ```bash
 cat no_duplicates.txt | tr '\n' ' ' | perf stat choose --sed test --replace banana >/dev/null
-     29.634700 task-clock:u (msec)   #    0.341 CPUs utilized
+     31.622500 task-clock:u (msec)   #    0.369 CPUs utilized
            174 page-faults:u         #    0.006 M/sec
-      12351289 cycles:u              #    0.417 GHz
-      11878313 instructions:u        #    0.96  insn per cycle
-       1932301 branches:u            #   65.204 M/sec
-         42279 branch-misses:u       #    2.19% of all branches
+      14401583 cycles:u              #    0.455 GHz
+      11920871 instructions:u        #    0.83  insn per cycle
+       1943296 branches:u            #   61.453 M/sec
+         47956 branch-misses:u       #    2.47% of all branches
 
-       0.086829402 seconds time elapsed
+   0.085747798 seconds time elapsed
 ```
 </td>
 <td>
