@@ -192,7 +192,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool has_ops = !args.ordered_ops.empty();
   const bool flush = args.flush;
 
-  const bool is_sort_reverse = args.sort_reverse;
   const bool is_unique = args.unique;
   const bool is_comp_unique = args.comp_unique;
 
@@ -216,9 +215,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     auto user_defined_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
-      if (is_sort_reverse) {
-        std::swap(lhs, rhs);
-      }
 
       int lhs_result = regex::match(args.comp, lhs->buffer.data(), lhs->buffer.size(), comp_data, "user comp");
       int rhs_result = regex::match(args.comp, rhs->buffer.data(), rhs->buffer.size(), comp_data, "user comp");
@@ -236,9 +232,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     auto lexicographical_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
-      if (is_sort_reverse) {
-        std::swap(lhs, rhs);
-      }
       return std::lexicographical_compare( //
           lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
     };

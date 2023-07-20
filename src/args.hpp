@@ -30,8 +30,6 @@ struct Arguments {
   bool use_input_delimiter = false;
   bool end = false;
   bool sort = false; // indicates that any sort is applied
-  // if sort_reverse is set, then sort should also be set at the same time
-  bool sort_reverse = false;
 
   // user defined comparison
   regex::code comp = 0;
@@ -243,7 +241,7 @@ void print_help_message() {
       "                as the positional argument\n"
       "        --comp-sort\n"
       "                requires --comp. does a stable sort using the comparison.\n"
-      "                ignores --sort. can use --sort-reverse\n"
+      "                ignores --sort\n"
       "        --comp-unique\n"
       "                requires --comp. allow only first instances of unique\n"
       "                elements as defined by the comparison. ignores --unique\n"
@@ -295,8 +293,6 @@ void print_help_message() {
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
-      "        --sort-reverse\n"
-      "                sort the tokens in reverse order\n"
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
       "        --take <# tokens>\n"
@@ -444,7 +440,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"sed", no_argument, NULL, 0},
         {"sort", no_argument, NULL, 's'},
         {"selection-order", no_argument, NULL, 0},
-        {"sort-reverse", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
         {"use-delimiter", no_argument, NULL, 0},
@@ -583,9 +578,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("sed", name) == 0) {
             ret.match = true;
             ret.sed = true;
-          } else if (strcmp("sort-reverse", name) == 0) {
-            ret.sort = true;
-            ret.sort_reverse = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {

@@ -412,21 +412,9 @@ BOOST_AUTO_TEST_CASE(sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(sort_reverse) {
-  choose_output out = run_choose("this\nis\na\ntest", {"--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "test", "is", "a"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 BOOST_AUTO_TEST_CASE(unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "test", "is", "a"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -439,23 +427,10 @@ BOOST_AUTO_TEST_CASE(defined_sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(defined_sort_reverse) {
-  // notice that this isn't just the reverse of defined_sort test, since the sort is stable
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-sort", "--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"Apple", "Banana", "John Doe", "John Doe", "John Smith"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 BOOST_AUTO_TEST_CASE(defined_unique) {
   // the comparison treats all John's as the same. so there's one John and one non John in the output.
   choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-unique", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"John Doe", "Apple"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(defined_sort_reverse_and_unique) {
-  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-sort", "--sort-reverse", "--comp-unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
