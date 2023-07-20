@@ -48,7 +48,7 @@ done) > no_duplicates.txt
 | test_repeated    | 1489   | 1434      |
 | no_duplicates    | 304    | 315       |
 
-`pcre2grep` and `choose` have about the same speed.
+`pcre2grep` and `choose` are around the same speed.
 
 ### Stream Editing
 
