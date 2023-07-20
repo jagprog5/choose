@@ -37,6 +37,14 @@ struct RmOrFilterOp {
   }
 };
 
+struct InLimitOp {
+  size_t in_limit;
+
+  InLimitOp(size_t n) : in_limit(n) {}
+
+  bool finished() { return !in_limit--; }
+};
+
 struct SubOp {
   regex::code target;
   regex::SubstitutionContext ctx;
@@ -156,6 +164,44 @@ struct IndexOp {
   }
 };
 
-using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, IndexOp>;
+using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, InLimitOp, IndexOp>;
+
+namespace uncompiled {
+
+struct UncompiledRmOrFilterOp {
+  RmOrFilterOp::Type type;
+  const char* arg;
+};
+
+struct UncompiledSubOp {
+  const char* target;
+  const char* replacement;
+};
+
+using UncompiledReplaceOp = ReplaceOp;
+using UncompiledInLimitOp = InLimitOp;
+using UncompiledIndexOp = IndexOp;
+
+// uncompiled ops are exclusively used in the args. They hold information as all the
+// args are parsed. once the args are fully known, they are converted to
+// there compiled counterparts.
+using UncompiledOrderedOp = std::variant<UncompiledRmOrFilterOp, UncompiledSubOp, UncompiledReplaceOp, UncompiledInLimitOp, UncompiledIndexOp>;
+
+OrderedOp compile(UncompiledOrderedOp op, uint32_t options) {
+  if (UncompiledRmOrFilterOp* rf_op = std::get_if<UncompiledRmOrFilterOp>(&op)) {
+    const char* id = rf_op->type == RmOrFilterOp::FILTER ? "filter" : "remove";
+    return RmOrFilterOp(rf_op->type, regex::compile(rf_op->arg, options, id));
+  } else if (UncompiledSubOp* sub_op = std::get_if<UncompiledSubOp>(&op)) {
+    return SubOp(regex::compile(sub_op->target, options, "substitute"), sub_op->replacement);
+  } else if (UncompiledReplaceOp* o = std::get_if<UncompiledReplaceOp>(&op)) {
+    return *o;
+  } else if (UncompiledInLimitOp* o = std::get_if<UncompiledInLimitOp>(&op)) {
+    return *o;
+  } else {
+    return std::get<UncompiledIndexOp>(op);
+  }
+}
+
+} // namespace uncompiled
 
 } // namespace choose

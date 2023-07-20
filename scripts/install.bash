@@ -8,7 +8,6 @@ cp -v -- "$SCRIPT_DIR/choose.bash" ~/.choose/
 
 if [[ ! -f ~/.bashrc ]]; then
   echo ~/.bashrc not found!
-  echo choose has not been added to the path and hist is not installed
   exit 1
 fi
 

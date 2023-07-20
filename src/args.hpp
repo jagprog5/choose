@@ -51,7 +51,6 @@ struct Arguments {
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
-  std::optional<typename std::vector<int>::size_type> in;
   std::optional<typename std::vector<int>::size_type> out;
 
   // number of bytes
@@ -97,49 +96,11 @@ struct Arguments {
 
 namespace {
 
-struct UncompiledOrderedOp {
-  enum Type { SUBSTITUTE, FILTER, REPLACE, REMOVE, INPUT_INDEX, OUTPUT_INDEX };
-  Type type;
-  // arg0 or arg1 might be set to null (and not used) based on the type
-  const char* arg0;
-  const char* arg1;
-
-  OrderedOp compile(uint32_t options) const {
-    if (type == REPLACE) {
-      return ReplaceOp(arg0);
-    }
-    if (type == INPUT_INDEX || type == OUTPUT_INDEX) {
-      return IndexOp(type == INPUT_INDEX ? IndexOp::INPUT : IndexOp::OUTPUT, //
-                     arg0 ? IndexOp::BEFORE : IndexOp::AFTER);
-    }
-
-    auto id = [this]() {
-      if (this->type == SUBSTITUTE) {
-        return "substitute";
-      }
-      if (this->type == REMOVE) {
-        return "remove";
-      }
-      if (this->type == FILTER) {
-        return "filter";
-      }
-      return "?"; // never
-    };
-
-    // at this point the op can only be sub rm or filter
-    regex::code code = regex::compile(arg0, options, id());
-    if (type == SUBSTITUTE) {
-      return SubOp{std::move(code), arg1};
-    }
-    return RmOrFilterOp(type == REMOVE ? RmOrFilterOp::REMOVE : RmOrFilterOp::FILTER, std::move(code));
-  }
-};
-
 struct UncompiledCodes {
   // all args must be parsed before the args are compiled
   // the uncompiled args are stored here before transfer to the Arguments output.
   uint32_t re_options = PCRE2_LITERAL;
-  std::vector<UncompiledOrderedOp> ordered_ops;
+  std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
   std::vector<char> primary;
 
@@ -151,8 +112,8 @@ struct UncompiledCodes {
   bool primary_set = false;
 
   void compile(Arguments& output) const {
-    for (const UncompiledOrderedOp& op : ordered_ops) {
-      OrderedOp oo = op.compile(re_options);
+    for (const uncompiled::UncompiledOrderedOp& op : ordered_ops) {
+      OrderedOp oo = uncompiled::compile(op, re_options);
       output.ordered_ops.push_back(std::move(oo));
     }
 
@@ -225,6 +186,8 @@ void print_help_message() {
       "                as the positional argument\n"
       "        --in-index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, insert the input index\n"
+      "        --in-limit <# tokens>\n"
+      "                stop reading the input once n tokens have reached this point\n"
       "        --out-index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, insert the output index\n"
       "        --replace <replacement>\n"
@@ -302,8 +265,6 @@ void print_help_message() {
       "                token is written\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
-      "        --in <# tokens>\n"
-      "                stop reading the input once n tokens have been created\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -339,7 +300,7 @@ void print_help_message() {
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
       "        --take <# tokens>\n"
-      "                both --in and --out\n"
+      "                sets --out, and a --in-limit at the beginning\n"
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
@@ -457,7 +418,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
-        {"in", required_argument, NULL, 0},
+        {"in-limit", required_argument, NULL, 0},
         {"in-index", optional_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"out", required_argument, NULL, 0},
@@ -518,14 +479,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
-            UncompiledOrderedOp op{UncompiledOrderedOp::REMOVE, optarg, NULL};
-            uncompiled_output.ordered_ops.push_back(op);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
           } else if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
             ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
-          } else if (strcmp("in", name) == 0) {
-            ret.in = num::parse_unsigned<decltype(ret.in)::value_type>(on_num_err, optarg);
+          } else if (strcmp("in-limit", name) == 0) {
+            auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
           } else if (strcmp("max-lookbehind", name) == 0) {
             ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
           } else if (strcmp("read", name) == 0) {
@@ -533,47 +494,41 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("out", name) == 0) {
             ret.out = num::parse_unsigned<decltype(ret.out)::value_type>(on_num_err, optarg);
           } else if (strcmp("in-index", name) == 0) {
-            UncompiledOrderedOp op; // NOLINT
-            op.type = UncompiledOrderedOp::INPUT_INDEX;
+            IndexOp::Align align; // NOLINT
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-              op.arg0 = (const char*)1;
+              align = IndexOp::BEFORE;
             } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-              op.arg0 = 0;
+              align = IndexOp::AFTER;
             } else {
               arg_error_preamble(argc, argv);
-              fprintf(stderr, "alignment must be \"before\" or \"after\"\n");
+              fprintf(stderr, "alignment must be before or after\n");
               arg_has_errors = true;
+              align = IndexOp::BEFORE;
             }
-            op.arg1 = NULL;
-            uncompiled_output.ordered_ops.push_back(op);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
           } else if (strcmp("out-index", name) == 0) {
-            UncompiledOrderedOp op; // NOLINT
-            op.type = UncompiledOrderedOp::OUTPUT_INDEX;
+            IndexOp::Align align; // NOLINT
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-              op.arg0 = (const char*)1;
+              align = IndexOp::BEFORE;
             } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-              op.arg0 = 0;
+              align = IndexOp::AFTER;
             } else {
               arg_error_preamble(argc, argv);
-              fprintf(stderr, "alignment must be \"before\" or \"after\"\n");
+              fprintf(stderr, "alignment must be before or after\n");
               arg_has_errors = true;
+              align = IndexOp::BEFORE;
             }
-            op.arg1 = NULL;
-            uncompiled_output.ordered_ops.push_back(op);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::OUTPUT, align));
           } else if (strcmp("replace", name) == 0) {
-            for (UncompiledOrderedOp op : uncompiled_output.ordered_ops) {
-              if (op.type != UncompiledOrderedOp::REMOVE && op.type != UncompiledOrderedOp::FILTER) {
+            for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
+              if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
                 arg_error_preamble(argc, argv);
                 fprintf(stderr, "option '--%s' can't be proceeded by an editing op\n", name);
                 arg_has_errors = true;
                 break;
               }
             }
-            UncompiledOrderedOp op; // NOLINT
-            op.type = UncompiledOrderedOp::REPLACE;
-            op.arg0 = optarg;
-            op.arg1 = NULL;
-            uncompiled_output.ordered_ops.push_back(op);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledReplaceOp(optarg));
           } else if (strcmp("sub", name) == 0 || strcmp("substitute", name) == 0) {
             // special handing here since getopt doesn't normally support multiple arguments
             if (optind >= argc) {
@@ -583,19 +538,21 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               arg_has_errors = true;
             } else {
               ++optind;
-              UncompiledOrderedOp op; // NOLINT
-              op.type = UncompiledOrderedOp::SUBSTITUTE;
-              op.arg0 = argv[optind - 2];
-              op.arg1 = argv[optind - 1];
-              uncompiled_output.ordered_ops.push_back(op);
+              uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
             }
           } else if (strcmp("comp", name) == 0) {
             uncompiled_output.comp = optarg;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            ret.in = num::parse_unsigned<decltype(ret.in)::value_type>(on_num_err, optarg);
-            ret.out = ret.in;
+            auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
+            if (val > std::numeric_limits<decltype(ret.out)>::max()) {
+              // careful handling here since in limits are unsigned but out limit is signed
+              on_num_err();
+            } else {
+              ret.out = val;
+              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), uncompiled::UncompiledInLimitOp(val));
+            }
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -634,41 +591,39 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("in-index", name) == 0) {
-            UncompiledOrderedOp op; // NOLINT
-            op.type = UncompiledOrderedOp::INPUT_INDEX;
+            IndexOp::Align align; // NOLINT
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
               if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-                op.arg0 = (const char*)1;
+                align = IndexOp::BEFORE;
               } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-                op.arg0 = 0;
+                align = IndexOp::AFTER;
               } else {
                 arg_error_preamble(argc, argv);
-                fprintf(stderr, "alignment must be \"before\" or \"after\"\n");
+                fprintf(stderr, "alignment must be before or after\n");
                 arg_has_errors = true;
+                align = IndexOp::BEFORE;
               }
             } else {
-              op.arg0 = (const char*)1; // default = before
+              align = IndexOp::BEFORE;
             }
-            op.arg1 = NULL;
-            uncompiled_output.ordered_ops.push_back(op);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
           } else if (strcmp("out-index", name) == 0) {
-            UncompiledOrderedOp op; // NOLINT
-            op.type = UncompiledOrderedOp::OUTPUT_INDEX;
+            IndexOp::Align align; // NOLINT
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
               if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-                op.arg0 = (const char*)1;
+                align = IndexOp::BEFORE;
               } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-                op.arg0 = 0;
+                align = IndexOp::AFTER;
               } else {
                 arg_error_preamble(argc, argv);
-                fprintf(stderr, "alignment must be \"before\" or \"after\"\n");
+                fprintf(stderr, "alignment must be before or after\n");
                 arg_has_errors = true;
+                align = IndexOp::BEFORE;
               }
             } else {
-              op.arg0 = (const char*)1; // default = before
+              align = IndexOp::BEFORE;
             }
-            op.arg1 = NULL;
-            uncompiled_output.ordered_ops.push_back(op);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::OUTPUT, align));
           } else if (strcmp("use-delimiter", name) == 0) {
             ret.use_input_delimiter = true;
           } else if (strcmp("utf", name) == 0) {
@@ -768,8 +723,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         ret.prompt = optarg;
         break;
       case 'f':
-        UncompiledOrderedOp op{UncompiledOrderedOp::FILTER, optarg, NULL};
-        uncompiled_output.ordered_ops.push_back(op);
+        uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::FILTER, optarg});
         break;
     }
   }
@@ -790,8 +744,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (!ret.match) {
-    for (UncompiledOrderedOp op : uncompiled_output.ordered_ops) {
-      if (op.type == UncompiledOrderedOp::REPLACE) {
+    for (uncompiled::UncompiledOrderedOp op : uncompiled_output.ordered_ops) {
+      if (std::holds_alternative<uncompiled::UncompiledReplaceOp>(op)) {
         arg_error_preamble(argc, argv);
         fputs("replacement op requires --match or --sed\n", stderr);
         arg_has_errors = true;

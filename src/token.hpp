@@ -207,8 +207,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
   std::vector<Token> output;             // !tokens_not_stored, this is used
 
-  // edge case on logic
-  if (args.out == 0 || args.in == 0) {
+  if (args.out == 0) {
+    // edge case on logic. it adds a token, then checks if the out limit has been hit
     goto skip_all;
   }
 
@@ -326,6 +326,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (rf_op->removes(begin, end)) {
             return false;
           }
+        } else if (InLimitOp* rf_op = std::get_if<InLimitOp>(&op)) {
+          if (rf_op->finished()) {
+            return true;
+          }
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
@@ -381,7 +385,7 @@ after_direct_apply:
         if (flush) {
           choose::str::flush_f(args.output);
         }
-        if (direct_output.out_count == args.out || direct_output.out_count == args.in) {
+        if (direct_output.out_count == args.out) {
           // code coverage reaches here. mistakenly shows finish_output as
           // unreached but throw is reached. weird.
           direct_output.finish_output();
@@ -389,10 +393,8 @@ after_direct_apply:
         }
         return false;
       } else {
-        if (!check_unique_then_append()) {
-          return false;
-        }
-        return output.size() == args.in;
+        check_unique_then_append(); // result ignored
+        return false;
       }
     };
 
@@ -471,8 +473,9 @@ skip_read: // do another iteration but don't read in any more bytes
         if (is_match) {
           if (is_sed) {
             str::write_f(args.output, subject + match_offset, match.begin);
-            // don't check result since it throws if direct_output (implied here) and last token
-            process_token(match.begin, match.end);
+            if (process_token(match.begin, match.end)) {
+              break;
+            }
           } else {
             auto match_handler = [&](const regex::Match& m) -> bool { //
               return process_token(m.begin, m.end);

@@ -11,4 +11,4 @@ if [ "$DIFF" != "0" ]; then
     echo "$DIFF" line removed from ~/.bashrc
 fi
 
-unset -f hist
+unset -f ch_hist
