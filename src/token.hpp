@@ -650,7 +650,7 @@ skip_read: // do another iteration but don't read in any more bytes
       std::sort(output.begin(), output.end(), lexicographical_comparison);
     }
 
-    if (args.flip) {
+    if (args.reverse) {
       std::reverse(output.begin(), output.end());
     }
 

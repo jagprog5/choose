@@ -475,8 +475,8 @@ BOOST_AUTO_TEST_CASE(in_limit) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(flip) {
-  choose_output out = run_choose("a\nb\nc\nd", {"--flip"});
+BOOST_AUTO_TEST_CASE(reverse) {
+  choose_output out = run_choose("a\nb\nc\nd", {"--reverse"});
   choose_output correct_output{to_vec("d\nc\nb\na\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

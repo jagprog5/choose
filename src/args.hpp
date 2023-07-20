@@ -38,7 +38,7 @@ struct Arguments {
   bool comp_sort = false;
 
   bool unique = false;
-  bool flip = false;
+  bool reverse = false;
   bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
@@ -84,7 +84,7 @@ struct Arguments {
   bool can_drop_warn = true;
 
   // a special case where the tokens can be sent directly to the output as they are received
-  bool is_direct_output() const { return !tui && !sort && !flip; }
+  bool is_direct_output() const { return !tui && !sort && !reverse; }
 
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
@@ -233,7 +233,7 @@ void print_help_message() {
       "                completed. this separate buffer is cleared if its size would\n"
       "                exceed this arg. the bytes are instead sent directly to the\n"
       "                output if no ordered ops are specified, and there is no sorting,\n"
-      "                no uniqueness, no flip, and no tui used\n"
+      "                no uniqueness, no reverse, and no tui used\n"
       "        --comp <less than comparison>\n"
       "                user defined comparison. pairs of tokens are evaluated. if only\n"
       "                one matches, then it is less than the other. required by\n"
@@ -256,8 +256,6 @@ void print_help_message() {
       "                even if the output would be empty, place a batch delimiter\n"
       "        -e, --end\n"
       "                begin cursor and prompt at the bottom of the tui\n"
-      "        --flip\n"
-      "                reverse the token order. this happens after all other operations\n"
       "        --flush\n"
       "                makes the input unbuffered, and the output is flushed after each\n"
       "                token is written\n"
@@ -285,6 +283,9 @@ void print_help_message() {
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
+      "        --reverse\n"
+      "                reverse the token order. this happens just before it is sent to\n"
+      "                the output or tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sed\n"
@@ -429,7 +430,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
-        {"flip", no_argument, NULL, 0},
+        {"reverse", no_argument, NULL, 0},
         {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
         {"multi", no_argument, NULL, 'm'},
@@ -555,8 +556,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           }
         } else {
           // long option without argument or optional argument
-          if (strcmp("flip", name) == 0) {
-            ret.flip = true;
+          if (strcmp("reverse", name) == 0) {
+            ret.reverse = true;
           } else if (strcmp("flush", name) == 0) {
             ret.flush = true;
           } else if (strcmp("comp-sort", name) == 0) {
@@ -809,7 +810,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
     if (ret.sed && !ret.is_direct_output()) {
       arg_error_preamble(argc, argv);
-      fputs("--sed is incompatible with options that prevents direct output, including: sorting, flip, and tui.\n", stderr);
+      fputs("--sed is incompatible with options that prevents direct output, including: sorting, reverse, and tui.\n", stderr);
       exit(EXIT_FAILURE);
     }
   }
