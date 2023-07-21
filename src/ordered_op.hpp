@@ -6,6 +6,27 @@
 
 namespace choose {
 
+// using EndOfStream = std::monostate;
+
+// // points to a position in the match buffer
+// // this element is temporary and hasn't been stored
+// struct ViewElement {
+//     const char* begin;
+//     const char* end;
+// };
+
+// struct StoredElement {
+    
+//     StoredElement(ViewElement&& e)
+// };
+
+// using StoredElement = std::vector<char>&;
+
+// struct PipelineElement {
+
+// };
+
+
 struct RmOrFilterOp {
   enum Type { REMOVE, FILTER };
   Type type;

@@ -6,7 +6,7 @@
 #include "args.hpp"
 #include "ncurses_wrapper.hpp"
 #include "string_utils.hpp"
-#include "token.hpp"
+#include "token_stream.hpp"
 
 volatile sig_atomic_t sigint_occurred = 0;
 void sigint_handler(int) {

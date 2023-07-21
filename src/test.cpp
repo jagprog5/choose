@@ -2,7 +2,7 @@
 #include <boost/test/unit_test.hpp>
 #include "args.hpp"
 #include "ncurses_wrapper.hpp"
-#include "token.hpp"
+#include "token_stream.hpp"
 
 using namespace choose;
 
