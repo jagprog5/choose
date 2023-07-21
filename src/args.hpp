@@ -37,9 +37,9 @@ struct Arguments {
   // if comp_sort is set, then sort should also be set at the same time
   bool comp_sort = false;
 
-  bool unique = false;
-  bool reverse = false;
+  bool unique = false; // lexicographical unique
   bool lex_unique_use_set = false;
+  bool reverse = false;
   bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
