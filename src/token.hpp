@@ -193,6 +193,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool flush = args.flush;
 
   const bool is_unique = args.unique;
+  const bool lex_unique_use_set = args.lex_unique_use_set;
   const bool is_comp_unique = args.comp_unique;
 
   regex::match_data comp_data = args.comp ? regex::create_match_data(args.comp) : NULL;
@@ -225,7 +226,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    auto set_comp = [&](indirect lhs, indirect rhs) -> bool { //
+    auto user_defined_uniqueness_set_comp = [&](indirect lhs, indirect rhs) -> bool { //
       return user_defined_comparison(output[lhs], output[rhs]);
     };
 
@@ -234,6 +235,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       const Token* rhs = &rhs_arg;
       return std::lexicographical_compare( //
           lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
+    };
+
+    auto lexicographical_uniqueness_set_comp = [&](indirect lhs, indirect rhs) -> bool { //
+      return lexicographical_comparison(output[lhs], output[rhs]);
     };
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
@@ -250,17 +255,22 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     // is used. in contrast, the user defined comparison uses a std::set, as it
     // is easier in the args to specify a comparison with regex compared to a
     // hash with regex.
-    using set_T = std::set<indirect, decltype(set_comp)>;
+    using user_defined_uniqueness_set = std::set<indirect, decltype(user_defined_uniqueness_set_comp)>;
+    using lexicographical_uniqueness_set = std::set<indirect, decltype(lexicographical_uniqueness_set_comp)>;
     using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
-    using unique_checker_T = std::variant<std::monostate, set_T, unordered_set_T>;
+    using unique_checker_T = std::variant<std::monostate, user_defined_uniqueness_set, lexicographical_uniqueness_set, unordered_set_T>;
 
     unique_checker_T unique_checker = [&]() -> unique_checker_T {
       if (is_comp_unique) {
-        return unique_checker_T(set_T(set_comp));
+        return unique_checker_T(user_defined_uniqueness_set(user_defined_uniqueness_set_comp));
       } else if (is_unique) {
-        auto s = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
-        s.max_load_factor(0.125); // obtained experimentally. see perf.md
-        return unique_checker_T(std::move(s));
+        if (lex_unique_use_set) {
+          return unique_checker_T(lexicographical_uniqueness_set(lexicographical_uniqueness_set_comp));
+        } else {
+          auto s = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
+          s.max_load_factor(0.125); // obtained experimentally. see perf.md
+          return unique_checker_T(std::move(s));
+        }
       } else {
         return unique_checker_T();
       }
@@ -268,10 +278,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     // returns true if output[elem] is unique
     auto uniqueness_check = [&](indirect elem) -> bool { //
-      if (unordered_set_T* uniqueness_unordered_set = std::get_if<unordered_set_T>(&unique_checker)) {
-        return uniqueness_unordered_set->insert(elem).second;
+      if (unordered_set_T* set = std::get_if<unordered_set_T>(&unique_checker)) {
+        return set->insert(elem).second;
+      } else if (lexicographical_uniqueness_set* set = std::get_if<lexicographical_uniqueness_set>(&unique_checker)) {
+        return set->insert(elem).second;
       } else {
-        set_T& uniqueness_set = std::get<set_T>(unique_checker);
+        user_defined_uniqueness_set& uniqueness_set = std::get<user_defined_uniqueness_set>(unique_checker);
         return uniqueness_set.insert(elem).second;
       }
     };
@@ -640,8 +652,10 @@ skip_read: // do another iteration but don't read in any more bytes
 
     if (unordered_set_T* uniqueness_unordered_set = std::get_if<unordered_set_T>(&unique_checker)) {
       uniqueness_unordered_set->clear();
-    } else if (set_T* uniqueness_set = std::get_if<set_T>(&unique_checker)) {
-      uniqueness_set->clear();
+    } else if (user_defined_uniqueness_set* set = std::get_if<user_defined_uniqueness_set>(&unique_checker)) {
+      set->clear();
+    } else if (lexicographical_uniqueness_set* set = std::get_if<lexicographical_uniqueness_set>(&unique_checker)) {
+      set->clear();
     }
 
     if (args.comp_sort) {

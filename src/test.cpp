@@ -418,6 +418,12 @@ BOOST_AUTO_TEST_CASE(unique) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--lex-unique-use-set", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 // user defined sorting and uniqueness
 
 BOOST_AUTO_TEST_CASE(defined_sort) {

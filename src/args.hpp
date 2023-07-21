@@ -39,6 +39,7 @@ struct Arguments {
 
   bool unique = false;
   bool reverse = false;
+  bool lex_unique_use_set = false;
   bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
@@ -261,6 +262,9 @@ void print_help_message() {
       "                token is written\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
+      "        --lex-unique-use-set\n"
+      "                when applying --unique, use a tree instead of a hash table. this\n"
+      "                makes a typical fast case slower and a typical slow case faster\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -443,6 +447,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
+        {"lex-unique-use-set", no_argument, NULL, 0},
         {"use-delimiter", no_argument, NULL, 0},
         {"utf", no_argument, NULL, 0},
         {"utf-allow-invalid", no_argument, NULL, 0},
@@ -617,6 +622,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               align = IndexOp::BEFORE;
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::OUTPUT, align));
+          } else if (strcmp("lex-unique-use-set", name) == 0) {
+            ret.lex_unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {
             ret.use_input_delimiter = true;
           } else if (strcmp("utf", name) == 0) {
