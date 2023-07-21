@@ -233,9 +233,9 @@ echo "this is a test" | choose -r "\w+" -o banana -d
 
 See benchmarks [here](./perf.md)
 
-# hist
+# ch_hist
 
-`hist` is a bash function installed with `choose`. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
+`ch_hist` is a bash function installed with `choose`. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
 
 ```txt
   git log --oneline
@@ -260,6 +260,6 @@ See benchmarks [here](./perf.md)
 ## Examples
 
 ```bash
-hist git
-hist hello there
+ch_hist git
+ch_hist hello there
 ```

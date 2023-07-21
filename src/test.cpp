@@ -367,7 +367,7 @@ BOOST_AUTO_TEST_CASE(delimiters) {
 }
 
 BOOST_AUTO_TEST_CASE(output_in_limit) {
-  choose_output out = run_choose("first\nsecond\nthird", {"--in=2"});
+  choose_output out = run_choose("first\nsecond\nthird", {"--in-limit=2"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -379,13 +379,13 @@ BOOST_AUTO_TEST_CASE(output_rm_filter) {
 }
 
 BOOST_AUTO_TEST_CASE(zero_with_tui) {
-  choose_output out = run_choose("anything", {"--in=0", "-t"});
+  choose_output out = run_choose("anything", {"--in-limit=0", "-t"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(zero_no_tui) {
-  choose_output out = run_choose("anything", {"--in=0"});
+  choose_output out = run_choose("anything", {"--in-limit=0"});
   choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -412,27 +412,15 @@ BOOST_AUTO_TEST_CASE(sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(sort_reverse) {
-  choose_output out = run_choose("this\nis\na\ntest", {"--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "test", "is", "a"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 BOOST_AUTO_TEST_CASE(unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(sort_reverse_and_unique) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "test", "is", "a"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--lex-unique-use-set", "--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "test", "is", "a"}};
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--lex-unique-use-set", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -445,23 +433,10 @@ BOOST_AUTO_TEST_CASE(defined_sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(defined_sort_reverse) {
-  // notice that this isn't just the reverse of defined_sort test, since the sort is stable
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-sort", "--sort-reverse", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"Apple", "Banana", "John Doe", "John Doe", "John Smith"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 BOOST_AUTO_TEST_CASE(defined_unique) {
   // the comparison treats all John's as the same. so there's one John and one non John in the output.
   choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-unique", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"John Doe", "Apple"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(defined_sort_reverse_and_unique) {
-  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-sort", "--sort-reverse", "--comp-unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -501,13 +476,13 @@ BOOST_AUTO_TEST_CASE(no_delimit_delimit_on_empty) {
 }
 
 BOOST_AUTO_TEST_CASE(in_limit) {
-  choose_output out = run_choose("d\nc\nb\na", {"--in=3", "--sort", "-t"});
+  choose_output out = run_choose("d\nc\nb\na", {"--in-limit=3", "--sort", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"b", "c", "d"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(flip) {
-  choose_output out = run_choose("a\nb\nc\nd", {"--flip"});
+BOOST_AUTO_TEST_CASE(reverse) {
+  choose_output out = run_choose("a\nb\nc\nd", {"--reverse"});
   choose_output correct_output{to_vec("d\nc\nb\na\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -524,9 +499,28 @@ BOOST_AUTO_TEST_CASE(out_limit) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(out_limit_unique) {
+  choose_output out = run_choose("d\nd\nd\nd\nc\nb\na", {"--out=2", "--unique"});
+  choose_output correct_output{to_vec("d\nc\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(ordered_ops) {
   choose_output out = run_choose("this\nis\nrra\ntest", {"-r", "--sub", "is", "rr", "--rm", "test", "--filter", "rr$", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"thrr", "rr"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(in_limit_process_token) {
+  // niche code coverage
+  choose_output out = run_choose("this\nis\na\ntest", {"--in-limit=2"});
+  choose_output correct_output{to_vec("this\nis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(ordered_op_in_limit) {
+  choose_output out = run_choose("z\nz\nz\nz\nthe\nthis\nthere", {"-r", "-f", "^t", "--in-limit=2"});
+  choose_output correct_output{to_vec("the\nthis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -544,8 +538,8 @@ BOOST_AUTO_TEST_CASE(replace_op_no_last) {
 
 BOOST_AUTO_TEST_CASE(sed_with_limit) {
   // this is a weird combination of args. should be allowed though
-  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in=2"});
-  choose_output correct_output{to_vec("aaaa1bbbb2")};
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in-limit=2"});
+  choose_output correct_output{to_vec("aaaa1bbbb2cccc")}; // in limit stops at at the 3rd match, but allows everything before that
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -558,14 +552,14 @@ BOOST_AUTO_TEST_CASE(sed_buffer_full) {
 
 BOOST_AUTO_TEST_CASE(sed_beginning_discarded) {
   // niche code coverage check when beginning part is discarded
-  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in=2", "--read=2"});
-  choose_output correct_output{to_vec("aaaa1bbbb2")};
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in-limit=2", "--read=2"});
+  choose_output correct_output{to_vec("aaaa1bbbb2cccc")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sed_beginning_discarded_with_lookbehind) {
-  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "(?<=[a-z])[0-9]", "--in=2", "--read=2"});
-  choose_output correct_output{to_vec("aaaa1bbbb2")};
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "(?<=[a-z])[0-9]", "--in-limit=2", "--read=2"});
+  choose_output correct_output{to_vec("aaaa1bbbb2cccc")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -606,7 +600,7 @@ BOOST_AUTO_TEST_CASE(check_match_with_groups) {
 }
 
 BOOST_AUTO_TEST_CASE(check_match_with_groups_limit) {
-  choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "--in=2", "-t"});
+  choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "--in-limit=2", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"bcd", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -813,7 +807,7 @@ BOOST_AUTO_TEST_CASE(process_fragments) {
 
 BOOST_AUTO_TEST_CASE(process_fragment_in_count) {
   // ensure that fragments are counted correctly. only on completion is the in count incremented
-  choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--in=2"});
+  choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--in-limit=2"});
   choose_output correct_output{to_vec("zzzzzzzzz\nhereisaline\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
