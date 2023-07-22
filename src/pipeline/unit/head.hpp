@@ -14,13 +14,16 @@ struct Head : public PipelineUnit {
     }
   }
 
-  void process(Packet&& s) override {
+  void process(Packet&& p) override {
+    this->completion_guard(p);
     if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
-      (*next_unit)->process(std::move(s));
+      (*next_unit)->process(std::move(p));
     } else {
       TokenOutputStream& os = std::get<TokenOutputStream>(this->next);
+      ViewPacket view = ViewPacket::fromPacket(p);
+      os.write_output(view.begin, view.end);
+
       // TODO LIST
-      // first this
       // then convert the other ordered ops
       // then do the uncompiled ops in arg folder
       // then ...
@@ -31,7 +34,7 @@ struct Head : public PipelineUnit {
     }
 
   }
-}
+};
 
 } // namespace pipeline
 } // namespace choose

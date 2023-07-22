@@ -16,10 +16,6 @@ make cov-clean && make cov-show
 
 namespace choose {
 
-// leads to an exit unless this is a unit test
-// effectively skips the tui interface
-struct termination_request : public std::exception {};
-
 namespace {
 
 const char* id(bool is_match) {
