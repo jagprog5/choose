@@ -1,17 +1,9 @@
 #pragma once
-#include <algorithm>
-#include <cassert>
-#include <optional>
-#include <set>
-#include <string_view>
-#include <unordered_set>
-#include <utility>
-
-#include "args.hpp"
-#include "regex.hpp"
-#include "string_utils.hpp"
+#include <string.h>
+#include <vector>
 
 namespace choose {
+namespace pipeline {
 
 // Token is a thin wrapper around vector<char>. provides type clarity
 struct Token {
@@ -30,6 +22,5 @@ struct Token {
   ~Token() = default;
 };
 
-using indirect = std::vector<Token>::size_type; // an index into output
-
+} // namespace pipeline
 } // namespace choose

@@ -16,108 +16,6 @@ make cov-clean && make cov-show
 
 namespace choose {
 
-// writes an output delimiter between each token
-// and (might, depending on args) a batch output delimiter on finish.
-struct TokenOutputStream {
-  // number of elements written to the output
-  size_t out_count = 0;
-  // disambiguate between out_count of zero vs overflow to zero
-  bool has_written = false;
-
-  // is a delimiter required before the next write
-  bool delimit_required_ = false;
-
-  const Arguments& args;
-
-  static void default_write(FILE* out, const char* begin, const char* end) { //
-    str::write_f(out, begin, end);
-  }
-
-  TokenOutputStream(const Arguments& args) : args(args) {}
-
-  // write a part of a token to the output.
-  // the last part of a token must instead use write_output
-  void write_output_fragment(const char* begin, const char* end) {
-    if (delimit_required_ && !args.sed) {
-      str::write_f(args.output, args.out_delimiter);
-    }
-    delimit_required_ = false;
-    has_written = true;
-    str::write_f(args.output, begin, end);
-  }
-
-  // write a part or whole of a token to the output.
-  // if it is a part, then it must be the last part.
-  // pass a handler void(FILE* out, const char* begin, const char* end).
-  // the function will write the token to the output after applying transformations
-  template <typename T = decltype(TokenOutputStream::default_write)>
-  void write_output(const char* begin, //
-                    const char* end,
-                    T handler = TokenOutputStream::default_write) {
-    if (delimit_required_ && !args.sed) {
-      str::write_f(args.output, args.out_delimiter);
-    }
-    delimit_required_ = true;
-    has_written = true;
-    handler(args.output, begin, end);
-    ++out_count;
-  }
-
-  void write_output(const Token& t) { //
-    write_output(&*t.buffer.cbegin(), &*t.buffer.cend());
-  }
-
-  // call after all other writing has finished
-  void finish_output() {
-    if (!args.delimit_not_at_end && (has_written || args.delimit_on_empty) && !args.sed) {
-      str::write_f(args.output, args.bout_delimiter);
-    }
-    delimit_required_ = false; // optional reset of state
-    has_written = false;
-    out_count = 0;
-  }
-};
-
-// writes an output delimiter between tokens,
-// and a batch delimiter between batches and at the end
-struct BatchOutputStream {
-  bool first_within_batch = true;
-  bool first_batch = true;
-
-  const choose::Arguments& args;
-  choose::str::QueuedOutput qo;
-
-  BatchOutputStream(const choose::Arguments& args)
-      : args(args),                                        //
-        qo{isatty(fileno(args.output)) && args.tenacious ? // NOLINT args.output can never by null here
-               std::optional<std::vector<char>>(std::vector<char>())
-                                                         : std::nullopt} {}
-
-  void write_output(const choose::Token& t) {
-    if (!first_within_batch) {
-      qo.write_output(args.output, args.out_delimiter);
-    } else if (!first_batch) {
-      qo.write_output(args.output, args.bout_delimiter);
-    }
-    first_within_batch = false;
-    qo.write_output(args.output, t.buffer);
-  }
-
-  void finish_batch() {
-    first_batch = false;
-    first_within_batch = true;
-  }
-
-  void finish_output() {
-    if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
-      qo.write_output(args.output, args.bout_delimiter);
-    }
-    qo.flush_output(args.output);
-    first_within_batch = true; // optional reset of state
-    first_batch = true;
-  }
-};
-
 // leads to an exit unless this is a unit test
 // effectively skips the tui interface
 struct termination_request : public std::exception {};
@@ -201,6 +99,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         return 0;
       }
     };
+
+    using indirect = std::vector<Token>::size_type; // an index into output
 
     auto user_defined_uniqueness_set_comp = [&](indirect lhs, indirect rhs) -> bool { //
       return user_defined_comparison(output[lhs], output[rhs]);
@@ -653,8 +553,8 @@ skip_read: // do another iteration but don't read in any more bytes
 skip_all:
 
   if (!args.tui) {
-    for (const Token& t : output) {
-      direct_output.write_output(t);
+    for (Token& t : output) {
+      direct_output.write_output(std::move(t));
     }
     direct_output.finish_output();
     throw termination_request();

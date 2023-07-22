@@ -13,11 +13,51 @@ void sigint_handler(int) {
   sigint_occurred = 1;
 }
 
+// writes an output delimiter between tokens,
+// and a batch delimiter between batches and at the end
+struct BatchOutputStream {
+  bool first_within_batch = true;
+  bool first_batch = true;
+
+  const choose::Arguments& args;
+  choose::str::QueuedOutput qo;
+
+  BatchOutputStream(const choose::Arguments& args)
+      : args(args),                                        //
+        qo{isatty(fileno(args.output)) && args.tenacious ? // NOLINT args.output can never by null here
+               std::optional<std::vector<char>>(std::vector<char>())
+                                                         : std::nullopt} {}
+
+  void write_output(const choose::Token& t) {
+    if (!first_within_batch) {
+      qo.write_output(args.output, args.out_delimiter);
+    } else if (!first_batch) {
+      qo.write_output(args.output, args.bout_delimiter);
+    }
+    first_within_batch = false;
+    qo.write_output(args.output, t.buffer);
+  }
+
+  void finish_batch() {
+    first_batch = false;
+    first_within_batch = true;
+  }
+
+  void finish_output() {
+    if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
+      qo.write_output(args.output, args.bout_delimiter);
+    }
+    qo.flush_output(args.output);
+    first_within_batch = true; // optional reset of state
+    first_batch = true;
+  }
+};
+
 // a single instance of UIState is used, with a static lifetime
 struct UIState {
   choose::Arguments args;
   std::vector<choose::Token> tokens;
-  choose::BatchOutputStream os;
+  BatchOutputStream os;
 
   // ncurses
   static constexpr int PAIR_SELECTED = 1;
@@ -432,7 +472,7 @@ int main(int argc, char* const* argv) {
   UIState state{
       std::move(args),   //
       std::move(tokens), //
-      choose::BatchOutputStream(state.args),
+      BatchOutputStream(state.args),
   };
 
   try {

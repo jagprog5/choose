@@ -3,29 +3,9 @@
 #include <variant>
 #include "regex.hpp"
 #include "string_utils.hpp"
+#include "token.hpp"
 
 namespace choose {
-
-// using EndOfStream = std::monostate;
-
-// // points to a position in the match buffer
-// // this element is temporary and hasn't been stored
-// struct ViewElement {
-//     const char* begin;
-//     const char* end;
-// };
-
-// struct StoredElement {
-    
-//     StoredElement(ViewElement&& e)
-// };
-
-// using StoredElement = std::vector<char>&;
-
-// struct PipelineElement {
-
-// };
-
 
 struct RmOrFilterOp {
   enum Type { REMOVE, FILTER };
@@ -185,7 +165,7 @@ struct IndexOp {
   }
 };
 
-using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, InLimitOp, IndexOp>;
+// using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, InLimitOp, IndexOp>;
 
 namespace uncompiled {
 

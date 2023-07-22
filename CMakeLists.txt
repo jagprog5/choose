@@ -13,7 +13,7 @@ project(choose)
 add_executable(choose src/main.cpp)
 target_include_directories(choose PRIVATE src)
 
-target_compile_options(choose PRIVATE -Wall -Wextra -O3 -fno-rtti)
+target_compile_options(choose PRIVATE -Wall -Wextra -O3)
 
 set(CURSES_NEED_NCURSES TRUE)
 set(CURSES_NEED_WIDE TRUE)
@@ -44,7 +44,7 @@ if(BUILD_TESTING)
   
   add_executable(unit_tests src/test.cpp)
   target_include_directories(unit_tests PRIVATE src)
-  target_compile_options(unit_tests PRIVATE -Wall -Wextra -Og -g -fno-rtti)
+  target_compile_options(unit_tests PRIVATE -Wall -Wextra -Og -g)
 
   target_include_directories(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_HEADER_NAME})
   target_link_libraries(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
