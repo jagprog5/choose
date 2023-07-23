@@ -10,30 +10,28 @@ struct HeadUnit : public PipelineUnit {
 
   HeadUnit(NextUnit&& next, size_t n) : PipelineUnit(std::move(next)), n(n) {
     if (this->n == 0) {
-      this->process(EndOfStream());
+      PipelineUnit::process(EndOfStream());
     }
   }
 
-  void process(Packet&& p) override {
-    if (this->passthrough_end_of_stream(p)) return;
-
-    if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
-      (*next_unit)->process(std::move(p));
-    } else {
-      TokenOutputStream& os = std::get<TokenOutputStream>(this->next);
+  template <typename PacketT>
+  void internal_process(PacketT&& p) {
+    if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
       ViewPacket view = ViewPacket::fromPacket(p);
-      os.write_output(view.begin, view.end);
-
-      // TODO LIST
-      // then convert the other ordered ops
-      // then do the uncompiled ops in arg folder
+      os->write_output(view.begin, view.end);
+    } else {
+      std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
+      next_unit.process(std::move(p));
     }
 
     if (--this->n == 0) {
       this->process(EndOfStream());
     }
-
   }
+
+  void process(StoredPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
+  void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
 };
 
 } // namespace pipeline

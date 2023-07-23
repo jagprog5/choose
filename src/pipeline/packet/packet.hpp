@@ -1,28 +1,47 @@
 #pragma once
 
-#include <memory>
 #include <variant>
-#include "cassert"
 #include "pipeline/packet/token.hpp"
 
 namespace choose {
 
 namespace pipeline {
 
-using EndOfStream = std::monostate;
-struct ViewPacket;
-struct ReplacePacket;
-struct SimplePacket;
-struct StoredPacket;
-// the data flows through the pipeline in these packets
-using Packet = std::variant<EndOfStream, ViewPacket, ReplacePacket, SimplePacket, StoredPacket>;
+struct EndOfStream {
+  char unused[0]; // make the struct zero length. cpp quirk
+};
 
-// non owning temporary view of memory
+// todo!
+// non-owning view to persistent memory
+struct StoredPacket {
+  const char* begin;
+  const char* end;  
+};
+
+// this is a simple packet which hold ownership over a vector
+struct SimplePacket {
+  Token t;
+
+  SimplePacket(std::vector<char>&& v) : t{std::move(v)} {}
+  
+  // for safety, delete copying. shouldn't ever happen
+  SimplePacket(const SimplePacket& o) = delete;
+  SimplePacket& operator=(const SimplePacket&) = delete;
+
+  // create copy from other types of packets before modifying
+  SimplePacket(ViewPacket&& p) : t{std::vector<char>(p.begin, p.end)} {}
+  SimplePacket(StoredPacket&& p) : t{std::vector<char>(p.begin, p.end)} {}
+};
+
+// non owning view of temporary memory.
+// the memory could exist in the match buffer and will go away on next match iteration.
+// so this can be passed down the pipeline but should not be held anywhere
 struct ViewPacket {
   const char* begin;
   const char* end;
-
-  static ViewPacket fromPacket(const Packet& p);
+  // view packet can take a view of the other packet types
+  ViewPacket(const SimplePacket& sp) : begin(&*sp.t.buffer.cbegin()), end(&*sp.t.buffer.cend()) {}
+  ViewPacket(const StoredPacket& sp) : begin(sp.begin), end(sp.end) {}
 };
 
 // like a ViewPacket but with more information.
@@ -33,29 +52,6 @@ struct ReplacePacket {
   const regex::match_data& data;
   const regex::code& re;
 };
-
-// owned copy from a ViewPacket
-struct SimplePacket {
-  Token t;
-  SimplePacket(ViewPacket ve) : t{std::vector<char>(ve.begin, ve.end)} {}
-  SimplePacket() = default;
-};
-
-// this points to an element that is currently in use by one of the ordered ops.
-// for example, after applying uniqueness, this element is still being held.
-using StoredPacket = std::shared_ptr<Token>;
-
-ViewPacket ViewPacket::fromPacket(const Packet& p) {
-  assert(!std::holds_alternative<EndOfStream>(p));
-  if (const ViewPacket* vp = std::get_if<ViewPacket>(&p)) {
-    return *vp;
-  } else if (const SimplePacket* sp = std::get_if<SimplePacket>(&p)) {
-    return {&*sp->t.buffer.cbegin(), &*sp->t.buffer.cend()};
-  } else {
-    const Token* tp = std::get<StoredPacket>(p).get();
-    return {&*tp->buffer.cbegin(), &*tp->buffer.cend()};
-  }
-}
 
 } // namespace pipeline
 } // namespace choose

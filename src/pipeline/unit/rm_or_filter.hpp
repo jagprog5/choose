@@ -17,20 +17,19 @@ struct RmOrFilterUnit : public PipelineUnit {
         type(type),
         arg(std::move(arg)),
         match_data(regex::create_match_data(this->arg)) {}
-
-  void process(Packet&& p) override {
-    if (this->passthrough_end_of_stream(p)) return;
-
+  
+  template <typename PacketT>
+  void internal_process(PacketT&& p) {
     const char* id = this->type == RmOrFilterUnit::REMOVE ? "remove" : "filter";
-    ViewPacket v = ViewPacket::fromPacket(p);
+    ViewPacket v = ViewPacket(std::move(p));
     int rc = regex::match(this->arg, v.begin, v.end - v.begin, this->match_data, id);
 
     auto send_to_next = [&]() {
-      if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
-        (*next_unit)->process(std::move(p));
+      if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
+        os->write_output(v.begin, v.end);
       } else {
-        TokenOutputStream& os = std::get<TokenOutputStream>(this->next);
-        os.write_output(v.begin, v.end);
+        std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
+        next_unit->process(std::move(p));
       }
     };
 
@@ -45,6 +44,20 @@ struct RmOrFilterUnit : public PipelineUnit {
         send_to_next();
       }
     }
+  }
+
+  void process(StoredPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
+  void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
+};
+
+struct UncompiledRmOrFilterUnit : public UncompiledPipelineUnit {
+  RmOrFilterUnit::Type type;
+  const char* arg;
+  PipelineUnit compile(NextUnit&& next, uint32_t regex_options) override {
+    const char* id = this->type == RmOrFilterUnit::FILTER ? "filter" : "remove";
+    regex::code code = regex::compile(this->arg, regex_options, id);
+    return RmOrFilterUnit(std::move(next), type, std::move(code));
   }
 };
 

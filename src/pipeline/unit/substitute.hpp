@@ -38,23 +38,34 @@ struct SubUnit : public PipelineUnit {
     str::write_f(out, offset, end);
   }
 
-  void process(Packet&& p) override {
-    if (this->passthrough_end_of_stream(p)) return;
-
-    ViewPacket v = ViewPacket::fromPacket(p);
-    if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
-        SimplePacket next_packet;
-        this->apply(next_packet.t.buffer, v.begin, v.end);
-        (*next_unit)->process(std::move(next_packet));
+  template <typename PacketT>
+  void internal_process(PacketT&& p) {
+    if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
+      ViewPacket v(p);
+      auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
+          this->direct_apply(out, begin, end);
+      };
+      os->write_output(v.begin, v.end, direct_apply_sub);
     } else {
-        TokenOutputStream& os = std::get<TokenOutputStream>(this->next);
-        auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
-            this->direct_apply(out, begin, end);
-        };
-        os.write_output(v.begin, v.end, direct_apply_sub);
+      std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
+      SimplePacket next_packet;
+      this->apply(next_packet.t.buffer, v.begin, v.end);
+      next_unit->process(std::move(next_packet));
     }
+  }
 
+  void process(StoredPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
+  void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
+};
+
+struct UncompiledSubUnit : public UncompiledPipelineUnit {
+  const char* target;
+  const char* replacement;
+  PipelineUnit compile(NextUnit&& next, uint32_t regex_options) override {
+    return SubUnit(std::move(next), regex::compile(this->target, regex_options, "substitute"), this->replacement);
   }
 };
+
 } // namespace pipeline
 } // namespace choose
