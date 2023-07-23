@@ -54,10 +54,6 @@ struct TokenOutputStream {
     ++out_count;
   }
 
-  void write_output(Token&& t) { //
-    write_output(&*t.buffer.cbegin(), &*t.buffer.cend());
-  }
-
   // call after all other writing has finished
   void finish_output() {
     if (!args.delimit_not_at_end && (has_written || args.delimit_on_empty) && !args.sed) {

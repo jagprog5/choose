@@ -11,10 +11,11 @@ namespace pipeline {
 
 using EndOfStream = std::monostate;
 struct ViewPacket;
+struct ReplacePacket;
 struct SimplePacket;
 struct StoredPacket;
 // the data flows through the pipeline in these packets
-using Packet = std::variant<EndOfStream, ViewPacket, SimplePacket, StoredPacket>;
+using Packet = std::variant<EndOfStream, ViewPacket, ReplacePacket, SimplePacket, StoredPacket>;
 
 // non owning temporary view of memory
 struct ViewPacket {
@@ -24,10 +25,20 @@ struct ViewPacket {
   static ViewPacket fromPacket(const Packet& p);
 };
 
+// like a ViewPacket but with more information.
+// it must exclusively be used on the input of ReplaceUnit.
+struct ReplacePacket {
+  const char* subj_begin;
+  const char* subj_end;
+  const regex::match_data& data;
+  const regex::code& re;
+};
+
 // owned copy from a ViewPacket
 struct SimplePacket {
   Token t;
   SimplePacket(ViewPacket ve) : t{std::vector<char>(ve.begin, ve.end)} {}
+  SimplePacket() = default;
 };
 
 // this points to an element that is currently in use by one of the ordered ops.

@@ -6,8 +6,10 @@ namespace choose {
 namespace pipeline {
 
 template<typename CompletionHandler> // e.g. decltype(functionNameHere)
-struct Accumulator : public PipelineUnit {
+struct AccumulatorUnit : public PipelineUnit {
   std::vector<Packet> packets;
+
+  AccumulatorUnit() : PipelineUnit(NextUnit(NULL))
 
   void process(Packet&& p) override {
     if (std::holds_alternative<EndOfStream>(p)) {
@@ -16,8 +18,14 @@ struct Accumulator : public PipelineUnit {
       // this should never be reached
       assert(false);
     }
-    // todo make not View
-    this->packets.push_back(p);
+    if (ViewPacket* vp = std::get_if<ViewPacket>(p)) {
+      p = SimplePacket(*vp);
+    }
+
+    // the packets accumulated will have the memory stored
+    assert(!std::holds_alternative<EndOfStream>(p));
+    assert(!std::holds_alternative<ViewPacket>(p));
+    this->packets.push_back(std::move(p));
   }
 
 };

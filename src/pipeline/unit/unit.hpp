@@ -18,20 +18,22 @@ struct termination_request : public std::exception {};
 
 struct PipelineUnit {
   NextUnit next;
-  PipelineUnit(NextUnit next) : next(std::move(next)) {}
+  PipelineUnit(NextUnit&& next) : next(std::move(next)) {}
+  virtual void process(Packet&& p) = 0;
 
-  void completion_guard(const Packet& p) {
+  bool passthrough_end_of_stream(Packet& p) {
     if (std::holds_alternative<EndOfStream>(p)) {
-      if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
-        // if this is the end of the stream and this is the last unit on the pipeline
-        os->finish_output();
+      if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
+        (*next_unit)->process(std::move(p));
+        return true;
+      } else {
+        TokenOutputStream& os = std::get<TokenOutputStream>(this->next);
+        os.finish_output();
         throw termination_request();
       }
     }
+    return false;
   }
-
-  virtual void process(Packet&& p) = 0;
-
 };
 
 
