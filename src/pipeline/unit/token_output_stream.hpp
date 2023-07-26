@@ -52,6 +52,9 @@ struct TokenOutputStream {
     has_written = true;
     handler(args.output, begin, end);
     ++out_count;
+    if (args.flush) {
+      choose::str::flush_f(args.output);
+    }
   }
 
   // call after all other writing has finished

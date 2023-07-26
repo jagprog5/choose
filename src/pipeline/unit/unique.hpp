@@ -2,69 +2,123 @@
 
 #include "pipeline/unit/unit.hpp"
 
+#include <limits>
 #include <unordered_set>
 
 namespace choose {
 namespace pipeline {
 
-struct Unique : public PipelineUnit {
-  // bool comp(const StoredPacket& lhs, const StoredPacket& rhs) {
-  //   int lhs_result = regex::match(this->comp, lhs->buffer.data(), lhs->buffer.size(), this->data, "user comp");
-  //   int rhs_result = regex::match(this->comp, rhs->buffer.data(), rhs->buffer.size(), this->data, "user comp");
-  //   if (lhs_result && !rhs_result) {
-  //     return 1;
-  //   } else {
-  //     return 0;
-  //   }
-  // }
+struct Unique : public BulkUnit {
+  // indirect points to elements in this->packets unless it is the max value, which is reserved
+  // for a candidate packet which has not yet been added to this->packets
+  using indirect = BulkPacket::size_type;
+  BulkPacket packets;
 
-  Unique(NextUnit&& next) : PipelineUnit(std::move(next)) {}
+  // a candidate packet that might be added to this->packets
+  const char* candidate_begin = NULL;
+  size_t candidate_size = 0;
 
-  template <typename PacketT>
-  void internal_process(PacketT&& p) {
-    
+  std::string_view from_val(indirect val) const {
+    const char* begin = val != std::numeric_limits<indirect>::max() //
+                            ? &*this->packets[val].t.buffer.cbegin()
+                            : this->candidate_begin;
+    size_t size = val != std::numeric_limits<indirect>::max() //
+                      ? this->packets[val].t.buffer.size()
+                      : this->candidate_size;
+    return {begin, size};
+  }
 
+  size_t unordered_set_hash(indirect val) const { //
+    return std::hash<std::string_view>{}(this->from_val(val));
+  }
 
+  bool unordered_set_equals(indirect lhs, indirect rhs) const {
+    std::string_view lv = this->from_val(lhs);
+    std::string_view rv = this->from_val(rhs);
+    return std::lexicographical_compare(lv.begin(), lv.end(), rv.begin(), rv.end());
+  }
 
-    StoredPacket stored; // convert the input packet into a stored packet
-    if (ViewPacket* vp = std::get_if<ViewPacket>(&p)) {
-      SimplePacket simple(*vp);
-      stored = std::make_shared<Token>(std::move(simple.t));
-    } else if (SimplePacket* sp = std::get_if<SimplePacket>(&p)) {
-      stored = std::make_shared<Token>(std::move(sp->t));
-    } else {
-      StoredPacket& same = std::get<StoredPacket>(p);
-      stored = std::move(same);
-    }
+  using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
 
-    //                        V copy of shared ptr
-    if (uniqueness_set.insert(stored).second) {
-      // element was unique
-      if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
-        Packet out = std::move(stored);
-        (*next_unit)->process(std::move(stored));
-      } else {
+  unordered_set_T unique_checker = []() -> unordered_set_T {
+    auto ret = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
+    ret.max_load_factor(0.125); // determined from perf.md
+  }();
+
+  bool is_input_sorted = false;
+
+  // unique is special.
+  // if the next unit is an accumulating unit (effectively blocking the overall output) then
+  //    each element is accumulated and sent as a bulk packet at the end
+  // else
+  //    each element is sent individually to the next unit
+  bool next_unit_is_accumulating = false;
+
+  Unique(NextUnit&& next) : BulkUnit(std::move(next)) {
+    if (std::unique_ptr<PipelineUnit>* next_unit = std::get_if<std::unique_ptr<PipelineUnit>>(&this->next)) {
+      if (AccumulatingUnit* b = dynamic_cast<AccumulatingUnit*>(next_unit->get())) {
+        this->next_unit_is_accumulating = true;
       }
-    }
-    // TODODOOO
-
-    if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
-      ViewPacket v(p);
-      auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
-        this->direct_apply(out, begin, end);
-      };
-      os->write_output(v.begin, v.end, direct_apply_index);
-    } else {
-      std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
-      SimplePacket next_packet(std::move(p));
-      this->apply(next_packet.t.buffer);
-      next_unit->process(std::move(next_packet));
     }
   }
 
-  void process(StoredPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(BulkPacket&& p) override {
+    // TODO apply unique
+    BulkUnit::process(std::move(p));
+  }
+
+  void process(EndOfStream&& p) override {
+    this->unique_checker.clear();
+    if (this->next_unit_is_accumulating) {
+      BulkUnit::process(std::move(this->packets));
+    } else {
+      PipelineUnit::process(std::move(p));
+    }
+  }
+
+  template <typename PacketT>
+  void internal_process(PacketT&& p) {
+    // not guarding for this->is_input_sorted out of per token overhead worry
+    indirect val;
+    if constexpr (std::is_same_v<SimplePacket, PacketT>) {
+      this->packets.push_back(std::move(p));
+      val = this->packets.size() - 1;
+    } else {
+      ViewPacket view(p);
+      this->candidate_begin = view.begin;
+      this->candidate_size = view.end - view.begin;
+      val = std::numeric_limits<indirect>::max();
+    }
+
+    std::pair<unordered_set_T::iterator, bool> result = this->unique_checker.insert(val);
+    if (!result.second) {
+      // the insertion did not take place, meaning the element already existed
+      if constexpr (std::is_same_v<SimplePacket, PacketT>) {
+        this->packets.pop_back();
+      }
+    } else {
+      // the insertion did take place
+      if constexpr (std::is_same_v<SimplePacket, PacketT>) {
+        ViewPacket vp(this->packets[val]);
+        if (!next_unit_is_accumulating) {
+          BulkUnit::process(std::move(vp));
+        }
+      } else {
+        // promote the candidate token to a token
+        SimplePacket sp(p);
+        this->packets.push_back(std::move(sp));
+        const_cast<indirect*>(&*result.first) = this->packets.size() - 1;
+        if (!next_unit_is_accumulating) {
+          // pass along a view
+          BulkUnit::process(std::move(p));
+        }
+      }
+    }
+  }
+
   void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
   void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
 };
 
 } // namespace pipeline

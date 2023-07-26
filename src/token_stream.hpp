@@ -140,7 +140,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           return unique_checker_T(lexicographical_uniqueness_set(lexicographical_uniqueness_set_comp));
         } else {
           auto s = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
-          s.max_load_factor(0.125); // obtained experimentally. see perf.md
+          s.max_load_factor(0.125);
           return unique_checker_T(std::move(s));
         }
       } else {

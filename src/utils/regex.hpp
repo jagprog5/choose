@@ -128,7 +128,7 @@ std::runtime_error get_sub_err(int sub_rc) {
 
 } // namespace
 
-// TODO substitute should allocate on the stack instead. defer storage decision to callee
+// TODO substitute_on_match should allocate on the stack instead. defer storage decision to callee
 
 // applies a global substitution on the subject.
 // replacement is null terminating.

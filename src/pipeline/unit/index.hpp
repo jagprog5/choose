@@ -5,14 +5,14 @@
 namespace choose {
 namespace pipeline {
 
-struct IndexUnit : public PipelineUnit {
+struct IndexUnit : public BulkUnit {
   enum Align { BEFORE, AFTER };
   const Align align;
   size_t index = 0;
 
   IndexUnit(NextUnit&& next, Align align) //
-      : PipelineUnit(std::move(next)), align(align) {}
-
+      : BulkUnit(std::move(next)), align(align) {}
+  
   // bytes needed (without null char) for ascii base 10 representation of uint
   static constexpr size_t space_required(size_t value) { return value == 0 ? 1 : (size_t(std::log10(value)) + 1); }
 
@@ -77,9 +77,27 @@ struct IndexUnit : public PipelineUnit {
     }
   }
 
-  void process(StoredPacket&& p) override { this->internal_process(std::move(p)); }
   void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
   void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
+
+  void process(BulkPacket&& p) {
+    if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
+      for (SimplePacket& sp : p) {
+        auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
+          this->direct_apply(out, begin, end);
+        };
+        os->write_output(&*sp.t.buffer.cbegin(), &*sp.t.buffer.cend(), direct_apply_index);
+      }
+      os->finish_output();
+      throw termination_request();
+    } else {
+      for (SimplePacket& sp : p) {
+        apply(sp.t.buffer);
+      }
+      this->process_bulk_packet_for_next_unit(std::move(p));
+    }
+  }
 };
 
 } // namespace pipeline

@@ -12,7 +12,7 @@ struct ReplaceUnit : public PipelineUnit {
   regex::SubstitutionContext ctx;
   ReplaceUnit(NextUnit&& next, const char* replacement) //
       : PipelineUnit(std::move(next)), replacement(replacement) {}
-
+    
   void process(ReplacePacket&& rp) override {
     std::vector<char> out = regex::substitute_on_match(rp.data, rp.re, rp.subj_begin, rp.subj_end - rp.subj_begin, this->replacement, this->ctx);
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
@@ -22,6 +22,17 @@ struct ReplaceUnit : public PipelineUnit {
       SimplePacket next_packet{std::move(out)};
       next_unit->process(std::move(next_packet));
     }
+  }
+
+  void wrong_type_err() {
+    throw std::runtime_error("A replace unit can only be proceeded by simple pipeline units.");
+  }
+
+  virtual void process(SimplePacket&& p) {
+    wrong_type_err();
+  }
+  virtual void process(ViewPacket&& p) {
+    wrong_type_err();
   }
 };
 

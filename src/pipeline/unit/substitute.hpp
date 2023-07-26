@@ -5,18 +5,18 @@
 namespace choose {
 namespace pipeline {
 
-struct SubUnit : public PipelineUnit {
+struct SubUnit : public BulkUnit {
   regex::code target;
   regex::match_data data;
   const char* replacement;
   regex::SubstitutionContext ctx;
 
   SubUnit(NextUnit&& next, regex::code&& target, const char* replacement)
-      : PipelineUnit(std::move(next)), //
+      : BulkUnit(std::move(next)), //
         target(std::move(target)),
         data(regex::create_match_data(this->target)),
         replacement(replacement) {}
-
+  
   void apply(std::vector<char>& out, const char* begin, const char* end) { //
     out = regex::substitute_global(target, begin, end - begin, replacement, this->ctx);
   }
@@ -54,9 +54,27 @@ struct SubUnit : public PipelineUnit {
     }
   }
 
-  void process(StoredPacket&& p) override { this->internal_process(std::move(p)); }
   void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
   void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
+  void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
+
+  void process(BulkPacket&& p) {
+    if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
+      for (SimplePacket& sp : p) {
+        auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
+          this->direct_apply(out, begin, end);
+        };
+        os->write_output(&*sp.t.buffer.cbegin(), &*sp.t.buffer.cend(), direct_apply_index);
+      }
+      os->finish_output();
+      throw termination_request();
+    } else {
+      for (SimplePacket& sp : p) {
+        apply(sp.t.buffer, &*sp.t.buffer.cbegin(), &*sp.t.buffer.cend());
+      }
+      this->process_bulk_packet_for_next_unit(std::move(p));
+    }
+  }
 };
 
 struct UncompiledSubUnit : public UncompiledPipelineUnit {
