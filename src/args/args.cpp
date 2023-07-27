@@ -10,7 +10,18 @@
 // for version
 #include <ncursesw/curses.h>
 
-#include "numeric_utils.hpp"
+#include "utils/numeric_utils.hpp"
+#include "pipeline/unit/head.hpp"
+#include "pipeline/unit/index.hpp"
+#include "pipeline/unit/replace.hpp"
+#include "pipeline/unit/rm_or_filter.hpp"
+#include "pipeline/unit/sort.hpp"
+#include "pipeline/unit/substitute.hpp"
+#include "pipeline/unit/tail.hpp"
+#include "pipeline/unit/terminal.hpp"
+#include "pipeline/unit/token_output_stream.hpp"
+#include "pipeline/unit/unique.hpp"
+#include "pipeline/unit/user_defined_sort.hpp"
 
 namespace choose {
 
@@ -20,18 +31,30 @@ struct UncompiledCodes {
   // all args must be parsed before the args are compiled
   // the uncompiled args are stored here before transfer to the Arguments output.
   uint32_t re_options = PCRE2_LITERAL;
-  std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
+
+  using PipelineUnitArg = std::variant<pipeline::PipelineUnit, pipeline::UncompiledPipelineUnit>;
+  std::vector<PipelineUnitArg> units;
 
   std::vector<char> primary;
-
-  const char* comp = 0;
 
   // disambiguate between empty and unset
   // needed since they take default values
   bool bout_delimiter_set = false;
   bool primary_set = false;
 
-  void compile(Arguments& output) const {
+  void compile(Arguments& output) {
+    // create pipeline back to front.
+    pipeline::NextUnit nu = output.tui ? pipeline::NextUnit() : pipeline::NextUnit(pipeline::TokenOutputStream(output));
+
+    for (PipelineUnitArg& unit : this->units) {
+      if (pipeline::PipelineUnit* done = std::get_if<pipeline::PipelineUnit>(&unit)) {
+        
+      } else {
+        pipeline::UncompiledPipelineUnit& uniqueness_set = std::get<pipeline::UncompiledPipelineUnit>(unit);
+
+      }
+    }
+
     for (const uncompiled::UncompiledOrderedOp& op : ordered_ops) {
       OrderedOp oo = uncompiled::compile(op, re_options);
       output.ordered_ops.push_back(std::move(oo));
@@ -54,10 +77,6 @@ struct UncompiledCodes {
 
     if (!output.in_byte_delimiter) {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
-    }
-
-    if (comp) {
-      output.comp = regex::compile(comp, re_options, "defined comp");
     }
   }
 };

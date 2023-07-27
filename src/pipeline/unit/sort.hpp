@@ -5,8 +5,8 @@
 namespace choose {
 namespace pipeline {
 
-struct Sort : public AccumulatingUnit {
-  Sort(NextUnit&& next) : AccumulatingUnit(std::move(next)) {
+struct SortUnit : public AccumulatingUnit {
+  SortUnit(NextUnit&& next) : AccumulatingUnit(std::move(next)) {
     // todo look ahead until head is found. do a partial sort here instead
   }
 

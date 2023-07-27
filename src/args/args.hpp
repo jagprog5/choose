@@ -21,17 +21,7 @@ struct Arguments {
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
-  bool sort = false; // indicates that any sort is applied
 
-  // user defined comparison
-  regex::code comp = 0;
-  bool comp_unique = false;
-  // if comp_sort is set, then sort should also be set at the same time
-  bool comp_sort = false;
-
-  bool unique = false; // lexicographical unique
-  bool lex_unique_use_set = false;
-  bool reverse = false;
   bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
@@ -75,14 +65,6 @@ struct Arguments {
 
   // disable or allow warning
   bool can_drop_warn = true;
-
-  // a special case where the tokens can be sent directly to the output as they are received
-  bool is_direct_output() const { return !tui && !sort && !reverse; }
-
-  // a subset of is_direct_output where the tokens don't need to be stored at all
-  bool tokens_not_stored() const { //
-    return is_direct_output() && !unique && !comp_unique;
-  }
 };
 
 }
