@@ -13,7 +13,7 @@ namespace choose {
 #define BUF_SIZE_DEFAULT 32768
 
 struct Arguments {
-  std::vector<pipeline::PipelineUnit> pipeline;
+  pipeline::NextUnit nu;
   // indicates that the tokens are displayed in the tui
   bool tui = false;
 
@@ -31,8 +31,6 @@ struct Arguments {
   bool sed = false;
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
-
-  std::optional<typename std::vector<int>::size_type> out;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset

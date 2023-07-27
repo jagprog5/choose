@@ -44,5 +44,13 @@ struct TailUnit : public PipelineUnit {
   void process(ReplacePacket&& p) override { this->process(SimplePacket(std::move(p))); }
 };
 
+struct UncompiledTailUnit : public UncompiledPipelineUnit {
+  const size_t n;
+  UncompiledTailUnit(size_t n) : n(n) {}
+  PipelineUnit compile(NextUnit&& next, uint32_t) override {
+    return TailUnit(std::move(next), this->n);
+  }
+};
+
 } // namespace pipeline
 } // namespace choose

@@ -62,6 +62,7 @@ struct SubUnit : public PipelineUnit {
 struct UncompiledSubUnit : public UncompiledPipelineUnit {
   const char* target;
   const char* replacement;
+  UncompiledSubUnit(const char* target, const char* replacement) : target(target), replacement(replacement) {}
   PipelineUnit compile(NextUnit&& next, uint32_t regex_options) override {
     return SubUnit(std::move(next), regex::compile(this->target, regex_options, "substitute"), this->replacement);
   }

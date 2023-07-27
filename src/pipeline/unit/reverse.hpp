@@ -14,5 +14,11 @@ struct ReverseUnit : public AccumulatingUnit {
   }
 };
 
+struct UncompiledReverseUnit : public UncompiledPipelineUnit {
+  PipelineUnit compile(NextUnit&& next, uint32_t) override {
+    return ReverseUnit(std::move(next));
+  }
+};
+
 } // namespace pipeline
 } // namespace choose

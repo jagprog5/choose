@@ -82,5 +82,13 @@ struct IndexUnit : public PipelineUnit {
   void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
 };
 
+struct UncompiledIndexUnit : public UncompiledPipelineUnit {
+  const IndexUnit::Align align;
+  UncompiledIndexUnit(IndexUnit::Align align) : align(align) {}
+  PipelineUnit compile(NextUnit&& next, uint32_t) override {
+    return IndexUnit(std::move(next), this->align);
+  }
+};
+
 } // namespace pipeline
 } // namespace choose

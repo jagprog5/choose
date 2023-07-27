@@ -8,7 +8,7 @@
 namespace choose {
 namespace pipeline {
 
-struct Unique : public PipelineUnit {
+struct UniqueUnit : public PipelineUnit {
   // indirect points to elements in this->packets unless it is the max value, which is reserved
   // for a candidate packet which has not yet been added to this->packets
   using indirect = std::vector<SimplePacket>::size_type;
@@ -45,7 +45,7 @@ struct Unique : public PipelineUnit {
     ret.max_load_factor(0.125); // determined from perf.md
   }();
 
-  Unique(NextUnit&& next) : PipelineUnit(std::move(next)) {}
+  UniqueUnit(NextUnit&& next) : PipelineUnit(std::move(next)) {}
 
   template <typename PacketT>
   void internal_process(PacketT&& p) {
@@ -89,6 +89,12 @@ struct Unique : public PipelineUnit {
   void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
   void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
   void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
+};
+
+struct UncompiledUniqueUnit : public UncompiledPipelineUnit {
+  PipelineUnit compile(NextUnit&& next, uint32_t) override {
+    return UniqueUnit(std::move(next));
+  }
 };
 
 } // namespace pipeline

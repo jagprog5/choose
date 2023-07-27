@@ -59,6 +59,9 @@ struct RmOrFilterUnit : public PipelineUnit {
 struct UncompiledRmOrFilterUnit : public UncompiledPipelineUnit {
   RmOrFilterUnit::Type type;
   const char* arg;
+
+  UncompiledRmOrFilterUnit(RmOrFilterUnit::Type type, const char* arg) : type(type), arg(arg) {}
+
   PipelineUnit compile(NextUnit&& next, uint32_t regex_options) override {
     const char* id = this->type == RmOrFilterUnit::FILTER ? "filter" : "remove";
     regex::code code = regex::compile(this->arg, regex_options, id);

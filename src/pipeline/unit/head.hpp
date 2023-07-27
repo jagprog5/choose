@@ -27,5 +27,13 @@ struct HeadUnit : public PipelineUnit {
   void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
 };
 
+struct UncompiledHeadUnit : public UncompiledPipelineUnit {
+  const size_t n;
+  UncompiledHeadUnit(size_t n) : n(n) {}
+  PipelineUnit compile(NextUnit&& next, uint32_t) override {
+    return HeadUnit(std::move(next), this->n);
+  }
+};
+
 } // namespace pipeline
 } // namespace choose

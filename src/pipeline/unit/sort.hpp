@@ -20,5 +20,11 @@ struct SortUnit : public AccumulatingUnit {
   }
 };
 
+struct UncompiledSortUnit : public UncompiledPipelineUnit {
+  PipelineUnit compile(NextUnit&& next, uint32_t) override {
+    return SortUnit(std::move(next));
+  }
+};
+
 } // namespace pipeline
 } // namespace choose

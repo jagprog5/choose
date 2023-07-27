@@ -73,7 +73,7 @@ struct AccumulatingUnit : public PipelineUnit {
     } else {
       this->process_stream_for_next_unit();
     }
-  }
+kw  }
 
   void process(SimplePacket&& p) override {
     this->packets.push_back(std::move(p));
