@@ -10,64 +10,48 @@
 // for version
 #include <ncursesw/curses.h>
 
+#include "pipeline/head.hpp"
+#include "pipeline/index.hpp"
+#include "pipeline/replace.hpp"
+#include "pipeline/reverse.hpp"
+#include "pipeline/rm_or_filter.hpp"
+#include "pipeline/sort.hpp"
+#include "pipeline/substitute.hpp"
+#include "pipeline/tail.hpp"
+#include "pipeline/terminal.hpp"
+#include "pipeline/token_output_stream.hpp"
+#include "pipeline/unique.hpp"
+#include "pipeline/user_defined_sort.hpp"
 #include "utils/numeric_utils.hpp"
-#include "pipeline/unit/head.hpp"
-#include "pipeline/unit/index.hpp"
-#include "pipeline/unit/replace.hpp"
-#include "pipeline/unit/reverse.hpp"
-#include "pipeline/unit/rm_or_filter.hpp"
-#include "pipeline/unit/sort.hpp"
-#include "pipeline/unit/substitute.hpp"
-#include "pipeline/unit/tail.hpp"
-#include "pipeline/unit/terminal.hpp"
-#include "pipeline/unit/token_output_stream.hpp"
-#include "pipeline/unit/unique.hpp"
-#include "pipeline/unit/user_defined_sort.hpp"
 
 namespace choose {
 
-namespace {
+void UncompiledCodes::compile(Arguments& output) {
+  // create pipeline back to front.
+  pipeline::NextUnit downstream = output.tui ? pipeline::NextUnit() : pipeline::NextUnit(pipeline::TokenOutputStream(output));
+  for (pipeline::UncompiledPipelineUnit& unit : this->units) {
+    auto pu = std::make_unique<pipeline::PipelineUnit>(unit.compile(std::move(downstream), this->re_options));
+    downstream = std::move(pu);
+  }
+  output.nu = std::move(downstream);
 
-struct UncompiledCodes {
-  // all args must be parsed before the args are compiled
-  // the uncompiled args are stored here before transfer to the Arguments output.
-  uint32_t re_options = PCRE2_LITERAL;
-  std::vector<pipeline::UncompiledPipelineUnit> units;
-
-  std::vector<char> primary;
-
-  // disambiguate between empty and unset
-  // needed since they take default values
-  bool bout_delimiter_set = false;
-  bool primary_set = false;
-
-  void compile(Arguments& output) {
-    // create pipeline back to front.
-    pipeline::NextUnit downstream = output.tui ? pipeline::NextUnit() : pipeline::NextUnit(pipeline::TokenOutputStream(output));
-    for (pipeline::UncompiledPipelineUnit& unit : this->units) {
-      auto pu = std::make_unique<pipeline::PipelineUnit>(unit.compile(std::move(downstream), this->re_options));
-      downstream = std::move(pu);
-    }
-    output.nu = std::move(downstream);
-
-    // see if single byte delimiter optimization applies
-    if (!output.match && primary.size() == 1) {
-      if (re_options & PCRE2_LITERAL) {
-        // if the expression is literal then any single byte works
-        output.in_byte_delimiter = primary[0];
-      } else {
-        // there's definitely better ways of recognizing if a regex pattern
-        // consists of a single byte, but this is enough for common cases
-        char ch = primary[0];
-        if ((ch == '\n' || ch == '\0' || ch == '\t' || num::in(ch, '0', '9') || num::in(ch, 'a', 'z') || num::in(ch, 'A', 'Z'))) {
-          output.in_byte_delimiter = ch;
-        }
+  // see if single byte delimiter optimization applies
+  if (!output.match && primary.size() == 1) {
+    if (re_options & PCRE2_LITERAL) {
+      // if the expression is literal then any single byte works
+      output.in_byte_delimiter = primary[0];
+    } else {
+      // there's definitely better ways of recognizing if a regex pattern
+      // consists of a single byte, but this is enough for common cases
+      char ch = primary[0];
+      if ((ch == '\n' || ch == '\0' || ch == '\t' || num::in(ch, '0', '9') || num::in(ch, 'a', 'z') || num::in(ch, 'A', 'Z'))) {
+        output.in_byte_delimiter = ch;
       }
     }
+  }
 
-    if (!output.in_byte_delimiter) {
-      output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
-    }
+  if (!output.in_byte_delimiter) {
+    output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
   }
 };
 
@@ -297,15 +281,14 @@ void print_help_message() {
   exit(EXIT_SUCCESS);
 }
 
-} // namespace
-
 // https://stackoverflow.com/a/69177115
 #define OPTIONAL_ARGUMENT_IS_PRESENT ((optarg == NULL && optind < argc && argv[optind][0] != '-') ? (bool)(optarg = argv[optind++]) : (optarg != NULL))
 
 // this function may call exit. input and output is for testing purposes; if
 // unspecified, uses stdin and stdout, otherwise must be managed be the callee
 // (e.g. fclose)
-Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL) {
+
+Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL) {
   UncompiledCodes uncompiled_output;
   Arguments ret;
   // rather than stopping on error, continue to parse all the arguments and show all errors
@@ -385,7 +368,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 0: {
         // long option
         if (optarg) {
-
           // long option with argument
           if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
@@ -680,6 +662,408 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   if (isatty(fileno(ret.input))) {
     int exit_code = puts("Try 'choose --help' for more information.") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     exit(exit_code);
+  }
+
+  return ret;
+}
+
+const char* id(bool is_match) {
+  if (is_match) {
+    return "match pattern";
+  } else {
+    return "input delimiter";
+  }
+}
+
+void drop_warning(Arguments& args) {
+  if (args.can_drop_warn) {
+    args.can_drop_warn = false;
+    if (fileno(args.output) == STDOUT_FILENO) { // not unit test
+      fputs(
+          "Warning: bytes were dropped from overlong token. "
+          "Set --no-warn, or increase --buf-size-frag, "
+          "or set the delimiter to something matched more frequently.\n",
+          stderr);
+    }
+  }
+}
+
+std::vector<pipeline::SimplePacket> Arguments::create_packets() {
+  const bool single_byte_delimiter = this->in_byte_delimiter.has_value();
+  const bool is_utf = this->primary ? regex::options(this->primary) & PCRE2_UTF : false;
+  const bool is_invalid_utf = this->primary ? regex::options(this->primary) & PCRE2_MATCH_INVALID_UTF : false;
+  regex::match_data primary_data = this->primary ? regex::create_match_data(this->primary) : NULL;
+
+  // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
+  const bool is_match = !single_byte_delimiter && this->match;
+  // sed implies is_match
+  const bool is_sed = is_match && this->sed;
+  const bool has_ops = !this->ordered_ops.empty();
+  const bool flush = this->flush;
+
+  char subject[this->buf_size]; // match buffer
+  size_t subject_size = 0;      // how full is the buffer
+  PCRE2_SIZE match_offset = 0;
+  PCRE2_SIZE prev_sep_end = 0; // only used if !this->match
+  uint32_t match_options = PCRE2_PARTIAL_HARD;
+
+  std::vector<pipeline::SimplePacket> ret;
+
+  // for when parts of a token are accumulated
+  std::vector<char> fragment;
+
+  // this lambda applies the operations specified in the args to a candidate token.
+  // returns true iff this should be the last token added to the output
+  auto process_token = [&](const char* begin, const char* end) -> bool {
+    bool t_is_set = false;
+    Token t;
+
+    if (!fragment.empty()) {
+      if (fragment.size() + (end - begin) > this->buf_size_frag) {
+        drop_warning(*this);
+        fragment.clear();
+        // still use an empty token to be consistent with the delimiters in the output
+        end = begin;
+      } else {
+        str::append_to_buffer(fragment, begin, end);
+        t.buffer = std::move(fragment);
+        t_is_set = true;
+        fragment = std::vector<char>();
+        begin = &*t.buffer.cbegin();
+        end = &*t.buffer.cend();
+      }
+    }
+
+    auto check_unique_then_append = [&]() -> bool {
+      output.push_back(std::move(t));
+      if (this->unique || this->comp_unique) {
+        // some form on uniqueness is being used
+        if (!uniqueness_check(output.size() - 1)) {
+          // the element is not unique. nothing was added to the uniqueness set
+          output.pop_back();
+          return false;
+        }
+      }
+      return true;
+    };
+
+    for (OrderedOp& op : this->ordered_ops) {
+      if (RmOrFilterOp* rf_op = std::get_if<RmOrFilterOp>(&op)) {
+        if (rf_op->removes(begin, end)) {
+          return false;
+        }
+      } else if (InLimitOp* rf_op = std::get_if<InLimitOp>(&op)) {
+        if (rf_op->finished()) {
+          return true;
+        }
+      } else {
+        if (tokens_not_stored && &op == &*this->ordered_ops.rbegin()) {
+          if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
+            std::vector<char> out;
+            rep_op->apply(out, subject, subject + subject_size, primary_data, this->primary);
+            direct_output.write_output(&*out.cbegin(), &*out.cend());
+          } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
+            auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
+              sub_op->direct_apply(out, begin, end);
+            };
+            direct_output.write_output(begin, end, direct_apply_sub);
+          } else {
+            IndexOp& in_op = std::get<IndexOp>(op);
+            auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
+              in_op.direct_apply(out, begin, end, direct_output.out_count);
+            };
+            direct_output.write_output(begin, end, direct_apply_index);
+          }
+          goto after_direct_apply;
+        } else {
+          if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
+            rep_op->apply(t.buffer, subject, subject + subject_size, primary_data, this->primary);
+          } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
+            sub_op->apply(t.buffer, begin, end);
+          } else {
+            IndexOp& in_op = std::get<IndexOp>(op);
+            if (!t_is_set) {
+              str::append_to_buffer(t.buffer, begin, end);
+            }
+            in_op.apply(t.buffer, tokens_not_stored ? direct_output.out_count : output.size());
+          }
+          t_is_set = true;
+          begin = &*t.buffer.cbegin();
+          end = &*t.buffer.cend();
+        }
+      }
+    }
+
+    if (!tokens_not_stored && !t_is_set) {
+      str::append_to_buffer(t.buffer, begin, end);
+      begin = &*t.buffer.cbegin(); // not needed since it now points to a copy
+      end = &*t.buffer.cend();     // but keeps things clean
+    }
+
+    if (is_direct_output) {
+      if (!tokens_not_stored) {
+        if (!check_unique_then_append()) {
+          return false;
+        }
+      }
+      direct_output.write_output(begin, end);
+after_direct_apply:
+      if (flush) {
+        choose::str::flush_f(this->output);
+      }
+      if (direct_output.out_count == this->out) {
+        // code coverage reaches here. mistakenly shows finish_output as
+        // unreached but throw is reached. weird.
+        direct_output.finish_output();
+        throw output_finished();
+      }
+      return false;
+    } else {
+      check_unique_then_append(); // result ignored
+      return false;
+    }
+  };
+
+  while (1) {
+    char* write_pos = &subject[subject_size];
+    size_t bytes_to_read = std::min(this->bytes_to_read, this->buf_size - subject_size);
+    size_t bytes_read; // NOLINT
+    bool input_done;   // NOLINT
+    if (flush) {
+      bytes_read = str::get_bytes_unbuffered(fileno(this->input), bytes_to_read, write_pos);
+      input_done = bytes_read == 0;
+    } else {
+      bytes_read = str::get_bytes(this->input, bytes_to_read, write_pos);
+      input_done = bytes_read != bytes_to_read;
+    }
+    subject_size += bytes_read;
+    if (input_done) {
+      // required to make end anchors like \Z match at the end of the input
+      match_options &= ~PCRE2_PARTIAL_HARD;
+    }
+
+    // don't separate multibyte at end of subject
+    const char* subject_effective_end; // NOLINT
+    if (is_utf && !input_done) {
+      subject_effective_end = str::utf8::last_completed_character_end(subject, subject + subject_size);
+      if (subject_effective_end == NULL) {
+        if (is_invalid_utf) {
+          subject_effective_end = subject + subject_size;
+        } else {
+          throw std::runtime_error("utf8 decoding error");
+        }
+      }
+    } else {
+      subject_effective_end = subject + subject_size;
+    }
+
+skip_read: // do another iteration but don't read in any more bytes
+
+    int match_result;                      // NOLINT
+    const char* single_byte_delimiter_pos; // NOLINT points to position of match if match_result is 1
+    if (single_byte_delimiter) {
+      match_result = 0;
+      single_byte_delimiter_pos = subject + prev_sep_end;
+      while (single_byte_delimiter_pos < subject + subject_size) {
+        if (*single_byte_delimiter_pos == *this->in_byte_delimiter) {
+          match_result = 1;
+          break;
+        }
+        ++single_byte_delimiter_pos;
+      }
+    } else {
+      match_result = regex::match(this->primary,                   //
+                                  subject,                         //
+                                  subject_effective_end - subject, //
+                                  primary_data,                    //
+                                  id(is_match),                    //
+                                  match_offset,                    //
+                                  match_options);
+    }
+
+    if (match_result > 0) {
+      // a complete match:
+      // process the match, set the offsets, then do another iteration without
+      // reading more input
+      regex::Match match; // NOLINT
+      if (single_byte_delimiter) {
+        match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
+      } else {
+        match = regex::get_match(subject, primary_data, id(is_match));
+        if (match.begin == match.end) {
+          match_options |= PCRE2_NOTEMPTY_ATSTART;
+        } else {
+          match_options &= ~PCRE2_NOTEMPTY_ATSTART;
+        }
+      }
+      if (is_match) {
+        if (is_sed) {
+          str::write_f(this->output, subject + match_offset, match.begin);
+          if (process_token(match.begin, match.end)) {
+            break;
+          }
+        } else {
+          auto match_handler = [&](const regex::Match& m) -> bool { //
+            return process_token(m.begin, m.end);
+          };
+          if (regex::get_match_and_groups(subject, match_result, primary_data, match_handler, "match pattern")) {
+            break;
+          }
+        }
+      } else {
+        if (process_token(subject + prev_sep_end, match.begin)) {
+          break;
+        }
+        prev_sep_end = match.end - subject;
+      }
+      // set the start offset to just after the match
+      match_offset = match.end - subject;
+      goto skip_read;
+    } else {
+      if (!input_done) {
+        // no or partial match and input is left
+        const char* new_subject_begin;                    // NOLINT
+        if (single_byte_delimiter || match_result == 0) { // single_byte_delimiter implies no partial match
+          // there was no match but there is more input
+          new_subject_begin = subject_effective_end;
+        } else {
+          // there was a partial match and there is more input
+          regex::Match match = regex::get_match(subject, primary_data, id(is_match));
+          new_subject_begin = match.begin;
+        }
+
+        // account for lookbehind bytes to retain prior to the match
+        const char* new_subject_begin_cp = new_subject_begin;
+        new_subject_begin -= this->max_lookbehind;
+        if (new_subject_begin < subject) {
+          new_subject_begin = subject;
+        }
+        if (is_utf) {
+          // don't separate multibyte at begin of subject
+          new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, subject, subject_effective_end);
+        }
+
+        // pointer to begin of bytes retained, not including from the previous separator end
+        const char* retain_marker = new_subject_begin;
+
+        if (!is_match) {
+          // keep the bytes required, either from the lookbehind retain,
+          // or because the delimiter ended there
+          const char* subject_const = subject;
+          new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
+        }
+
+        // cut out the excess from the beginning and adjust the offsets
+        size_t old_match_offset = match_offset;
+        match_offset = new_subject_begin_cp - new_subject_begin;
+        if (!is_match) {
+          prev_sep_end -= new_subject_begin - subject;
+        } else if (is_sed) {
+          // write out the part that is being discarded
+          const char* begin = subject + old_match_offset;
+          const char* end = new_subject_begin + match_offset;
+          if (begin < end) {
+            str::write_f(this->output, begin, end);
+          }
+        }
+
+        char* to = subject;
+        const char* from = new_subject_begin;
+        if (from != to) {
+          while (from < subject + subject_size) {
+            *to++ = *from++;
+          }
+          subject_size -= from - to;
+        } else if (subject_size == this->buf_size) {
+          // the buffer size has been filled
+
+          auto clear_except_trailing_incomplete_multibyte = [&]() {
+            if (is_utf                                             //
+                && subject + subject_size != subject_effective_end //
+                && subject != subject_effective_end) {
+              // "is_utf"
+              //    in utf mode
+              // "subject + subject_size != subject_effective_end"
+              //    if the end of the buffer contains an incomplete multibyte
+              // "subject != subject_effective_end"
+              //    if clearing up to that point would do anything (entire buffer is incomplete multibyte)
+              // then:
+              //    clear the entire buffer not including the incomplete multibyte
+              //    at the end (that wasn't used yet)
+              if (is_sed) {
+                str::write_f(this->output, subject + match_offset, subject_effective_end);
+              }
+              subject_size = (subject + subject_size) - subject_effective_end;
+              for (size_t i = 0; i < subject_size; ++i) {
+                subject[i] = subject[(this->buf_size - subject_size) + i];
+              }
+            } else {
+              // clear the buffer
+              if (is_sed) {
+                str::write_f(this->output, subject + match_offset, subject + subject_size);
+              }
+              subject_size = 0;
+            }
+          };
+
+          if (is_match) {
+            // count as match failure
+            clear_except_trailing_incomplete_multibyte();
+            match_offset = 0;
+          } else {
+            // there is not enough room in the match buffer. moving the part
+            // of the token at the beginning that won't be a part of a
+            // successful match. moved to either a separate (fragment) buffer
+            // or directly to the output
+
+            auto process_fragment = [&](const char* begin, const char* end) {
+              if (!has_ops && tokens_not_stored) {
+                direct_output.write_output_fragment(begin, end);
+              } else {
+                if (fragment.size() + (end - begin) > this->buf_size_frag) {
+                  drop_warning(*this);
+                  fragment.clear();
+                } else {
+                  str::append_to_buffer(fragment, begin, end);
+                }
+              }
+            };
+
+            if (prev_sep_end != 0 || subject == retain_marker) {
+              // the buffer is being retained because of lookbehind bytes.
+              // can't properly match, so results in match failure
+              process_fragment(subject + prev_sep_end, subject_effective_end);
+              clear_except_trailing_incomplete_multibyte();
+              prev_sep_end = 0;
+              match_offset = 0;
+            } else {
+              // the buffer is being retained because of the previous delimiter
+              // end position. write part
+              process_fragment(subject, retain_marker);
+              const char* remove_until = retain_marker;
+              char* begin = subject;
+              while (remove_until < subject + subject_size) {
+                *begin++ = *remove_until++;
+              }
+              subject_size -= remove_until - begin;
+              match_offset = 0;
+            }
+          }
+        }
+      } else {
+        // no match and no more input:
+        // process the last token and break from the loop
+        if (!is_match) {
+          if (prev_sep_end != subject_size || this->use_input_delimiter || !fragment.empty()) {
+            // at this point subject_effective_end is subject + subject_size (since input_done)
+            process_token(subject + prev_sep_end, subject_effective_end);
+          }
+        } else if (is_sed) {
+          str::write_f(this->output, subject + match_offset, subject_effective_end);
+        }
+        break;
+      }
+    }
   }
 
   return ret;

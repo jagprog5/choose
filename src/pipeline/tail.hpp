@@ -1,7 +1,7 @@
 #pragma once
 
 #include <deque>
-#include "pipeline/unit/unit.hpp"
+#include "pipeline/unit.hpp"
 
 namespace choose {
 namespace pipeline {
@@ -19,10 +19,10 @@ struct TailUnit : public PipelineUnit {
   void process(EndOfStream&& p) override {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
       for (const SimplePacket& sp : this->packets) {
-        os->write_output(&*sp.t.buffer.cbegin(), &*sp.t.buffer.cend());
+        os->write_output(&*sp.buffer.cbegin(), &*sp.buffer.cend());
       }
       os->finish_output();
-      throw termination_request();
+      throw output_finished();
     } else {
       std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
       for (SimplePacket& sp : this->packets) {

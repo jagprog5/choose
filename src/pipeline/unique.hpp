@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pipeline/unit/unit.hpp"
+#include "pipeline/unit.hpp"
 
 #include <limits>
 #include <unordered_set>

@@ -332,7 +332,7 @@ choose_output run_choose(const std::vector<char>& input, const std::vector<const
   try {
     ret.o = choose::create_tokens(args);
     output_writer.reset();
-  } catch (const choose::termination_request&) {
+  } catch (const choose::output_finished&) {
     output_writer.reset();
     std::vector<char> out;
     static constexpr size_t BUF_SIZE = 1024;

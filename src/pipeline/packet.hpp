@@ -1,8 +1,8 @@
 #pragma once
 
 #include <variant>
-#include "regex.hpp"
-#include "pipeline/packet/token.hpp"
+#include <string.h>
+#include "utils/regex.hpp"
 
 namespace choose {
 
@@ -14,9 +14,13 @@ struct EndOfStream {
 
 // this is a simple packet which hold ownership over a vector
 struct SimplePacket {
-  Token t;
+  std::vector<char> buffer;
 
-  SimplePacket(std::vector<char>&& v) : t{std::move(v)} {}
+  // for testing
+  SimplePacket(const char* in) : buffer(in, in + strlen(in)) {}
+  bool operator==(const SimplePacket& other) const { return this->buffer == other.buffer; }
+
+  SimplePacket(std::vector<char>&& v) : buffer{std::move(v)} {}
   
   // for safety, delete copying. shouldn't ever happen
   SimplePacket(const SimplePacket&) = delete;
@@ -24,8 +28,8 @@ struct SimplePacket {
   SimplePacket(SimplePacket&&) = default;
   SimplePacket& operator=(SimplePacket&&) = default;
 
-  SimplePacket(const ViewPacket& p) : t{std::vector<char>(p.begin, p.end)} {}
-  SimplePacket(ViewPacket&& p) : t{std::vector<char>(p.begin, p.end)} {}
+  SimplePacket(const ViewPacket& p) : buffer{std::vector<char>(p.begin, p.end)} {}
+  SimplePacket(ViewPacket&& p) : buffer{std::vector<char>(p.begin, p.end)} {}
 
   SimplePacket(const ReplacePacket& rp) : SimplePacket(ViewPacket(rp)) {}
   SimplePacket(ReplacePacket&& rp) : SimplePacket(ViewPacket(rp)) {}
@@ -46,7 +50,7 @@ struct ViewPacket {
   const char* begin;
   const char* end;
   // view packet can take a view of the other packet types
-  ViewPacket(const SimplePacket& sp) : begin(&*sp.t.buffer.cbegin()), end(&*sp.t.buffer.cend()) {}
+  ViewPacket(const SimplePacket& sp) : begin(&*sp.buffer.cbegin()), end(&*sp.buffer.cend()) {}
 
   ViewPacket(const ReplacePacket& rp) {
     PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(rp.data.get());

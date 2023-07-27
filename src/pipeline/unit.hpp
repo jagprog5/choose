@@ -1,7 +1,7 @@
 #pragma once
 
-#include "pipeline/packet/packet.hpp"
-#include "pipeline/unit/token_output_stream.hpp"
+#include "pipeline/packet.hpp"
+#include "pipeline/token_output_stream.hpp"
 #include "variant"
 
 namespace choose {
@@ -15,7 +15,7 @@ struct PipelineUnit;
 using NextUnit = std::variant<std::unique_ptr<PipelineUnit>, TokenOutputStream>;
 
 // this is caught and treated like exit() unless this is a unit test
-struct termination_request : public std::exception {};
+struct output_finished : public std::exception {};
 
 // base class. the default behaviour is to pass everything to the next unit of the pipeline
 struct PipelineUnit {
@@ -25,7 +25,7 @@ struct PipelineUnit {
   virtual void process(EndOfStream&& p) {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
       os->finish_output();
-      throw termination_request();
+      throw output_finished();
     } else {
       std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
       next_unit->process(std::move(p));
@@ -66,14 +66,14 @@ struct AccumulatingUnit : public PipelineUnit {
   void process(EndOfStream&& p) override {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
       for (const SimplePacket& sp : this->packets) {
-        os->write_output(&*sp.t.buffer.cbegin(), &*sp.t.buffer.cend());
+        os->write_output(&*sp.buffer.cbegin(), &*sp.buffer.cend());
       }
       os->finish_output();
-      throw termination_request();
+      throw output_finished();
     } else {
       this->process_stream_for_next_unit();
     }
-kw  }
+  }
 
   void process(SimplePacket&& p) override {
     this->packets.push_back(std::move(p));

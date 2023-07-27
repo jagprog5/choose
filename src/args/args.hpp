@@ -2,8 +2,8 @@
 
 #include <vector>
 
+#include "pipeline/unit.hpp"
 #include "utils/regex.hpp"
-#include "pipeline/unit/unit.hpp"
 
 namespace choose {
 
@@ -63,6 +63,32 @@ struct Arguments {
 
   // disable or allow warning
   bool can_drop_warn = true;
+
+  static Arguments create_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL);
+
+  // reads from this->input
+  // if this->tui:
+  //      returns the tokens
+  // else
+  //      writes to this->output, then throws a output_finished exception,
+  //      which the caller should handle (exit unless unit test)
+  std::vector<pipeline::SimplePacket> create_packets();
 };
 
-}
+struct UncompiledCodes {
+  // all args must be parsed before the args are compiled
+  // the uncompiled args are stored here before transfer to the Arguments output.
+  uint32_t re_options = PCRE2_LITERAL;
+  std::vector<pipeline::UncompiledPipelineUnit> units;
+
+  std::vector<char> primary;
+
+  // disambiguate between empty and unset
+  // needed since they take default values
+  bool bout_delimiter_set = false;
+  bool primary_set = false;
+
+  void compile(Arguments& output);
+};
+
+} // namespace choose

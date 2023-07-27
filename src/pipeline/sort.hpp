@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pipeline/unit/unit.hpp"
+#include "pipeline/unit.hpp"
 
 namespace choose {
 namespace pipeline {

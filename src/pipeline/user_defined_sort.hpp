@@ -1,7 +1,7 @@
 #pragma once
 
 #include <set>
-#include "pipeline/unit/unit.hpp"
+#include "pipeline/unit.hpp"
 
 namespace choose {
 namespace pipeline {
