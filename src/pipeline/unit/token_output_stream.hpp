@@ -10,9 +10,6 @@ namespace pipeline {
 // writes an output delimiter between each token
 // and (might, depending on args) a batch output delimiter on finish.
 struct TokenOutputStream {
-  // number of elements written to the output
-  size_t out_count = 0;
-  // disambiguate between out_count of zero vs overflow to zero
   bool has_written = false;
 
   // is a delimiter required before the next write
@@ -51,7 +48,6 @@ struct TokenOutputStream {
     delimit_required_ = true;
     has_written = true;
     handler(args.output, begin, end);
-    ++out_count;
     if (args.flush) {
       choose::str::flush_f(args.output);
     }
@@ -64,7 +60,6 @@ struct TokenOutputStream {
     }
     delimit_required_ = false; // optional reset of state
     has_written = false;
-    out_count = 0;
   }
 };
 

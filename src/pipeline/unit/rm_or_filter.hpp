@@ -6,14 +6,14 @@
 namespace choose {
 namespace pipeline {
 
-struct RmOrFilterUnit : public BulkUnit {
+struct RmOrFilterUnit : public PipelineUnit {
   enum Type { REMOVE, FILTER };
   Type type;
   regex::code arg;
   regex::match_data match_data;
 
   RmOrFilterUnit(NextUnit&& next, Type type, regex::code&& arg)
-      : BulkUnit(std::move(next)), //
+      : PipelineUnit(std::move(next)), //
         type(type),
         arg(std::move(arg)),
         match_data(regex::create_match_data(this->arg)) {}
@@ -54,14 +54,6 @@ struct RmOrFilterUnit : public BulkUnit {
   void process(SimplePacket&& p) override { this->internal_process(std::move(p)); }
   void process(ViewPacket&& p) override { this->internal_process(std::move(p)); }
   void process(ReplacePacket&& p) override { this->internal_process(std::move(p)); }
-
-  void process(BulkPacket&& p) override {
-    auto new_end = std::remove_if(p.begin(), p.end(), [this](const SimplePacket& p) -> bool {
-      return this->denied(p);
-    });
-    p.resize(new_end - p.begin());
-    BulkUnit::process(std::move(p));
-  }
 };
 
 struct UncompiledRmOrFilterUnit : public UncompiledPipelineUnit {

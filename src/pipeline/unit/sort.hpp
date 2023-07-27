@@ -10,16 +10,12 @@ struct Sort : public AccumulatingUnit {
     // todo look ahead until head is found. do a partial sort here instead
   }
 
-  bool is_input_already_sorted = false;
-
   // hook onto after the packets have been received but before they are sent to the next unit
   void process(EndOfStream&& p) override {
-    if (!is_input_already_sorted) {
-      auto comp = [](const SimplePacket& lhs, const SimplePacket& rhs) -> bool { //
-        return std::lexicographical_compare(&*lhs.t.buffer.cbegin(), &*lhs.t.buffer.cend(), &*rhs.t.buffer.cbegin(), &*rhs.t.buffer.cend());
-      };
-      std::sort(this->packets.begin(), this->packets.end(), comp);
-    }
+    auto comp = [](const SimplePacket& lhs, const SimplePacket& rhs) -> bool { //
+      return std::lexicographical_compare(&*lhs.t.buffer.cbegin(), &*lhs.t.buffer.cend(), &*rhs.t.buffer.cbegin(), &*rhs.t.buffer.cend());
+    };
+    std::sort(this->packets.begin(), this->packets.end(), comp);
     AccumulatingUnit::process(std::move(p));
   }
 };

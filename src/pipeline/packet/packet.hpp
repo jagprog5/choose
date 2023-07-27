@@ -55,7 +55,5 @@ struct ViewPacket {
   }
 };
 
-using BulkPacket = std::vector<SimplePacket>;
-
 } // namespace pipeline
 } // namespace choose

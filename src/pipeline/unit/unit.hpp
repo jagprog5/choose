@@ -11,7 +11,7 @@ namespace pipeline {
 struct PipelineUnit;
 
 // the next unit of the pipeline points to another unit.
-// if it is the last element of the pipeline, it instead points to a TokenOutputStream
+// the last element of the pipeline can be a TokenOutputStream
 using NextUnit = std::variant<std::unique_ptr<PipelineUnit>, TokenOutputStream>;
 
 // this is caught and treated like exit() unless this is a unit test
@@ -48,53 +48,31 @@ struct PipelineUnit {
   virtual void process(ReplacePacket&& p) { this->internal_process(std::move(p)); }
 };
 
-// this is a type of pipeline unit that can handle BulkPackets.
-// the default behaviour is to pass through appropriately.
-// if a unit should only be able to handle individual packets at a time (not a bulk packet),
-// then it should be a PipelineUnit, and not a BulkUnit
-struct BulkUnit : public PipelineUnit {
-  BulkUnit(NextUnit&& next) : PipelineUnit(std::move(next)) {}
+// a PipelineUnit that accumulates all of the tokens it receives.
+struct AccumulatingUnit : public PipelineUnit {
+  std::vector<SimplePacket> packets;
 
-  void process_bulk_packet_for_next_unit(BulkPacket&& p) {
+  AccumulatingUnit(NextUnit&& next) : PipelineUnit(std::move(next)) {}
+
+  void process_stream_for_next_unit() {
     std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
-    if (BulkUnit* b = dynamic_cast<BulkUnit*>(next_unit.get())) {
-      b->process(std::move(p));
-    } else {
-      for (SimplePacket& sp : p) {
-        next_unit->process(std::move(sp));
-      }
-      next_unit->process(EndOfStream());
+    for (SimplePacket& sp : this->packets) {
+      next_unit->process(std::move(sp));
     }
+    this->packets.clear();
+    next_unit->process(EndOfStream());
   }
 
-  virtual void process(BulkPacket&& p) {
+  void process(EndOfStream&& p) override {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
-      for (const SimplePacket& sp : p) {
+      for (const SimplePacket& sp : this->packets) {
         os->write_output(&*sp.t.buffer.cbegin(), &*sp.t.buffer.cend());
       }
       os->finish_output();
       throw termination_request();
     } else {
-      this->process_bulk_packet_for_next_unit(std::move(p));
+      this->process_stream_for_next_unit();
     }
-  }
-};
-
-// a BulkUnit that accumulates all of the tokens it receives.
-struct AccumulatingUnit : public BulkUnit {
-  BulkPacket packets;
-
-  AccumulatingUnit(NextUnit&& next) : BulkUnit(std::move(next)) {}
-
-  void process(BulkPacket&& p) override {
-    this->packets = std::move(p);
-    // for an AccumulatingUnit, end of stream is processed when the input is done,
-    // regardless of if it came from a bulk packet or from individual packets
-    this->process(EndOfStream());
-  }
-
-  void process(EndOfStream&& p) override {
-    BulkUnit::process(std::move(this->packets));
   }
 
   void process(SimplePacket&& p) override {
