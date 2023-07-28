@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include "string_utils.hpp"
 
 namespace choose {
 
@@ -244,6 +245,73 @@ std::vector<char> substitute_on_match(const match_data& data, //
     if (sub_rc >= 0) {
       ret.resize(output_size);
       return ret;
+    } else {
+      throw get_sub_err(sub_rc);
+    }
+  } else {
+    throw get_sub_err(sub_rc);
+  }
+}
+
+// similar to substitute_on_match, but write the result directly to a file
+void substitute_on_match_direct(FILE* out,
+                                const match_data& data, //
+                                const code& re,
+                                const char* subject,
+                                PCRE2_SIZE subject_length,
+                                const char* replacement,
+                                SubstitutionContext& context) {
+  apply_null_guard(subject, subject_length);
+  uint32_t sub_flags = PCRE2_SUBSTITUTE_REPLACEMENT_ONLY //
+                       | PCRE2_SUBSTITUTE_MATCHED        //
+                       | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+#ifdef PCRE2_SUBSTITUTE_LITERAL
+  if (options(re) & PCRE2_LITERAL) {
+    sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
+  }
+#endif
+  int sub_rc;             // NOLINT
+  PCRE2_SIZE output_size; // NOLINT
+  {                       // scope for stack allocation
+    char buf[context.max_replacement];
+    output_size = context.max_replacement;
+    sub_rc = pcre2_substitute(re.get(),                //
+                              (PCRE2_SPTR)subject,     //
+                              subject_length,          //
+                              0,                       //
+                              sub_flags,               //
+                              data.get(),              //
+                              NULL,                    //
+                              (PCRE2_SPTR)replacement, //
+                              PCRE2_ZERO_TERMINATED,   //
+                              (PCRE2_UCHAR8*)buf,      //
+                              &output_size);
+    if (sub_rc >= 0) {
+      str::write_f(out, buf, buf + output_size);
+      return;
+    }
+  }
+
+  // second pass
+  sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+  context.max_replacement = output_size;
+  char buf[context.max_replacement];
+
+  if (sub_rc == PCRE2_ERROR_NOMEMORY) {
+    sub_rc = pcre2_substitute(re.get(),                //
+                              (PCRE2_SPTR)subject,     //
+                              subject_length,          //
+                              0,                       //
+                              sub_flags,               //
+                              data.get(),              //
+                              NULL,                    //
+                              (PCRE2_SPTR)replacement, //
+                              PCRE2_ZERO_TERMINATED,   //
+                              (PCRE2_UCHAR8*)buf,      //
+                              &output_size);
+    if (sub_rc >= 0) {
+      str::write_f(out, buf, buf + output_size);
+      return;
     } else {
       throw get_sub_err(sub_rc);
     }

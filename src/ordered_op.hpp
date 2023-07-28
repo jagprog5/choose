@@ -82,6 +82,14 @@ struct ReplaceOp {
   regex::SubstitutionContext ctx;
   ReplaceOp(const char* replacement) : replacement(replacement) {}
 
+  void direct_apply(FILE* out,
+                    const char* subj_begin,        //
+                    PCRE2_SIZE sub_len,          //
+                    const regex::match_data& data, //
+                    const regex::code& re) {
+    regex::substitute_on_match_direct(out, data, re, subj_begin, sub_len, this->replacement, this->ctx);
+  }
+
   void apply(std::vector<char>& out,        //
              const char* subj_begin,        //
              const char* subj_end,          //

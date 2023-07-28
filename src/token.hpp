@@ -338,9 +338,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
-              std::vector<char> out;
-              rep_op->apply(out, subject, subject + subject_size, primary_data, args.primary);
-              direct_output.write_output(&*out.cbegin(), &*out.cend());
+              auto direct_apply_replace = [&](FILE* out, const char*, const char*) { //
+                rep_op->direct_apply(out, subject, subject_size, primary_data, args.primary);
+              };
+              direct_output.write_output(begin, end, direct_apply_replace);
             } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
                 sub_op->direct_apply(out, begin, end);
@@ -658,10 +659,17 @@ skip_read: // do another iteration but don't read in any more bytes
       set->clear();
     }
 
-    if (args.comp_sort) {
-      std::stable_sort(output.begin(), output.end(), user_defined_comparison);
-    } else if (args.sort) {
-      std::sort(output.begin(), output.end(), lexicographical_comparison);
+    if (args.out.has_value() && output.size() > *args.out && args.sort && !args.comp_sort) {
+      // if lexicographically sorting and the output is being truncated then do a
+      // partial sort instead. can only be applied to lexicographical since there's no
+      // stable partial sort (and stability is required for user defined comp sort)
+      std::partial_sort(output.begin(), output.begin() + *args.out, output.end(), lexicographical_comparison);
+    } else {
+      if (args.comp_sort) {
+        std::stable_sort(output.begin(), output.end(), user_defined_comparison);
+      } else if (args.sort) {
+        std::sort(output.begin(), output.end(), lexicographical_comparison);
+      }
     }
 
     if (args.reverse) {
