@@ -89,7 +89,7 @@ struct AccumulatingUnit : public PipelineUnit {
 
 // needed for some of the Units. holding spot while args are parsed
 struct UncompiledPipelineUnit {
-  virtual PipelineUnit compile(NextUnit&& next, [[maybe_unused]] uint32_t regex_options) = 0;
+  virtual std::unique_ptr<PipelineUnit> compile(NextUnit&& next, [[maybe_unused]] uint32_t regex_options) = 0;
   virtual ~UncompiledPipelineUnit() {}
 };
 

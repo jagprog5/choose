@@ -85,8 +85,8 @@ struct IndexUnit : public PipelineUnit {
 struct UncompiledIndexUnit : public UncompiledPipelineUnit {
   const IndexUnit::Align align;
   UncompiledIndexUnit(IndexUnit::Align align) : align(align) {}
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return IndexUnit(std::move(next), this->align);
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new IndexUnit(std::move(next), this->align));
   }
 };
 

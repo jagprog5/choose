@@ -107,8 +107,8 @@ struct UniqueUnit : public PipelineUnit {
 };
 
 struct UncompiledUniqueUnit : public UncompiledPipelineUnit {
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return UniqueUnit(std::move(next));
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new UniqueUnit(std::move(next)));
   }
 };
 

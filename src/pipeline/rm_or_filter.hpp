@@ -62,10 +62,10 @@ struct UncompiledRmOrFilterUnit : public UncompiledPipelineUnit {
 
   UncompiledRmOrFilterUnit(RmOrFilterUnit::Type type, const char* arg) : type(type), arg(arg) {}
 
-  PipelineUnit compile(NextUnit&& next, uint32_t regex_options) override {
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t regex_options) override {
     const char* id = this->type == RmOrFilterUnit::FILTER ? "filter" : "remove";
     regex::code code = regex::compile(this->arg, regex_options, id);
-    return RmOrFilterUnit(std::move(next), type, std::move(code));
+    return std::unique_ptr<PipelineUnit>(new RmOrFilterUnit(std::move(next), type, std::move(code)));
   }
 };
 

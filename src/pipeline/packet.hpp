@@ -64,7 +64,7 @@ inline ViewPacket::ViewPacket(const ReplacePacket& rp) {
 }
 
 struct EndOfStream {
-  std::vector<pipeline::SimplePacket>* out = 0;
+  char unused[0]; // make the struct zero length. cpp quirk
 };
 
 } // namespace pipeline

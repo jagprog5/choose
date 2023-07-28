@@ -47,8 +47,8 @@ struct TailUnit : public PipelineUnit {
 struct UncompiledTailUnit : public UncompiledPipelineUnit {
   const size_t n;
   UncompiledTailUnit(size_t n) : n(n) {}
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return TailUnit(std::move(next), this->n);
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new TailUnit(std::move(next), this->n));
   }
 };
 

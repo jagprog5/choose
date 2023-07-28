@@ -15,8 +15,8 @@ struct ReverseUnit : public AccumulatingUnit {
 };
 
 struct UncompiledReverseUnit : public UncompiledPipelineUnit {
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return ReverseUnit(std::move(next));
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new ReverseUnit(std::move(next)));
   }
 };
 

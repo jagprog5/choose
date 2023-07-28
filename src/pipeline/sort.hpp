@@ -21,8 +21,8 @@ struct SortUnit : public AccumulatingUnit {
 };
 
 struct UncompiledSortUnit : public UncompiledPipelineUnit {
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return SortUnit(std::move(next));
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new SortUnit(std::move(next)));
   }
 };
 

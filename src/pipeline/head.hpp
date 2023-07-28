@@ -18,7 +18,7 @@ struct HeadUnit : public PipelineUnit {
   void internal_process(PacketT&& p) {
     PipelineUnit::process(std::move(p));
     if (--this->n == 0) {
-      PipelineUnit::process(std::move(p));
+      PipelineUnit::process(EndOfStream());
     }
   }
 
@@ -30,8 +30,8 @@ struct HeadUnit : public PipelineUnit {
 struct UncompiledHeadUnit : public UncompiledPipelineUnit {
   const size_t n;
   UncompiledHeadUnit(size_t n) : n(n) {}
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return HeadUnit(std::move(next), this->n);
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new HeadUnit(std::move(next), this->n));
   }
 };
 

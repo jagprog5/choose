@@ -39,8 +39,8 @@ struct ReplaceUnit : public PipelineUnit {
 struct UncompiledReplaceUnit : public UncompiledPipelineUnit {
   const char* replacement;
   UncompiledReplaceUnit(const char* replacement) : replacement(replacement) {}
-  PipelineUnit compile(NextUnit&& next, uint32_t) override {
-    return ReplaceUnit(std::move(next), this->replacement);
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t) override {
+    return std::unique_ptr<PipelineUnit>(new ReplaceUnit(std::move(next), this->replacement));
   }
 };
 

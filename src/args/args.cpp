@@ -35,7 +35,7 @@ void UncompiledCodes::compile(Arguments& output) {
     auto pu = std::make_unique<pipeline::PipelineUnit>(unit->compile(std::move(downstream), this->re_options));
     downstream = std::move(pu);
   }
-  output.pipeline = pipeline::PipelineUnit(std::move(downstream));
+  output.pipeline = std::move(downstream);
 
   // see if single byte delimiter optimization applies
   if (!output.match && primary.size() == 1) {
@@ -708,266 +708,270 @@ std::vector<pipeline::SimplePacket> Arguments::create_packets() {
   // for when parts of a token are accumulated
   std::vector<char> fragment;
 
-  auto process_token = [&](const char* begin, const char* end) {
-    if (!fragment.empty()) {
-      pipeline::SimplePacket sp;
-      if (fragment.size() + (end - begin) > this->buf_size_frag) {
-        this->drop_warning();
-        fragment.clear(); // still use empty token
-        sp.buffer = std::move(fragment);
-        fragment = std::vector<char>();
-      } else {
-        str::append_to_buffer(fragment, begin, end);
-        sp.buffer = std::move(fragment);
-        fragment = std::vector<char>();
-      }
-      this->pipeline.process(std::move(sp));
-    } else {
-      if (is_sed) {
-        pipeline::ReplacePacket rp{subject, subject + subject_size, primary_data, this->primary};
-        this->pipeline.process(std::move(rp));
-      } else {
-        pipeline::ViewPacket vp(begin, end);
-        this->pipeline.process(std::move(vp));
-      }
-    }
-  };
-
-  while (1) {
-    char* write_pos = &subject[subject_size];
-    size_t bytes_to_read = std::min(this->bytes_to_read, this->buf_size - subject_size);
-    size_t bytes_read; // NOLINT
-    bool input_done;   // NOLINT
-    if (flush) {
-      bytes_read = str::get_bytes_unbuffered(fileno(this->input), bytes_to_read, write_pos);
-      input_done = bytes_read == 0;
-    } else {
-      bytes_read = str::get_bytes(this->input, bytes_to_read, write_pos);
-      input_done = bytes_read != bytes_to_read;
-    }
-    subject_size += bytes_read;
-    if (input_done) {
-      // required to make end anchors like \Z match at the end of the input
-      match_options &= ~PCRE2_PARTIAL_HARD;
-    }
-
-    // don't separate multibyte at end of subject
-    const char* subject_effective_end; // NOLINT
-    if (is_utf && !input_done) {
-      subject_effective_end = str::utf8::last_completed_character_end(subject, subject + subject_size);
-      if (subject_effective_end == NULL) {
-        if (is_invalid_utf) {
-          subject_effective_end = subject + subject_size;
+  try {
+    auto process_token = [&](const char* begin, const char* end) {
+      if (!fragment.empty()) {
+        pipeline::SimplePacket sp;
+        if (fragment.size() + (end - begin) > this->buf_size_frag) {
+          this->drop_warning();
+          fragment.clear(); // still use empty token
+          sp.buffer = std::move(fragment);
+          fragment = std::vector<char>();
         } else {
-          throw std::runtime_error("utf8 decoding error");
+          str::append_to_buffer(fragment, begin, end);
+          sp.buffer = std::move(fragment);
+          fragment = std::vector<char>();
         }
-      }
-    } else {
-      subject_effective_end = subject + subject_size;
-    }
-
-skip_read: // do another iteration but don't read in any more bytes
-
-    int match_result;                      // NOLINT
-    const char* single_byte_delimiter_pos; // NOLINT points to position of match if match_result is 1
-    if (single_byte_delimiter) {
-      match_result = 0;
-      single_byte_delimiter_pos = subject + prev_sep_end;
-      while (single_byte_delimiter_pos < subject + subject_size) {
-        if (*single_byte_delimiter_pos == *this->in_byte_delimiter) {
-          match_result = 1;
-          break;
-        }
-        ++single_byte_delimiter_pos;
-      }
-    } else {
-      match_result = regex::match(this->primary,                   //
-                                  subject,                         //
-                                  subject_effective_end - subject, //
-                                  primary_data,                    //
-                                  id(is_match),                    //
-                                  match_offset,                    //
-                                  match_options);
-    }
-
-    if (match_result > 0) {
-      // a complete match:
-      // process the match, set the offsets, then do another iteration without
-      // reading more input
-      regex::Match match; // NOLINT
-      if (single_byte_delimiter) {
-        match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
+        this->pipeline.process(std::move(sp));
       } else {
-        match = regex::get_match(subject, primary_data, id(is_match));
-        if (match.begin == match.end) {
-          match_options |= PCRE2_NOTEMPTY_ATSTART;
-        } else {
-          match_options &= ~PCRE2_NOTEMPTY_ATSTART;
-        }
-      }
-      if (is_match) {
         if (is_sed) {
-          str::write_f(this->tos_args.output, subject + match_offset, match.begin);
-          process_token(match.begin, match.end);
+          pipeline::ReplacePacket rp{subject, subject + subject_size, primary_data, this->primary};
+          this->pipeline.process(std::move(rp));
         } else {
-          regex::get_match_and_groups(
-              subject, match_result, primary_data,
-              [&](const regex::Match& m) { //
-                process_token(m.begin, m.end);
-              },
-              "match pattern");
+          pipeline::ViewPacket vp(begin, end);
+          this->pipeline.process(std::move(vp));
+        }
+      }
+    };
+
+    while (1) {
+      char* write_pos = &subject[subject_size];
+      size_t bytes_to_read = std::min(this->bytes_to_read, this->buf_size - subject_size);
+      size_t bytes_read; // NOLINT
+      bool input_done;   // NOLINT
+      if (flush) {
+        bytes_read = str::get_bytes_unbuffered(fileno(this->input), bytes_to_read, write_pos);
+        input_done = bytes_read == 0;
+      } else {
+        bytes_read = str::get_bytes(this->input, bytes_to_read, write_pos);
+        input_done = bytes_read != bytes_to_read;
+      }
+      subject_size += bytes_read;
+      if (input_done) {
+        // required to make end anchors like \Z match at the end of the input
+        match_options &= ~PCRE2_PARTIAL_HARD;
+      }
+
+      // don't separate multibyte at end of subject
+      const char* subject_effective_end; // NOLINT
+      if (is_utf && !input_done) {
+        subject_effective_end = str::utf8::last_completed_character_end(subject, subject + subject_size);
+        if (subject_effective_end == NULL) {
+          if (is_invalid_utf) {
+            subject_effective_end = subject + subject_size;
+          } else {
+            throw std::runtime_error("utf8 decoding error");
+          }
         }
       } else {
-        process_token(subject + prev_sep_end, match.begin);
-        prev_sep_end = match.end - subject;
+        subject_effective_end = subject + subject_size;
       }
-      // set the start offset to just after the match
-      match_offset = match.end - subject;
-      goto skip_read;
-    } else {
-      if (!input_done) {
-        // no or partial match and input is left
-        const char* new_subject_begin;                    // NOLINT
-        if (single_byte_delimiter || match_result == 0) { // single_byte_delimiter implies no partial match
-          // there was no match but there is more input
-          new_subject_begin = subject_effective_end;
+
+  skip_read: // do another iteration but don't read in any more bytes
+
+      int match_result;                      // NOLINT
+      const char* single_byte_delimiter_pos; // NOLINT points to position of match if match_result is 1
+      if (single_byte_delimiter) {
+        match_result = 0;
+        single_byte_delimiter_pos = subject + prev_sep_end;
+        while (single_byte_delimiter_pos < subject + subject_size) {
+          if (*single_byte_delimiter_pos == *this->in_byte_delimiter) {
+            match_result = 1;
+            break;
+          }
+          ++single_byte_delimiter_pos;
+        }
+      } else {
+        match_result = regex::match(this->primary,                   //
+                                    subject,                         //
+                                    subject_effective_end - subject, //
+                                    primary_data,                    //
+                                    id(is_match),                    //
+                                    match_offset,                    //
+                                    match_options);
+      }
+
+      if (match_result > 0) {
+        // a complete match:
+        // process the match, set the offsets, then do another iteration without
+        // reading more input
+        regex::Match match; // NOLINT
+        if (single_byte_delimiter) {
+          match = regex::Match{single_byte_delimiter_pos, single_byte_delimiter_pos + 1};
         } else {
-          // there was a partial match and there is more input
-          regex::Match match = regex::get_match(subject, primary_data, id(is_match));
-          new_subject_begin = match.begin;
-        }
-
-        // account for lookbehind bytes to retain prior to the match
-        const char* new_subject_begin_cp = new_subject_begin;
-        new_subject_begin -= this->max_lookbehind;
-        if (new_subject_begin < subject) {
-          new_subject_begin = subject;
-        }
-        if (is_utf) {
-          // don't separate multibyte at begin of subject
-          new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, subject, subject_effective_end);
-        }
-
-        // pointer to begin of bytes retained, not including from the previous separator end
-        const char* retain_marker = new_subject_begin;
-
-        if (!is_match) {
-          // keep the bytes required, either from the lookbehind retain,
-          // or because the delimiter ended there
-          const char* subject_const = subject;
-          new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
-        }
-
-        // cut out the excess from the beginning and adjust the offsets
-        size_t old_match_offset = match_offset;
-        match_offset = new_subject_begin_cp - new_subject_begin;
-        if (!is_match) {
-          prev_sep_end -= new_subject_begin - subject;
-        } else if (is_sed) {
-          // write out the part that is being discarded
-          const char* begin = subject + old_match_offset;
-          const char* end = new_subject_begin + match_offset;
-          if (begin < end) {
-            str::write_f(this->tos_args.output, begin, end);
-          }
-        }
-
-        char* to = subject;
-        const char* from = new_subject_begin;
-        if (from != to) {
-          while (from < subject + subject_size) {
-            *to++ = *from++;
-          }
-          subject_size -= from - to;
-        } else if (subject_size == this->buf_size) {
-          // the buffer size has been filled
-
-          auto clear_except_trailing_incomplete_multibyte = [&]() {
-            if (is_utf                                             //
-                && subject + subject_size != subject_effective_end //
-                && subject != subject_effective_end) {
-              // "is_utf"
-              //    in utf mode
-              // "subject + subject_size != subject_effective_end"
-              //    if the end of the buffer contains an incomplete multibyte
-              // "subject != subject_effective_end"
-              //    if clearing up to that point would do anything (entire buffer is incomplete multibyte)
-              // then:
-              //    clear the entire buffer not including the incomplete multibyte
-              //    at the end (that wasn't used yet)
-              if (is_sed) {
-                str::write_f(this->tos_args.output, subject + match_offset, subject_effective_end);
-              }
-              subject_size = (subject + subject_size) - subject_effective_end;
-              for (size_t i = 0; i < subject_size; ++i) {
-                subject[i] = subject[(this->buf_size - subject_size) + i];
-              }
-            } else {
-              // clear the buffer
-              if (is_sed) {
-                str::write_f(this->tos_args.output, subject + match_offset, subject + subject_size);
-              }
-              subject_size = 0;
-            }
-          };
-
-          if (is_match) {
-            // count as match failure
-            clear_except_trailing_incomplete_multibyte();
-            match_offset = 0;
+          match = regex::get_match(subject, primary_data, id(is_match));
+          if (match.begin == match.end) {
+            match_options |= PCRE2_NOTEMPTY_ATSTART;
           } else {
-            // there is not enough room in the match buffer. moving the part
-            // of the token at the beginning that won't be a part of a
-            // successful match. moved to either a separate (fragment) buffer
-            // or directly to the output
+            match_options &= ~PCRE2_NOTEMPTY_ATSTART;
+          }
+        }
+        if (is_match) {
+          if (is_sed) {
+            str::write_f(this->tos_args.output, subject + match_offset, match.begin);
+            process_token(match.begin, match.end);
+          } else {
+            regex::get_match_and_groups(
+                subject, match_result, primary_data,
+                [&](const regex::Match& m) { //
+                  process_token(m.begin, m.end);
+                },
+                "match pattern");
+          }
+        } else {
+          process_token(subject + prev_sep_end, match.begin);
+          prev_sep_end = match.end - subject;
+        }
+        // set the start offset to just after the match
+        match_offset = match.end - subject;
+        goto skip_read;
+      } else {
+        if (!input_done) {
+          // no or partial match and input is left
+          const char* new_subject_begin;                    // NOLINT
+          if (single_byte_delimiter || match_result == 0) { // single_byte_delimiter implies no partial match
+            // there was no match but there is more input
+            new_subject_begin = subject_effective_end;
+          } else {
+            // there was a partial match and there is more input
+            regex::Match match = regex::get_match(subject, primary_data, id(is_match));
+            new_subject_begin = match.begin;
+          }
 
-            auto process_fragment = [&](const char* begin, const char* end) {
-              if (fragment.size() + (end - begin) > this->buf_size_frag) {
-                this->drop_warning();
-                fragment.clear();
+          // account for lookbehind bytes to retain prior to the match
+          const char* new_subject_begin_cp = new_subject_begin;
+          new_subject_begin -= this->max_lookbehind;
+          if (new_subject_begin < subject) {
+            new_subject_begin = subject;
+          }
+          if (is_utf) {
+            // don't separate multibyte at begin of subject
+            new_subject_begin = str::utf8::decrement_until_character_start(new_subject_begin, subject, subject_effective_end);
+          }
+
+          // pointer to begin of bytes retained, not including from the previous separator end
+          const char* retain_marker = new_subject_begin;
+
+          if (!is_match) {
+            // keep the bytes required, either from the lookbehind retain,
+            // or because the delimiter ended there
+            const char* subject_const = subject;
+            new_subject_begin = std::min(new_subject_begin, subject_const + prev_sep_end);
+          }
+
+          // cut out the excess from the beginning and adjust the offsets
+          size_t old_match_offset = match_offset;
+          match_offset = new_subject_begin_cp - new_subject_begin;
+          if (!is_match) {
+            prev_sep_end -= new_subject_begin - subject;
+          } else if (is_sed) {
+            // write out the part that is being discarded
+            const char* begin = subject + old_match_offset;
+            const char* end = new_subject_begin + match_offset;
+            if (begin < end) {
+              str::write_f(this->tos_args.output, begin, end);
+            }
+          }
+
+          char* to = subject;
+          const char* from = new_subject_begin;
+          if (from != to) {
+            while (from < subject + subject_size) {
+              *to++ = *from++;
+            }
+            subject_size -= from - to;
+          } else if (subject_size == this->buf_size) {
+            // the buffer size has been filled
+
+            auto clear_except_trailing_incomplete_multibyte = [&]() {
+              if (is_utf                                             //
+                  && subject + subject_size != subject_effective_end //
+                  && subject != subject_effective_end) {
+                // "is_utf"
+                //    in utf mode
+                // "subject + subject_size != subject_effective_end"
+                //    if the end of the buffer contains an incomplete multibyte
+                // "subject != subject_effective_end"
+                //    if clearing up to that point would do anything (entire buffer is incomplete multibyte)
+                // then:
+                //    clear the entire buffer not including the incomplete multibyte
+                //    at the end (that wasn't used yet)
+                if (is_sed) {
+                  str::write_f(this->tos_args.output, subject + match_offset, subject_effective_end);
+                }
+                subject_size = (subject + subject_size) - subject_effective_end;
+                for (size_t i = 0; i < subject_size; ++i) {
+                  subject[i] = subject[(this->buf_size - subject_size) + i];
+                }
               } else {
-                str::append_to_buffer(fragment, begin, end);
+                // clear the buffer
+                if (is_sed) {
+                  str::write_f(this->tos_args.output, subject + match_offset, subject + subject_size);
+                }
+                subject_size = 0;
               }
             };
 
-            if (prev_sep_end != 0 || subject == retain_marker) {
-              // the buffer is being retained because of lookbehind bytes.
-              // can't properly match, so results in match failure
-              process_fragment(subject + prev_sep_end, subject_effective_end);
+            if (is_match) {
+              // count as match failure
               clear_except_trailing_incomplete_multibyte();
-              prev_sep_end = 0;
               match_offset = 0;
             } else {
-              // the buffer is being retained because of the previous delimiter
-              // end position. write part
-              process_fragment(subject, retain_marker);
-              const char* remove_until = retain_marker;
-              char* begin = subject;
-              while (remove_until < subject + subject_size) {
-                *begin++ = *remove_until++;
+              // there is not enough room in the match buffer. moving the part
+              // of the token at the beginning that won't be a part of a
+              // successful match. moved to either a separate (fragment) buffer
+              // or directly to the output
+
+              auto process_fragment = [&](const char* begin, const char* end) {
+                if (fragment.size() + (end - begin) > this->buf_size_frag) {
+                  this->drop_warning();
+                  fragment.clear();
+                } else {
+                  str::append_to_buffer(fragment, begin, end);
+                }
+              };
+
+              if (prev_sep_end != 0 || subject == retain_marker) {
+                // the buffer is being retained because of lookbehind bytes.
+                // can't properly match, so results in match failure
+                process_fragment(subject + prev_sep_end, subject_effective_end);
+                clear_except_trailing_incomplete_multibyte();
+                prev_sep_end = 0;
+                match_offset = 0;
+              } else {
+                // the buffer is being retained because of the previous delimiter
+                // end position. write part
+                process_fragment(subject, retain_marker);
+                const char* remove_until = retain_marker;
+                char* begin = subject;
+                while (remove_until < subject + subject_size) {
+                  *begin++ = *remove_until++;
+                }
+                subject_size -= remove_until - begin;
+                match_offset = 0;
               }
-              subject_size -= remove_until - begin;
-              match_offset = 0;
             }
           }
-        }
-      } else {
-        // no match and no more input:
-        // process the last token and break from the loop
-        if (!is_match) {
-          if (prev_sep_end != subject_size || this->use_input_delimiter || !fragment.empty()) {
-            // at this point subject_effective_end is subject + subject_size (since input_done)
-            process_token(subject + prev_sep_end, subject_effective_end);
+        } else {
+          // no match and no more input:
+          // process the last token and break from the loop
+          if (!is_match) {
+            if (prev_sep_end != subject_size || this->use_input_delimiter || !fragment.empty()) {
+              // at this point subject_effective_end is subject + subject_size (since input_done)
+              process_token(subject + prev_sep_end, subject_effective_end);
+            }
+          } else if (is_sed) {
+            str::write_f(this->tos_args.output, subject + match_offset, subject_effective_end);
           }
-        } else if (is_sed) {
-          str::write_f(this->tos_args.output, subject + match_offset, subject_effective_end);
+          break;
         }
-        break;
       }
     }
+    this->pipeline.process(pipeline::EndOfStream());
+  } catch (pipeline::pipeline_complete& e) {
+    ret = std::move(e.packets);
   }
 
-  this->pipeline.process(pipeline::EndOfStream{&ret});
   return ret;
 }
 

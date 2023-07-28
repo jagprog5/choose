@@ -34,9 +34,9 @@ struct UserDefinedSortUnit : public AccumulatingUnit {
 struct UncompiledUserDefinedSortUnit : public UncompiledPipelineUnit {
   const char* comp;
   UncompiledUserDefinedSortUnit(const char* comp) : comp(comp) {}
-  PipelineUnit compile(NextUnit&& next, uint32_t regex_options) override {
+  std::unique_ptr<PipelineUnit> compile(NextUnit&& next, uint32_t regex_options) override {
     regex::code code = regex::compile(this->comp, regex_options, "user defined comparison");
-    return UserDefinedSortUnit(std::move(next), std::move(code));
+    return std::unique_ptr<PipelineUnit>(new UserDefinedSortUnit(std::move(next), std::move(code)));
   }
 };
 
