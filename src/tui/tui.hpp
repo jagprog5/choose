@@ -23,10 +23,10 @@ struct BatchOutputStream {
   str::QueuedOutput qo;
 
   BatchOutputStream(const Arguments& args)
-      : args(args),                                        //
+      : args(args),                                                 //
         qo{isatty(fileno(args.tos_args.output)) && args.tenacious ? // NOLINT args.tos_args.output can never by null here
                std::optional<std::vector<char>>(std::vector<char>())
-                                                         : std::nullopt} {}
+                                                                  : std::nullopt} {}
 
   void write_output(const pipeline::SimplePacket& t) {
     if (!first_within_batch) {
@@ -67,32 +67,10 @@ struct UIState {
     if (signal(SIGINT, choose::tui::sigint_handler) == SIG_IGN) {
       signal(SIGINT, SIG_IGN);
     }
-    // https://stackoverflow.com/a/44884859/15534181
-    // required for ncurses to work after using stdin
-    choose::file f = choose::file(fopen("/dev/tty", "r+"));
-    if (!f) {
-      perror(NULL);
-      throw std::runtime_error("");
-    }
-    choose::nc::screen screen = choose::nc::newterm(NULL, f, f);
-    set_term(screen.get());
-
-    choose::nc::cbreak(); // pass keys directly from input without buffering
-    choose::nc::noecho();
-    curs_set(0); // invisible cursor
-
-    // I don't handle ERR for anything color or attribute related since
-    // the application still works, even on failure (just without color)
-    // I also don't check ERR for ncurses printing, since if that stuff
-    // is not working, it will be very apparent to the user
-    start_color();
-    use_default_colors();
-    init_pair(choose::tui::UIState::PAIR_SELECTED, COLOR_GREEN, -1);
 
     this->scroll_position = 0;
     this->selection_position = this->args.end ? (int)this->tokens.size() - 1 : 0;
     this->tenacious_single_select_indicator = 0;
-
     this->loop();
   }
 
