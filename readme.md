@@ -4,7 +4,14 @@
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+
 choose is a tool for creating selection dialogs and doing fancy transformations with regular expressions.
+# This branch
+
+This branch was used to experiment with some changes internally to how choose works. It made the code much cleaner, but ended up being far slower to due various overheads. One of which was a virtual function call overhead per token per pipeline element. The pros of this branch is that sorting, uniqueness, flip could be applied, anywhere, just like the other ordered ops.
+
+This could be improved with some fancy JIT functionality, since the args are constant at runtime. TODO
+
 ## Install
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
