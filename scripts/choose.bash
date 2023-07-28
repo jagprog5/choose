@@ -29,7 +29,7 @@ ch_hist() {
       IFS= read -r -d ''
       cat
     } | grep -zi -- "$*" |
-    choose -0uet --delimit-not-at-end --flip -p "Select a line to edit then run.")
+    choose -0uet --delimit-not-at-end --reverse -p "Select a line to edit then run.")
   
   if [ -z "$LINE" ]; then
     echo "empty line"

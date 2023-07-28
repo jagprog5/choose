@@ -58,7 +58,7 @@ done) > no_duplicates.txt
 | test_repeated    | 2513   | 1028 |
 | no_duplicates    | 32     | 64   |
 
-sed reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, sed performs extremely poorly on input files that contain many small lines (for `no_duplicates`, `sed` was 4812% slower than `choose`; see special cases' results below). To normalize the performance, `tr` is used to make the input a single large line. This is applied to all input files, and for both `sed` and `choose`, to make the context the same.
+sed reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, sed performs extremely poorly on input files that contain many small lines (for `no_duplicates`, `sed` was **4812% slower** than `choose`; see special cases' results below). To normalize the performance, `tr` is used to make the input a single large line. This is applied to all input files, and for both `sed` and `choose`, to make the context the same.
 
 After this normalization is applied, choose is slower than sed except in cases where there are few substitutions to apply.
 

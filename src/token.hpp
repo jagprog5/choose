@@ -658,10 +658,17 @@ skip_read: // do another iteration but don't read in any more bytes
       set->clear();
     }
 
-    if (args.comp_sort) {
-      std::stable_sort(output.begin(), output.end(), user_defined_comparison);
-    } else if (args.sort) {
-      std::sort(output.begin(), output.end(), lexicographical_comparison);
+    if (args.out.has_value() && output.size() > *args.out && args.sort && !args.comp_sort) {
+      // if lexicographically sorting and the output is being truncated then do a
+      // partial sort instead. can only be applied to lexicographical since there's no
+      // stable partial sort (and stability is required for user defined comp sort)
+      std::partial_sort(output.begin(), output.begin() + *args.out, output.end(), lexicographical_comparison);
+    } else {
+      if (args.comp_sort) {
+        std::stable_sort(output.begin(), output.end(), user_defined_comparison);
+      } else if (args.sort) {
+        std::sort(output.begin(), output.end(), lexicographical_comparison);
+      }
     }
 
     if (args.reverse) {
