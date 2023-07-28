@@ -412,6 +412,12 @@ BOOST_AUTO_TEST_CASE(sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(sort_partial) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=2", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "is"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
