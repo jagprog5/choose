@@ -1,4 +1,5 @@
 #include "tui/tui.hpp"
+#include "pipeline/terminal.hpp"
 
 // NOLINTNEXTLINE exceptions are correctly handled
 int main(int argc, char* const* argv) {
@@ -7,7 +8,10 @@ int main(int argc, char* const* argv) {
   try {
     choose::Arguments::populate_args(args, argc, argv);
     setlocale(LC_ALL, args.locale);
-    tokens = args.create_packets();
+    args.create_packets();
+  } catch (choose::pipeline::pipeline_complete& e) {
+    tokens = std::move(e.packets);
+    return EXIT_SUCCESS;
   } catch (const choose::pipeline::output_finished&) {
     return EXIT_SUCCESS;
   }
@@ -31,7 +35,7 @@ int main(int argc, char* const* argv) {
     use_default_colors();
     init_pair(choose::tui::UIState::PAIR_SELECTED, COLOR_GREEN, -1);
     choose::tui::UIState(std::ref(args), std::move(tokens));
-  } catch (...) {
+  } catch (const std::exception& e) {
     // a note on ncurses:
     //  - endwin() must be called before program exit. it must not be called twice
     //    or else the terminal prompt gets put at the bottom)
@@ -40,7 +44,7 @@ int main(int argc, char* const* argv) {
     if (!isendwin()) {
       endwin(); // safety measure to restore terminal
     }
-    exit(EXIT_FAILURE);
+    throw e;
   }
 
   return choose::tui::sigint_occurred ? 128 + 2 : EXIT_SUCCESS;

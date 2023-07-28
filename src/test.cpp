@@ -4,6 +4,7 @@
 #include "pipeline/index.hpp"
 #include "utils/ncurses_wrapper.hpp"
 #include "utils/numeric_utils.hpp"
+#include "pipeline/terminal.hpp"
 
 using namespace choose;
 using namespace choose::pipeline;
@@ -339,8 +340,9 @@ choose_output run_choose(const std::vector<char>& input, const std::vector<const
   try {
     Arguments args;
     Arguments::populate_args(args, (int)argv_non_const.size(), argv_non_const.data(), input_reader.get(), output_writer.get());
-    ret.o = args.create_packets();
-    output_writer.reset();
+    args.create_packets();
+  } catch (choose::pipeline::pipeline_complete& e) {
+    ret.o = std::move(e.packets);
   } catch (const output_finished&) {
     output_writer.reset();
     std::vector<char> out;
@@ -395,12 +397,12 @@ BOOST_AUTO_TEST_CASE(head0tui) {
 
 BOOST_AUTO_TEST_CASE(tail) {
   choose_output out = run_choose("first\nsecond\nthird", {"--tail=2"});
-  choose_output correct_output{to_vec("second\third\n")};
+  choose_output correct_output{to_vec("second\nthird\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(tail0) {
-  choose_output out = run_choose("first\nsecond\nthird", {"--tail=2"});
+  choose_output out = run_choose("first\nsecond\nthird", {"--tail=0"});
   choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

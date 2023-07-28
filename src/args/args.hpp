@@ -57,11 +57,11 @@ struct Arguments {
 
   // reads from this->input
   // if this->tui:
-  //      returns the tokens
+  //      throws a pipeline_complete exception containing the tokens (to be displayed)
   // else:
   //      writes to this->output, then throws a output_finished exception,
   //      which the caller should handle (exit unless unit test)
-  std::vector<pipeline::SimplePacket> create_packets();
+  void create_packets();
 
   void drop_warning();
 };

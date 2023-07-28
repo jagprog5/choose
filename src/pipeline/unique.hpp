@@ -40,10 +40,10 @@ struct UniqueUnit : public PipelineUnit {
   bool unordered_set_equals_member(indirect lhs, indirect rhs) const {
     std::string_view lv = this->from_val(lhs);
     std::string_view rv = this->from_val(rhs);
-    return std::lexicographical_compare(lv.begin(), lv.end(), rv.begin(), rv.end());
+    return lv == rv;
   }
 
-  static std::function<size_t(indirect, indirect)> unordered_set_equals(const UniqueUnit* me) {
+  static std::function<bool(indirect, indirect)> unordered_set_equals(const UniqueUnit* me) {
     return std::bind(&UniqueUnit::unordered_set_equals_member, me, std::placeholders::_1, std::placeholders::_2);
   }
 
