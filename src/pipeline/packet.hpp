@@ -8,10 +8,6 @@ namespace choose {
 
 namespace pipeline {
 
-struct EndOfStream {
-  char unused[0]; // make the struct zero length. cpp quirk
-};
-
 // like a ViewPacket but with more information. for the input of a ReplaceUnit
 struct ReplacePacket {
   const char* subj_begin;
@@ -29,9 +25,9 @@ struct ReplacePacket;
 struct ViewPacket {
   const char* begin;
   const char* end;
+  ViewPacket(const char* begin, const char* end) : begin(begin), end(end) {}
   // view packet can take a view of the other packet types
   ViewPacket(const SimplePacket& sp);
-
   ViewPacket(const ReplacePacket& rp);
 };
 
@@ -59,13 +55,17 @@ struct SimplePacket {
   SimplePacket(ReplacePacket&& rp) : SimplePacket(ViewPacket(rp)) {}
 };
 
-ViewPacket::ViewPacket(const SimplePacket& sp) : begin(&*sp.buffer.cbegin()), end(&*sp.buffer.cend()) {}
+inline ViewPacket::ViewPacket(const SimplePacket& sp) : begin(&*sp.buffer.cbegin()), end(&*sp.buffer.cend()) {}
 
-ViewPacket::ViewPacket(const ReplacePacket& rp) {
+inline ViewPacket::ViewPacket(const ReplacePacket& rp) {
   PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(rp.data.get());
   this->begin = rp.subj_begin + ovector[0];
   this->end = rp.subj_begin + ovector[1];
 }
+
+struct EndOfStream {
+  std::vector<pipeline::SimplePacket>* out = 0;
+};
 
 } // namespace pipeline
 } // namespace choose

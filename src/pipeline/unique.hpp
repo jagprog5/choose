@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <unordered_set>
+#include <functional>
 
 namespace choose {
 namespace pipeline {
@@ -28,22 +29,40 @@ struct UniqueUnit : public PipelineUnit {
     return {begin, size};
   }
 
-  size_t unordered_set_hash(indirect val) const { //
+  size_t unordered_set_hash_member(indirect val) const { //
     return std::hash<std::string_view>{}(this->from_val(val));
   }
 
-  bool unordered_set_equals(indirect lhs, indirect rhs) const {
+  static std::function<size_t(indirect)> unordered_set_hash(const UniqueUnit* me) {
+    return std::bind(&UniqueUnit::unordered_set_hash_member, me, std::placeholders::_1);
+  }
+
+  bool unordered_set_equals_member(indirect lhs, indirect rhs) const {
     std::string_view lv = this->from_val(lhs);
     std::string_view rv = this->from_val(rhs);
     return std::lexicographical_compare(lv.begin(), lv.end(), rv.begin(), rv.end());
   }
 
-  using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
+  static std::function<size_t(indirect, indirect)> unordered_set_equals(const UniqueUnit* me) {
+    return std::bind(&UniqueUnit::unordered_set_equals_member, me, std::placeholders::_1, std::placeholders::_2);
+  }
 
-  auto unique_checker = []() {
-    auto ret = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
+  // no copies or moves. as a safety measure, since std::bind is used above and take a copy of "this" on construction
+  // pointer would get invalidated
+  UniqueUnit(const UniqueUnit& o) = delete;
+  UniqueUnit& operator=(const UniqueUnit&) = delete;
+  UniqueUnit(UniqueUnit&& o) = delete;
+  UniqueUnit& operator=(UniqueUnit&&) = delete;
+
+  using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash(NULL)), decltype(unordered_set_equals(NULL))>;
+
+  unordered_set_T create_unique_checker() {
+    auto ret = unordered_set_T(8, unordered_set_hash(this), unordered_set_equals(this));
     ret.max_load_factor(0.125); // determined from perf.md
-  }();
+    return ret;
+  }
+
+  unordered_set_T unique_checker = create_unique_checker();
 
   UniqueUnit(NextUnit&& next) : PipelineUnit(std::move(next)) {}
 
@@ -70,18 +89,14 @@ struct UniqueUnit : public PipelineUnit {
       // the insertion did take place
       if constexpr (std::is_same_v<SimplePacket, PacketT>) {
         ViewPacket vp(this->packets[val]);
-        if (!next_unit_is_accumulating) {
-          PipelineUnit::process(std::move(vp));
-        }
+        PipelineUnit::process(std::move(vp));
       } else {
         // promote the candidate token to a token
         SimplePacket sp(p);
         this->packets.push_back(std::move(sp));
-        const_cast<indirect*>(&*result.first) = this->packets.size() - 1;
-        if (!next_unit_is_accumulating) {
-          // pass along a view
-          PipelineUnit::process(std::move(p));
-        }
+        const_cast<unordered_set_T::value_type&>(*result.first) = this->packets.size() - 1;
+        // pass along a view
+        PipelineUnit::process(std::move(p));
       }
     }
   }

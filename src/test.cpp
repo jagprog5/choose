@@ -1,10 +1,12 @@
 #define BOOST_TEST_MODULE choose_test_module
 #include <boost/test/unit_test.hpp>
-#include "args.hpp"
-#include "ncurses_wrapper.hpp"
-#include "token_stream.hpp"
+#include "args/args.hpp"
+#include "pipeline/index.hpp"
+#include "utils/ncurses_wrapper.hpp"
+#include "utils/numeric_utils.hpp"
 
 using namespace choose;
+using namespace choose::pipeline;
 
 char continuation = (char)0b10000000;
 char one = (char)0b00000000;
@@ -177,42 +179,40 @@ BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_before) {
-  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::BEFORE);
+  auto op = IndexUnit(NextUnit(std::unique_ptr<PipelineUnit>()), IndexUnit::BEFORE);
   std::vector<char> empty;
-  op.apply(empty, 123);
+  op.index = 123;
+  op.apply(empty);
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
+  op.index = 0;
   std::vector<char> val_zero;
-  op.apply(val_zero, 0); // log edge case
+  op.apply(val_zero); // log edge case
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
-
-  auto in_op = IndexOp(IndexOp::INPUT, IndexOp::BEFORE);
-  in_op.in_index = 123; // used
-  std::vector<char> not_empty{'a', 'b', 'c'};
-  in_op.apply(not_empty, 999);
-  BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_after) {
-  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::AFTER);
+  auto op = IndexUnit(NextUnit(std::unique_ptr<PipelineUnit>()), IndexUnit::AFTER);
+  op.index = 123;
   std::vector<char> empty;
-  op.apply(empty, 123);
+  op.apply(empty);
   BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
 
+  op.index = 9;
   std::vector<char> less_than_10;
-  op.apply(less_than_10, 9);
+  op.apply(less_than_10);
   BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
-  op.apply(not_empty, 123);
-  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
+  op.apply(not_empty);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '0'}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
 
 // choose either sends to stdout, or creates an interface that displays tokens
 struct choose_output {
-  std::variant<std::vector<char>, std::vector<choose::Token>> o;
+  std::variant<std::vector<char>, std::vector<SimplePacket>> o;
 
   bool operator==(const choose_output& other) const {
     if (o.index() != other.o.index()) {
@@ -223,8 +223,8 @@ struct choose_output {
       const std::vector<char>& second = std::get<std::vector<char>>(other.o);
       return first == second;
     } else {
-      const std::vector<choose::Token>& first = std::get<std::vector<choose::Token>>(o);
-      const std::vector<choose::Token>& second = std::get<std::vector<choose::Token>>(other.o);
+      const std::vector<SimplePacket>& first = std::get<std::vector<SimplePacket>>(o);
+      const std::vector<SimplePacket>& second = std::get<std::vector<SimplePacket>>(other.o);
       return first == second;
     }
   }
@@ -249,10 +249,10 @@ std::ostream& operator<<(std::ostream& os, const choose_output& out) {
       }
     }
   } else {
-    const std::vector<choose::Token>& out_tokens = std::get<std::vector<choose::Token>>(out.o);
+    const std::vector<SimplePacket>& out_tokens = std::get<std::vector<SimplePacket>>(out.o);
     os << "\ntokens: ";
     bool first_token = true;
-    for (const Token& t : out_tokens) {
+    for (const SimplePacket& t : out_tokens) {
       if (!first_token) {
         os << '|';
         os << '|';
@@ -278,6 +278,14 @@ std::ostream& operator<<(std::ostream& os, const choose_output& out) {
 
 std::vector<char> to_vec(const char* s) {
   return {s, s + strlen(s)};
+}
+
+std::vector<SimplePacket> to_packets(std::vector<const char*>&& v) {
+  std::vector<SimplePacket> ret;
+  for (const char* elem : v) {
+    ret.emplace_back(elem);
+  }
+  return ret;
 }
 
 extern int optreset;
@@ -327,12 +335,13 @@ choose_output run_choose(const std::vector<char>& input, const std::vector<const
   str::write_f(input_writer.get(), input);
   input_writer.reset();
 
-  auto args = choose::handle_args((int)argv_non_const.size(), argv_non_const.data(), input_reader.get(), output_writer.get());
   choose_output ret;
   try {
-    ret.o = choose::create_tokens(args);
+    Arguments args;
+    Arguments::populate_args(args, (int)argv_non_const.size(), argv_non_const.data(), input_reader.get(), output_writer.get());
+    ret.o = args.create_packets();
     output_writer.reset();
-  } catch (const choose::output_finished&) {
+  } catch (const output_finished&) {
     output_writer.reset();
     std::vector<char> out;
     static constexpr size_t BUF_SIZE = 1024;
@@ -356,7 +365,7 @@ BOOST_AUTO_TEST_SUITE(create_tokens_test_suite)
 
 BOOST_AUTO_TEST_CASE(simple) {
   choose_output out = run_choose("a\nb\nc", {"-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
+  choose_output correct_output{to_packets({"a", "b", "c"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -366,27 +375,39 @@ BOOST_AUTO_TEST_CASE(delimiters) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(output_in_limit) {
-  choose_output out = run_choose("first\nsecond\nthird", {"--in-limit=2"});
+BOOST_AUTO_TEST_CASE(head) {
+  choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--head=2"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(output_rm_filter) {
-  choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--rm=second", "--filter=first"});
-  choose_output correct_output{to_vec("first\n")};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(zero_with_tui) {
-  choose_output out = run_choose("anything", {"--in-limit=0", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(zero_no_tui) {
-  choose_output out = run_choose("anything", {"--in-limit=0"});
+BOOST_AUTO_TEST_CASE(head0) {
+  choose_output out = run_choose("first\nsecond\nthird", {"--head", "0"});
   choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(head0tui) {
+  choose_output out = run_choose("first\nsecond\nthird", {"--head", "0", "-t"});
+  choose_output correct_output{to_packets({})};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(tail) {
+  choose_output out = run_choose("first\nsecond\nthird", {"--tail=2"});
+  choose_output correct_output{to_vec("second\third\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(tail0) {
+  choose_output out = run_choose("first\nsecond\nthird", {"--tail=2"});
+  choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(output_rm_filter) {
+  choose_output out = run_choose("first\nsecond\nthird\nfourth", {"-r", "--rm=second", "--filter=first|second"});
+  choose_output correct_output{to_vec("first\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -408,19 +429,19 @@ BOOST_AUTO_TEST_CASE(output_match) {
 
 BOOST_AUTO_TEST_CASE(sort) {
   choose_output out = run_choose("this\nis\na\ntest", {"--sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
+  choose_output correct_output{to_packets({"a", "is", "test", "this"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
+  choose_output correct_output{to_packets({"this", "is", "a", "test"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--lex-unique-use-set", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
+  choose_output correct_output{to_packets({"this", "is", "a", "test"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -429,14 +450,14 @@ BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
 BOOST_AUTO_TEST_CASE(defined_sort) {
   // this also checks the delimiter and sort stability
   choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
+  choose_output correct_output{to_packets({"John Doe", "John Doe", "John Smith", "Apple", "Banana"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(defined_unique) {
   // the comparison treats all John's as the same. so there's one John and one non John in the output.
   choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "Apple"}};
+  choose_output correct_output{to_packets({"John Doe", "Apple"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -444,13 +465,13 @@ BOOST_AUTO_TEST_CASE(defined_unique) {
 
 BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
   choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--unique", "--comp-sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple", "Banana"}};
+  choose_output correct_output{to_packets({"John Doe", "John Smith", "Apple", "Banana"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
   choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-unique", "--sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
+  choose_output correct_output{to_packets({"Apple", "John Doe"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -477,7 +498,7 @@ BOOST_AUTO_TEST_CASE(no_delimit_delimit_on_empty) {
 
 BOOST_AUTO_TEST_CASE(in_limit) {
   choose_output out = run_choose("d\nc\nb\na", {"--in-limit=3", "--sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"b", "c", "d"}};
+  choose_output correct_output{to_packets({"b", "c", "d"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -507,7 +528,7 @@ BOOST_AUTO_TEST_CASE(out_limit_unique) {
 
 BOOST_AUTO_TEST_CASE(ordered_ops) {
   choose_output out = run_choose("this\nis\nrra\ntest", {"-r", "--sub", "is", "rr", "--rm", "test", "--filter", "rr$", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"thrr", "rr"}};
+  choose_output correct_output{to_packets({"thrr", "rr"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -577,13 +598,13 @@ BOOST_AUTO_TEST_CASE(index_op_after_last) {
 
 BOOST_AUTO_TEST_CASE(literal_sub) {
   choose_output out = run_choose("literal substitution", {"--sub", "literal", "good", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"good substitution"}};
+  choose_output correct_output{to_packets({"good substitution"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(index_ops) {
   choose_output out = run_choose("every\nother\nword\nis\nremoved\n5\n6\n7\n8\n9\n10", {"-r", "--in-index=after", "-f", "[02468]$", "--sub", "(.*) [0-9]+", "$1", "--out-index", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"0 every", "1 word", "2 removed", "3 6", "4 8", "5 10"}};
+  choose_output correct_output{to_packets({"0 every", "1 word", "2 removed", "3 6", "4 8", "5 10"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -595,44 +616,44 @@ BOOST_AUTO_TEST_CASE(check_empty_input) {
 
 BOOST_AUTO_TEST_CASE(check_match_with_groups) {
   choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"bcd", "c", "d"}};
+  choose_output correct_output{to_packets({"bcd", "c", "d"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_match_with_groups_limit) {
   choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "--in-limit=2", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"bcd", "c"}};
+  choose_output correct_output{to_packets({"bcd", "c"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_no_match_lookbehind_retained) {
   // if there is no match, then the input is discarded but it keep enough for the lookbehind
   choose_output out = run_choose("aaabbbccc", {"--read=3", "-r", "--match", "(?<=aaa)bbb", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"bbb"}};
+  choose_output correct_output{to_packets({"bbb"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_partial_match_lookbehind_retained) {
   choose_output out = run_choose("aaabbbccc", {"--read=4", "-r", "--match", "(?<=aaa)bbb", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"bbb"}};
+  choose_output correct_output{to_packets({"bbb"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_no_delimiter_lookbehind_retained) {
   choose_output out = run_choose("aaabbbccc", {"--read=3", "-r", "(?<=aaa)bbb", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
+  choose_output correct_output{to_packets({"aaa", "ccc"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_partial_delimiter_lookbehind_retained) {
   choose_output out = run_choose("aaabbbccc", {"--read=4", "-r", "(?<=aaa)bbb", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"aaa", "ccc"}};
+  choose_output correct_output{to_packets({"aaa", "ccc"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(delimiter_no_match) {
   choose_output out = run_choose("aaabbbccc", {"zzzz", "--read=1", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"aaabbbccc"}};
+  choose_output correct_output{to_packets({"aaabbbccc"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -653,38 +674,38 @@ BOOST_AUTO_TEST_CASE(empty_match_target) {
   // important since PCRE2_NOTEMPTY_ATSTART is used to prevent infinite loop; ensures progress
   choose_output out = run_choose("1234", {"--match", "", "-t"});
   // one empty match in between each character and the end
-  choose_output correct_output{std::vector<choose::Token>{"", "", "", "", ""}};
+  choose_output correct_output{to_packets({"", "", "", "", ""})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(input_is_delimiter) {
   choose_output out = run_choose("\n", {"-t"});
-  choose_output correct_output{std::vector<choose::Token>{""}};
+  choose_output correct_output{to_packets({""})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(input_is_delimiter_use_delimit) {
   choose_output out = run_choose("\n", {"--use-delimiter", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"", ""}};
+  choose_output correct_output{to_packets({"", ""})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(check_shrink_excess) {
   // creates a large subject but resizes internal buffer to remove the bytes that weren't written to
   choose_output out = run_choose("12345", {"zzzz", "--read=10000", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"12345"}};
+  choose_output correct_output{to_packets({"12345"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(no_multiline) {
   choose_output out = run_choose("this\nis\na\ntest", {"-r", "--match", "^t", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"t"}};
+  choose_output correct_output{to_packets({"t"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(yes_multiline) {
   choose_output out = run_choose("this\nis\na\ntest", {"-r", "--multiline", "--match", "^t", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"t", "t"}};
+  choose_output correct_output{to_packets({"t", "t"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -695,44 +716,44 @@ BOOST_AUTO_TEST_CASE(begin_of_string) {
   // lookbehind of 1 allows characters to be retained, so it is correctly
   // recognized as not the beginning of the string.
   choose_output out = run_choose("uaaat", {"-r", "--match", "--read=1", "\\A[ut]", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"u"}};
+  choose_output correct_output{to_packets({"u"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(begin_of_line) {
   choose_output out = run_choose("abcd\nefgh", {"-r", "--multiline", "--match", "^.", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "e"}};
+  choose_output correct_output{to_packets({"a", "e"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(end_of_string) {
   choose_output out = run_choose("uaaat", {"-r", "--match", "--read=6", "[ut]\\Z", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"t"}};
+  choose_output correct_output{to_packets({"t"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(end_of_line) {
   choose_output out = run_choose("abcd\nefgh", {"-r", "--multiline", ".$", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"abc", "\nefg"}};
+  choose_output correct_output{to_packets({"abc", "\nefg"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(buf_size_less_than_read) {
   // read takes the minimum of the available space in buffer left and the read amount
   choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1000000", "--buf-size=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
+  choose_output correct_output{to_packets({})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(buf_size_match) {
   choose_output out = run_choose("aaa1234aaa", {"--match", "1234", "--read=1", "--buf-size=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
+  choose_output correct_output{to_packets({})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(buf_size_match_enough) {
   choose_output out = run_choose("aaaa1234aaaa", {"--match", "1234", "--read=1", "--buf-size=4", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"1234"}};
+  choose_output correct_output{to_packets({"1234"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -762,7 +783,7 @@ BOOST_AUTO_TEST_CASE(buf_size_entirely_composed_incomplete_multibyte) {
 
 BOOST_AUTO_TEST_CASE(buf_size_partial_match_enough) {
   choose_output out = run_choose("aaa1234aaaa1234aaaa", {"--match", "1234", "--read=4", "--buf-size=4", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"1234", "1234"}};
+  choose_output correct_output{to_packets({"1234", "1234"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -776,26 +797,26 @@ BOOST_AUTO_TEST_CASE(frag_flush_in_process_token) {
 BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero) {
   // when the buffer is filled because of lookbehind bytes, not from the previous delimiter end
   choose_output out = run_choose("123123", {"(?<=123)?123", "-r", "--read=1", "--buf-size=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"", ""}};
+  choose_output correct_output{to_packets({"", ""})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(frag_prev_sep_offset_not_zero_2) {
   choose_output out = run_choose("123123", {"(?<=123)123", "-r", "--read=1", "--buf-size=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"123123"}};
+  choose_output correct_output{to_packets({"123123"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(frag_buffer_too_small_appending) {
   choose_output out = run_choose("123123123abc", {"abc", "--read=1", "--buf-size=3", "--buf-size-frag=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"123"}};
+  choose_output correct_output{to_packets({"123"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(frag_buffer_too_small_process_token) {
   // checks that process_token discards the fragment if it would exceed the fragment size
   choose_output out = run_choose("12341abc", {"abc", "--read=4", "--buf-size=4", "--buf-size-frag=4", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{""}};
+  choose_output correct_output{to_packets({""})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -815,21 +836,21 @@ BOOST_AUTO_TEST_CASE(process_fragment_in_count) {
 BOOST_AUTO_TEST_CASE(buf_size_delimiter_limit) {
   // ensure match failure behaviour on buffer full
   choose_output out = run_choose("qwerty123testerabqwerty123tester", {"-r", "(?:123)|(?:ab)", "--read=1", "--buf-size=2", "--buf-size-frag=1000", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"qwerty123tester", "qwerty123tester"}};
+  choose_output correct_output{to_packets({"qwerty123tester", "qwerty123tester"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(buf_size_delimiter_limit_from_lookbehind_enough) {
   // same as above, but because the lookbehind is too big
   choose_output out = run_choose("abcd12abcd12abcd", {"-r", "(?<=cd)12", "--read=1", "--buf-size=4", "--buf-size-frag=1000", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"abcd", "abcd", "abcd"}};
+  choose_output correct_output{to_packets({"abcd", "abcd", "abcd"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(buf_size_delimiter_limit_from_lookbehind) {
   // same as above, but because the lookbehind is too big
   choose_output out = run_choose("abcd12abcd12abcd", {"-r", "(?<=cd)12", "--read=1", "--buf-size=3", "--buf-size-frag=1000", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"abcd12abcd12abcd"}};
+  choose_output correct_output{to_packets({"abcd12abcd12abcd"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -837,7 +858,7 @@ BOOST_AUTO_TEST_CASE(complete_utf8) {
   // checks that the last utf8 char is completed before sending it to pcre2
   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 0};
   choose_output out = run_choose(ch, {"--read=1", "--utf", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{ch}};
+  choose_output correct_output{to_packets({ch})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -847,14 +868,14 @@ BOOST_AUTO_TEST_CASE(utf8_lookback_separates_multibyte) {
   // the lookbehind must be correctly decremented to include the 0xE6 byte
   const char pattern[] = {'(', '?', '<', '=', (char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', ')', 's', 't', 0};
   choose_output out = run_choose(ch, {"-r", "--max-lookbehind=1", "--read=1", "--utf", "--match", pattern, "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"st"}};
+  choose_output correct_output{to_packets({"st"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_utf8) {
   const char ch[] = {(char)0xFF, (char)0b11000000, (char)0b10000000, (char)0b10000000, 't', 'e', 's', 't', 0};
   choose_output out = run_choose(ch, {"-r", "--read=1", "--utf-allow-invalid", "--match", "test", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"test"}};
+  choose_output correct_output{to_packets({"test"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -864,14 +885,14 @@ BOOST_AUTO_TEST_CASE(invalid_utf8_separating_multibyte_not_ok) {
   // the subject_effective_end logic
   const char ch[] = {(char)0xE6, (char)0xBC, (char)0xA2, 't', 'e', 's', 't', 0};
   choose_output out = run_choose(ch, {"-r", "--read=1", "--utf-allow-invalid", "--match", ch, "-t"});
-  choose_output correct_output{std::vector<choose::Token>{ch}};
+  choose_output correct_output{to_packets({ch})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_utf8_overlong_byte) {
   const char ch[] = {continuation, continuation, continuation, continuation, 0};
   choose_output out = run_choose(ch, {"-r", "--read=1", "--utf-allow-invalid", "--match", "anything", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{}};
+  choose_output correct_output{to_packets({})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -894,13 +915,13 @@ BOOST_AUTO_TEST_CASE(null_output_delimiters) {
 
 BOOST_AUTO_TEST_CASE(null_input_delimiter) {
   choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-0", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
+  choose_output correct_output{to_packets({"a", "b", "c"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(in_index_before) {
   choose_output out = run_choose("this\nis\na\ntest", {"--in-index=before", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"0 this", "1 is", "2 a", "3 test"}};
+  choose_output correct_output{to_packets({"0 this", "1 is", "2 a", "3 test"})};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

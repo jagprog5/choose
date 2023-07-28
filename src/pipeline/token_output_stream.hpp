@@ -13,6 +13,13 @@ struct TokenOutputStreamArgs {
   bool delimit_on_empty = false;
   std::vector<char> out_delimiter = {'\n'};
   std::vector<char> bout_delimiter;
+
+  // deleting copies and moves since TokenOutputStream keeps a pointer that should stay in place, below
+  TokenOutputStreamArgs() = default;
+  TokenOutputStreamArgs(const TokenOutputStreamArgs& o) = delete;
+  TokenOutputStreamArgs& operator=(const TokenOutputStreamArgs&) = delete;
+  TokenOutputStreamArgs(TokenOutputStreamArgs&& o) = delete;
+  TokenOutputStreamArgs& operator=(TokenOutputStreamArgs&&) = delete;
 };
 
 namespace pipeline {

@@ -18,7 +18,7 @@ struct HeadUnit : public PipelineUnit {
   void internal_process(PacketT&& p) {
     PipelineUnit::process(std::move(p));
     if (--this->n == 0) {
-      PipelineUnit::process(EndOfStream());
+      PipelineUnit::process(std::move(p));
     }
   }
 

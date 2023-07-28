@@ -2,17 +2,18 @@
 
 // NOLINTNEXTLINE exceptions are correctly handled
 int main(int argc, char* const* argv) {
-  choose::Arguments args = choose::Arguments::create_args(argc, argv);
-  setlocale(LC_ALL, args.locale);
   std::vector<choose::pipeline::SimplePacket> tokens;
+  choose::Arguments args;
   try {
+    choose::Arguments::populate_args(args, argc, argv);
+    setlocale(LC_ALL, args.locale);
     tokens = args.create_packets();
   } catch (const choose::pipeline::output_finished&) {
     return EXIT_SUCCESS;
   }
 
   try {
-    choose::tui::UIState(std::move(args), std::move(tokens));
+    choose::tui::UIState(std::ref(args), std::move(tokens));
   } catch (...) {
     // a note on ncurses:
     //  - endwin() must be called before program exit. it must not be called twice

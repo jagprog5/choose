@@ -18,7 +18,7 @@ namespace str {
 // gives a method for displaying non-printing ascii characters in the interface
 // returns null if there isn't a sequence
 template <typename charT>
-const char* get_escape_sequence(charT ch) {
+inline const char* get_escape_sequence(charT ch) {
   // the escape sequence will first be this:
   // https://en.wikipedia.org/wiki/Escape_sequences_in_C#Table_of_escape_sequences
   // and if it doesn't exist there, then it takes the letters here:
@@ -127,19 +127,19 @@ const char* get_escape_sequence(charT ch) {
 }
 
 template <typename T>
-void append_to_buffer(std::vector<T>& buf, const T* begin, const T* end) {
+inline void append_to_buffer(std::vector<T>& buf, const T* begin, const T* end) {
   buf.resize(buf.size() + (end - begin));
   std::copy(begin, end, &*buf.end() - (end - begin));
 }
 
 template <typename T>
-void append_to_buffer(std::vector<T>& buf, const std::vector<T>& from) {
+inline void append_to_buffer(std::vector<T>& buf, const std::vector<T>& from) {
   append_to_buffer(buf, &*from.cbegin(), &*from.cend());
 }
 
 // applies word wrapping on a string
 // convert the prompt to a vector of wide char null terminating strings
-std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int num_columns) {
+inline std::vector<std::vector<wchar_t>> create_prompt_lines(const char* prompt, int num_columns) {
   std::vector<std::vector<wchar_t>> ret;
   std::mbstate_t ps = std::mbstate_t();
 
@@ -259,18 +259,18 @@ get_out:
   return ret;
 }
 
-void write_f(FILE* f, const char* begin, const char* end) {
+inline void write_f(FILE* f, const char* begin, const char* end) {
   size_t size = end - begin;
   if (fwrite(begin, sizeof(char), size, f) != size) {
     throw std::runtime_error("output err");
   }
 }
 
-void write_f(FILE* f, const std::vector<char>& v) {
+inline void write_f(FILE* f, const std::vector<char>& v) {
   write_f(f, &*v.cbegin(), &*v.cend());
 }
 
-void flush_f(FILE* f) {
+inline void flush_f(FILE* f) {
   if (fflush(f) == EOF) {
     throw std::runtime_error("output err");
   }
@@ -299,7 +299,7 @@ struct QueuedOutput {
   }
 };
 
-size_t get_bytes(FILE* f, size_t n, char* out) {
+inline size_t get_bytes(FILE* f, size_t n, char* out) {
   size_t read_ret = fread(out, sizeof(char), n, f);
   if (read_ret == 0) {
     if (feof(f)) {
@@ -312,7 +312,7 @@ size_t get_bytes(FILE* f, size_t n, char* out) {
   return read_ret;
 }
 
-size_t get_bytes_unbuffered(int fileno, size_t n, char* out) {
+inline size_t get_bytes_unbuffered(int fileno, size_t n, char* out) {
   ssize_t read_ret = read(fileno, out, n);
   if (read_ret == -1) {
     const char* err_string = strerror(errno);
@@ -327,7 +327,7 @@ static constexpr int MAX_BYTES_PER_CHARACTER = 4;
 
 // c is the first byte of a utf8 multibyte sequence. returns the length of the multibyte
 // returns -1 on error. e.g. this is a continuation byte
-int length(unsigned char c) {
+inline int length(unsigned char c) {
   if (c < 0b10000000) {
     return 1;
   } else if ((c & 0b11100000) == 0b11000000) {
@@ -341,12 +341,12 @@ int length(unsigned char c) {
   }
 }
 
-bool is_continuation(unsigned char c) {
+inline bool is_continuation(unsigned char c) {
   return (c & 0b11000000) == 0b10000000;
 }
 
 // returns NULL on error
-const char* last_character_start(const char* begin, const char* end) {
+inline const char* last_character_start(const char* begin, const char* end) {
   // find the first non continuation byte in the string
   const char* pos = end - 1;
   // the limit is of concern here for when invalid utf is enabled.
@@ -368,7 +368,7 @@ const char* last_character_start(const char* begin, const char* end) {
 }
 
 // returns NULL on error
-const char* last_completed_character_end(const char* begin, const char* end) {
+inline const char* last_completed_character_end(const char* begin, const char* end) {
   const char* pos = last_character_start(begin, end);
   if (pos == NULL) {
     return NULL;
@@ -383,7 +383,7 @@ const char* last_completed_character_end(const char* begin, const char* end) {
 // pos is in range [begin,end].
 // it is assumed that end is a character start -> if pos is end, then end is returned.
 // if an error occurs, then pos is returned
-const char* decrement_until_character_start(const char* pos, const char* begin, const char* end) {
+inline const char* decrement_until_character_start(const char* pos, const char* begin, const char* end) {
   if (pos == end) {
     return pos;
   }

@@ -21,6 +21,7 @@ struct output_finished : public std::exception {};
 // base class. the default behaviour is to pass everything to the next unit of the pipeline
 struct PipelineUnit {
   NextUnit next;
+  PipelineUnit() = default;
   PipelineUnit(NextUnit&& next) : next(std::move(next)) {}
 
   PipelineUnit(PipelineUnit&& o) = default;
@@ -81,16 +82,15 @@ struct AccumulatingUnit : public PipelineUnit {
     }
   }
 
-  void process(SimplePacket&& p) override {
-    this->packets.push_back(std::move(p));
-  }
+  void process(SimplePacket&& p) override { this->packets.push_back(std::move(p)); }
   void process(ViewPacket&& p) override { this->process(SimplePacket(std::move(p))); }
   void process(ReplacePacket&& p) override { this->process(SimplePacket(std::move(p))); }
 };
 
 // needed for some of the Units. holding spot while args are parsed
 struct UncompiledPipelineUnit {
-  virtual PipelineUnit compile(NextUnit&& next, uint32_t regex_options) = 0;
+  virtual PipelineUnit compile(NextUnit&& next, [[maybe_unused]] uint32_t regex_options) = 0;
+  virtual ~UncompiledPipelineUnit() {}
 };
 
 } // namespace pipeline

@@ -9,6 +9,7 @@
 // for version
 #include <ncursesw/curses.h>
 
+#include "args/args.hpp"
 #include "pipeline/head.hpp"
 #include "pipeline/index.hpp"
 #include "pipeline/replace.hpp"
@@ -27,12 +28,14 @@ namespace choose {
 
 void UncompiledCodes::compile(Arguments& output) {
   // create pipeline back to front.
-  pipeline::NextUnit downstream = output.tui ? pipeline::NextUnit() : pipeline::NextUnit(pipeline::TokenOutputStream(output));
-  for (pipeline::UncompiledPipelineUnit& unit : this->units) {
-    auto pu = std::make_unique<pipeline::PipelineUnit>(unit.compile(std::move(downstream), this->re_options));
+  pipeline::NextUnit downstream = output.tui //
+                                      ? pipeline::NextUnit(std::make_unique<pipeline::TerminalUnit>())
+                                      : pipeline::NextUnit(pipeline::TokenOutputStream(&output.tos_args));
+  for (std::unique_ptr<pipeline::UncompiledPipelineUnit>& unit : this->units) {
+    auto pu = std::make_unique<pipeline::PipelineUnit>(unit->compile(std::move(downstream), this->re_options));
     downstream = std::move(pu);
   }
-  output.nu = std::move(downstream);
+  output.pipeline = pipeline::PipelineUnit(std::move(downstream));
 
   // see if single byte delimiter optimization applies
   if (!output.match && primary.size() == 1) {
@@ -145,17 +148,12 @@ void print_help_message() {
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
       "                size of match buffer used. patterns that require more room will\n"
       "                never successfully match\n"
-      "        --buf-size-frag <# bytes, default: <buf-size * 8>\n"
+      "        --buf-size-frag <# bytes, default: <<buf-size> * 8>\n"
       "                this is only applicable if --match and --sed are not specified,\n"
-      "                meaning the input delimiter is being matched. if the match\n"
-      "                buffer is full when attempting to complete a match, the bytes at\n"
-      "                the beginning of the buffer that have no possibility of being a\n"
-      "                part of a match are moved to free up space in the buffer. they\n"
-      "                are moved either directly to the output if the args allow for it\n"
-      "                or to a separate buffer where they are accumulated until the\n"
-      "                token is completed. this separate buffer is cleared if its size\n"
-      "                would exceed this arg. the bytes are instead sent directly to\n"
-      "                the output if no ordered ops are specified, and no tui used\n"
+      "                meaning the input delimiter is being matched. assuming buf-size\n"
+      "                is less than buf-size-frag, then this is the maximum size of a\n"
+      "                token that can be created. if it's size would exceed this arg\n"
+      "                then the content thus far is discarded.\n"
       "        -d, --delimit-same\n"
       "                applies both --delimit-not-at-end and --use-delimiter. this\n"
       "                makes the output end with a delimiter when the input also ends\n"
@@ -255,7 +253,7 @@ void print_help_message() {
     exit(EXIT_FAILURE);
   }
 
-  // signal sent to child process. wait for pclose to finish
+  // signal was sent to child process. wait for pclose to finish
   if (signal(SIGINT, [](int) {}) == SIG_IGN) {
     signal(SIGINT, SIG_IGN);
   }
@@ -290,9 +288,8 @@ void print_help_message() {
 // unspecified, uses stdin and stdout, otherwise must be managed be the callee
 // (e.g. fclose)
 
-Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL) {
+void Arguments::populate_args(Arguments& ret, int argc, char* const* argv, FILE* input, FILE* output) {
   UncompiledCodes uncompiled_output;
-  Arguments ret;
   // rather than stopping on error, continue to parse all the arguments and show all errors
   bool arg_has_errors = false;
   while (1) {
@@ -377,10 +374,10 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
             ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
           } else if (strcmp("head", name) == 0) {
             size_t n = num::parse_unsigned<size_t>(on_num_err, optarg);
-            uncompiled_output.units.push_back(pipeline::UncompiledHeadUnit(n));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledHeadUnit(n)));
           } else if (strcmp("tail", name) == 0) {
             size_t n = num::parse_unsigned<size_t>(on_num_err, optarg);
-            uncompiled_output.units.push_back(pipeline::UncompiledTailUnit(n));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledTailUnit(n)));
           } else if (strcmp("index", name) == 0) {
             pipeline::IndexUnit::Align align;
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
@@ -393,19 +390,19 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
               arg_has_errors = true;
               align = pipeline::IndexUnit::BEFORE;
             }
-            uncompiled_output.units.push_back(pipeline::UncompiledIndexUnit(align));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledIndexUnit(align)));
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("user-sort", name) == 0) {
-            uncompiled_output.units.push_back(pipeline::UncompiledUserDefinedSortUnit(optarg));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledUserDefinedSortUnit(optarg)));
           } else if (strcmp("max-lookbehind", name) == 0) {
             ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
           } else if (strcmp("read", name) == 0) {
             ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
           } else if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
-            uncompiled_output.units.push_back(pipeline::UncompiledRmOrFilterUnit(pipeline::RmOrFilterUnit::REMOVE, optarg));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledRmOrFilterUnit(pipeline::RmOrFilterUnit::REMOVE, optarg)));
           } else if (strcmp("replace", name) == 0) {
-            uncompiled_output.units.push_back(pipeline::UncompiledReplaceUnit(optarg));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledReplaceUnit(optarg)));
           } else if (strcmp("sub", name) == 0 || strcmp("substitute", name) == 0) {
             // special handing here since getopt doesn't normally support multiple arguments
             if (optind >= argc) {
@@ -415,7 +412,7 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
               arg_has_errors = true;
             } else {
               ++optind;
-              uncompiled_output.units.push_back(pipeline::UncompiledSubUnit(argv[optind - 2], argv[optind - 1]));
+              uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledSubUnit(argv[optind - 2], argv[optind - 1])));
             }
           } else {
             arg_error_preamble(argc, argv);
@@ -425,11 +422,11 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
         } else {
           // long option without argument or optional argument
           if (strcmp("flush", name) == 0) {
-            ret.flush = true;
+            ret.tos_args.flush = true;
           } else if (strcmp("delimit-not-at-end", name) == 0) {
-            ret.delimit_not_at_end = true;
+            ret.tos_args.delimit_not_at_end = true;
           } else if (strcmp("delimit-on-empty", name) == 0) {
-            ret.delimit_on_empty = true;
+            ret.tos_args.delimit_on_empty = true;
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
@@ -437,19 +434,19 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
           } else if (strcmp("head", name) == 0) {
             size_t n;
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              size_t n = num::parse_unsigned<size_t>(on_num_err, optarg);
+              n = num::parse_unsigned<size_t>(on_num_err, optarg);
             } else {
               n = 10;
             }
-            uncompiled_output.units.push_back(pipeline::UncompiledHeadUnit(n));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledHeadUnit(n)));
           } else if (strcmp("tail", name) == 0) {
             size_t n;
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              size_t n = num::parse_unsigned<size_t>(on_num_err, optarg);
+              n = num::parse_unsigned<size_t>(on_num_err, optarg);
             } else {
               n = 10;
             }
-            uncompiled_output.units.push_back(pipeline::UncompiledTailUnit(n));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledTailUnit(n)));
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -469,12 +466,12 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
             } else {
               align = pipeline::IndexUnit::BEFORE;
             }
-            uncompiled_output.units.push_back(pipeline::UncompiledIndexUnit(align));
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledIndexUnit(align)));
           } else if (strcmp("reverse", name) == 0) {
-            uncompiled_output.units.push_back(pipeline::UncompiledReverseUnit());
+            uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledReverseUnit()));
           } else if (strcmp("sed", name) == 0) {
             ret.match = true;
-            ret.sed = true;
+            ret.tos_args.sed = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
@@ -525,7 +522,7 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
         break;
       case 'd':
         ret.use_input_delimiter = true;
-        ret.delimit_not_at_end = true;
+        ret.tos_args.delimit_not_at_end = true;
         break;
       case 'e':
         ret.end = true;
@@ -540,22 +537,22 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
         uncompiled_output.re_options &= ~PCRE2_LITERAL;
         break;
       case 's':
-        uncompiled_output.units.push_back(pipeline::UncompiledSortUnit());
+        uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledSortUnit()));
         break;
       case 't':
         ret.tui = true;
         break;
       case 'u':
-        uncompiled_output.units.push_back(pipeline::UncompiledUniqueUnit());
+        uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledUniqueUnit()));
         break;
       case 'y':
         // these options are made available since null can't be typed as a command line arg
         // there's precedent elsewhere, e.g. find -print0 -> xargs -0
-        ret.bout_delimiter = {'\0'};
+        ret.tos_args.bout_delimiter = {'\0'};
         uncompiled_output.bout_delimiter_set = true;
         break;
       case 'z':
-        ret.out_delimiter = {'\0'};
+        ret.tos_args.out_delimiter = {'\0'};
         break;
       case '0':
         uncompiled_output.primary = {'\0'};
@@ -564,27 +561,27 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
       case 'o': {
         // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'o' in opt string
         size_t len = std::strlen(optarg);
-        ret.out_delimiter.resize(len);
-        std::memcpy(ret.out_delimiter.data(), optarg, len * sizeof(char));
+        ret.tos_args.out_delimiter.resize(len);
+        std::memcpy(ret.tos_args.out_delimiter.data(), optarg, len * sizeof(char));
       } break;
       case 'b': {
         // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'b' in opt string
         size_t len = std::strlen(optarg);
-        ret.bout_delimiter.resize(len);
-        std::memcpy(ret.bout_delimiter.data(), optarg, len * sizeof(char));
+        ret.tos_args.bout_delimiter.resize(len);
+        std::memcpy(ret.tos_args.bout_delimiter.data(), optarg, len * sizeof(char));
         uncompiled_output.bout_delimiter_set = true;
       } break;
       case 'p':
         ret.prompt = optarg;
         break;
       case 'f':
-        uncompiled_output.units.push_back(pipeline::UncompiledRmOrFilterUnit(pipeline::RmOrFilterUnit::FILTER, optarg));
+        uncompiled_output.units.push_back(std::unique_ptr<pipeline::UncompiledPipelineUnit>(new pipeline::UncompiledRmOrFilterUnit(pipeline::RmOrFilterUnit::FILTER, optarg)));
         break;
     }
   }
 
   if (!uncompiled_output.bout_delimiter_set) {
-    ret.bout_delimiter = ret.out_delimiter;
+    ret.tos_args.bout_delimiter = ret.tos_args.out_delimiter;
   }
 
   if (!uncompiled_output.primary_set) {
@@ -609,9 +606,9 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
   }
 
   if (output) {
-    ret.output = output;
+    ret.tos_args.output = output;
   } else {
-    ret.output = stdout;
+    ret.tos_args.output = stdout;
   }
 
   // compile the arguments now that the entire context has been obtained
@@ -665,8 +662,6 @@ Arguments Arguments::create_args(int argc, char* const* argv, FILE* input = NULL
     int exit_code = puts("Try 'choose --help' for more information.") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     exit(exit_code);
   }
-
-  return ret;
 }
 
 const char* id(bool is_match) {
@@ -677,10 +672,10 @@ const char* id(bool is_match) {
   }
 }
 
-void drop_warning(Arguments& args) {
-  if (args.can_drop_warn) {
-    args.can_drop_warn = false;
-    if (fileno(args.output) == STDOUT_FILENO) { // not unit test
+void Arguments::drop_warning() {
+  if (this->can_drop_warn) {
+    this->can_drop_warn = false;
+    if (fileno(this->tos_args.output) == STDOUT_FILENO) { // not unit test
       fputs(
           "Warning: bytes were dropped from overlong token. "
           "Set --no-warn, or increase --buf-size-frag, "
@@ -696,12 +691,11 @@ std::vector<pipeline::SimplePacket> Arguments::create_packets() {
   const bool is_invalid_utf = this->primary ? regex::options(this->primary) & PCRE2_MATCH_INVALID_UTF : false;
   regex::match_data primary_data = this->primary ? regex::create_match_data(this->primary) : NULL;
 
-  // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
+  // single_byte_delimiter implies not match
   const bool is_match = !single_byte_delimiter && this->match;
   // sed implies is_match
-  const bool is_sed = is_match && this->sed;
-  const bool has_ops = !this->ordered_ops.empty();
-  const bool flush = this->flush;
+  const bool is_sed = is_match && this->tos_args.sed;
+  const bool flush = this->tos_args.flush;
 
   char subject[this->buf_size]; // match buffer
   size_t subject_size = 0;      // how full is the buffer
@@ -714,115 +708,28 @@ std::vector<pipeline::SimplePacket> Arguments::create_packets() {
   // for when parts of a token are accumulated
   std::vector<char> fragment;
 
-  // this lambda applies the operations specified in the args to a candidate token.
-  // returns true iff this should be the last token added to the output
-  auto process_token = [&](const char* begin, const char* end) -> bool {
-    bool t_is_set = false;
-    Token t;
-
+  auto process_token = [&](const char* begin, const char* end) {
     if (!fragment.empty()) {
+      pipeline::SimplePacket sp;
       if (fragment.size() + (end - begin) > this->buf_size_frag) {
-        drop_warning(*this);
-        fragment.clear();
-        // still use an empty token to be consistent with the delimiters in the output
-        end = begin;
+        this->drop_warning();
+        fragment.clear(); // still use empty token
+        sp.buffer = std::move(fragment);
+        fragment = std::vector<char>();
       } else {
         str::append_to_buffer(fragment, begin, end);
-        t.buffer = std::move(fragment);
-        t_is_set = true;
+        sp.buffer = std::move(fragment);
         fragment = std::vector<char>();
-        begin = &*t.buffer.cbegin();
-        end = &*t.buffer.cend();
       }
-    }
-
-    auto check_unique_then_append = [&]() -> bool {
-      output.push_back(std::move(t));
-      if (this->unique || this->comp_unique) {
-        // some form on uniqueness is being used
-        if (!uniqueness_check(output.size() - 1)) {
-          // the element is not unique. nothing was added to the uniqueness set
-          output.pop_back();
-          return false;
-        }
-      }
-      return true;
-    };
-
-    for (OrderedOp& op : this->ordered_ops) {
-      if (RmOrFilterOp* rf_op = std::get_if<RmOrFilterOp>(&op)) {
-        if (rf_op->removes(begin, end)) {
-          return false;
-        }
-      } else if (InLimitOp* rf_op = std::get_if<InLimitOp>(&op)) {
-        if (rf_op->finished()) {
-          return true;
-        }
-      } else {
-        if (tokens_not_stored && &op == &*this->ordered_ops.rbegin()) {
-          if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
-            std::vector<char> out;
-            rep_op->apply(out, subject, subject + subject_size, primary_data, this->primary);
-            direct_output.write_output(&*out.cbegin(), &*out.cend());
-          } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
-            auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
-              sub_op->direct_apply(out, begin, end);
-            };
-            direct_output.write_output(begin, end, direct_apply_sub);
-          } else {
-            IndexOp& in_op = std::get<IndexOp>(op);
-            auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
-              in_op.direct_apply(out, begin, end, direct_output.out_count);
-            };
-            direct_output.write_output(begin, end, direct_apply_index);
-          }
-          goto after_direct_apply;
-        } else {
-          if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
-            rep_op->apply(t.buffer, subject, subject + subject_size, primary_data, this->primary);
-          } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
-            sub_op->apply(t.buffer, begin, end);
-          } else {
-            IndexOp& in_op = std::get<IndexOp>(op);
-            if (!t_is_set) {
-              str::append_to_buffer(t.buffer, begin, end);
-            }
-            in_op.apply(t.buffer, tokens_not_stored ? direct_output.out_count : output.size());
-          }
-          t_is_set = true;
-          begin = &*t.buffer.cbegin();
-          end = &*t.buffer.cend();
-        }
-      }
-    }
-
-    if (!tokens_not_stored && !t_is_set) {
-      str::append_to_buffer(t.buffer, begin, end);
-      begin = &*t.buffer.cbegin(); // not needed since it now points to a copy
-      end = &*t.buffer.cend();     // but keeps things clean
-    }
-
-    if (is_direct_output) {
-      if (!tokens_not_stored) {
-        if (!check_unique_then_append()) {
-          return false;
-        }
-      }
-      direct_output.write_output(begin, end);
-after_direct_apply:
-      if (flush) {
-        choose::str::flush_f(this->output);
-      }
-      if (direct_output.out_count == this->out) {
-        // code coverage reaches here. mistakenly shows finish_output as
-        // unreached but throw is reached. weird.
-        direct_output.finish_output();
-        throw output_finished();
-      }
-      return false;
+      this->pipeline.process(std::move(sp));
     } else {
-      check_unique_then_append(); // result ignored
-      return false;
+      if (is_sed) {
+        pipeline::ReplacePacket rp{subject, subject + subject_size, primary_data, this->primary};
+        this->pipeline.process(std::move(rp));
+      } else {
+        pipeline::ViewPacket vp(begin, end);
+        this->pipeline.process(std::move(vp));
+      }
     }
   };
 
@@ -900,22 +807,18 @@ skip_read: // do another iteration but don't read in any more bytes
       }
       if (is_match) {
         if (is_sed) {
-          str::write_f(this->output, subject + match_offset, match.begin);
-          if (process_token(match.begin, match.end)) {
-            break;
-          }
+          str::write_f(this->tos_args.output, subject + match_offset, match.begin);
+          process_token(match.begin, match.end);
         } else {
-          auto match_handler = [&](const regex::Match& m) -> bool { //
-            return process_token(m.begin, m.end);
-          };
-          if (regex::get_match_and_groups(subject, match_result, primary_data, match_handler, "match pattern")) {
-            break;
-          }
+          regex::get_match_and_groups(
+              subject, match_result, primary_data,
+              [&](const regex::Match& m) { //
+                process_token(m.begin, m.end);
+              },
+              "match pattern");
         }
       } else {
-        if (process_token(subject + prev_sep_end, match.begin)) {
-          break;
-        }
+        process_token(subject + prev_sep_end, match.begin);
         prev_sep_end = match.end - subject;
       }
       // set the start offset to just after the match
@@ -965,7 +868,7 @@ skip_read: // do another iteration but don't read in any more bytes
           const char* begin = subject + old_match_offset;
           const char* end = new_subject_begin + match_offset;
           if (begin < end) {
-            str::write_f(this->output, begin, end);
+            str::write_f(this->tos_args.output, begin, end);
           }
         }
 
@@ -993,7 +896,7 @@ skip_read: // do another iteration but don't read in any more bytes
               //    clear the entire buffer not including the incomplete multibyte
               //    at the end (that wasn't used yet)
               if (is_sed) {
-                str::write_f(this->output, subject + match_offset, subject_effective_end);
+                str::write_f(this->tos_args.output, subject + match_offset, subject_effective_end);
               }
               subject_size = (subject + subject_size) - subject_effective_end;
               for (size_t i = 0; i < subject_size; ++i) {
@@ -1002,7 +905,7 @@ skip_read: // do another iteration but don't read in any more bytes
             } else {
               // clear the buffer
               if (is_sed) {
-                str::write_f(this->output, subject + match_offset, subject + subject_size);
+                str::write_f(this->tos_args.output, subject + match_offset, subject + subject_size);
               }
               subject_size = 0;
             }
@@ -1019,15 +922,11 @@ skip_read: // do another iteration but don't read in any more bytes
             // or directly to the output
 
             auto process_fragment = [&](const char* begin, const char* end) {
-              if (!has_ops && tokens_not_stored) {
-                direct_output.write_output_fragment(begin, end);
+              if (fragment.size() + (end - begin) > this->buf_size_frag) {
+                this->drop_warning();
+                fragment.clear();
               } else {
-                if (fragment.size() + (end - begin) > this->buf_size_frag) {
-                  drop_warning(*this);
-                  fragment.clear();
-                } else {
-                  str::append_to_buffer(fragment, begin, end);
-                }
+                str::append_to_buffer(fragment, begin, end);
               }
             };
 
@@ -1061,13 +960,14 @@ skip_read: // do another iteration but don't read in any more bytes
             process_token(subject + prev_sep_end, subject_effective_end);
           }
         } else if (is_sed) {
-          str::write_f(this->output, subject + match_offset, subject_effective_end);
+          str::write_f(this->tos_args.output, subject + match_offset, subject_effective_end);
         }
         break;
       }
     }
   }
 
+  this->pipeline.process(pipeline::EndOfStream{&ret});
   return ret;
 }
 

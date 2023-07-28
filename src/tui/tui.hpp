@@ -55,13 +55,13 @@ struct BatchOutputStream {
 
 // a single instance of UIState is used, with a static lifetime
 struct UIState {
-  Arguments args;
+  Arguments& args;
   std::vector<pipeline::SimplePacket> tokens;
   BatchOutputStream os;
 
-  UIState(Arguments&& args, //
+  UIState(Arguments& args, //
           std::vector<pipeline::SimplePacket>&& tokens)
-      : args(std::move(args)), //
+      : args(args), //
         tokens(std::move(tokens)),
         os(this->args) {
     if (signal(SIGINT, choose::tui::sigint_handler) == SIG_IGN) {

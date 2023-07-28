@@ -11,7 +11,7 @@ namespace choose {
 
 struct Arguments {
   TokenOutputStreamArgs tos_args;
-  pipeline::NextUnit nu;
+  pipeline::PipelineUnit pipeline;
   // indicates that the tokens are displayed in the tui
   bool tui = false;
 
@@ -53,22 +53,24 @@ struct Arguments {
   // disable or allow warning
   bool can_drop_warn = true;
 
-  static Arguments create_args(int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL);
+  static void populate_args(Arguments& out, int argc, char* const* argv, FILE* input = NULL, FILE* output = NULL);
 
   // reads from this->input
   // if this->tui:
   //      returns the tokens
-  // else
+  // else:
   //      writes to this->output, then throws a output_finished exception,
   //      which the caller should handle (exit unless unit test)
   std::vector<pipeline::SimplePacket> create_packets();
+
+  void drop_warning();
 };
 
 struct UncompiledCodes {
   // all args must be parsed before the args are compiled
   // the uncompiled args are stored here before transfer to the Arguments output.
   uint32_t re_options = PCRE2_LITERAL;
-  std::vector<pipeline::UncompiledPipelineUnit> units;
+  std::vector<std::unique_ptr<pipeline::UncompiledPipelineUnit>> units;
 
   std::vector<char> primary;
 
