@@ -1,4 +1,3 @@
-#pragma once
 #include <getopt.h>
 #include <unistd.h>
 #include <cassert>
@@ -66,6 +65,9 @@ void arg_error_preamble(int argc, const char* const* argv) {
   fputs(me, stderr);
   fputs(": ", stderr);
 }
+
+#define choose_xstr(a) choose_str(a)
+#define choose_str(a) #a
 
 // this function exits
 void print_version_message() {

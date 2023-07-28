@@ -20,10 +20,10 @@ struct UniqueUnit : public PipelineUnit {
 
   std::string_view from_val(indirect val) const {
     const char* begin = val != std::numeric_limits<indirect>::max() //
-                            ? &*this->packets[val].t.buffer.cbegin()
+                            ? &*this->packets[val].buffer.cbegin()
                             : this->candidate_begin;
     size_t size = val != std::numeric_limits<indirect>::max() //
-                      ? this->packets[val].t.buffer.size()
+                      ? this->packets[val].buffer.size()
                       : this->candidate_size;
     return {begin, size};
   }
@@ -40,7 +40,7 @@ struct UniqueUnit : public PipelineUnit {
 
   using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
 
-  unordered_set_T unique_checker = []() -> unordered_set_T {
+  auto unique_checker = []() {
     auto ret = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
     ret.max_load_factor(0.125); // determined from perf.md
   }();

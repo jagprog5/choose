@@ -2,7 +2,8 @@
 
 #include "pipeline/packet.hpp"
 #include "pipeline/token_output_stream.hpp"
-#include "variant"
+
+struct TokenOutputStream;
 
 namespace choose {
 namespace pipeline {
@@ -21,6 +22,9 @@ struct output_finished : public std::exception {};
 struct PipelineUnit {
   NextUnit next;
   PipelineUnit(NextUnit&& next) : next(std::move(next)) {}
+
+  PipelineUnit(PipelineUnit&& o) = default;
+  PipelineUnit& operator=(PipelineUnit&&) = default;
 
   virtual void process(EndOfStream&& p) {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
@@ -46,6 +50,8 @@ struct PipelineUnit {
   virtual void process(SimplePacket&& p) { this->internal_process(std::move(p)); }
   virtual void process(ViewPacket&& p) { this->internal_process(std::move(p)); }
   virtual void process(ReplacePacket&& p) { this->internal_process(std::move(p)); }
+
+  virtual ~PipelineUnit() {}
 };
 
 // a PipelineUnit that accumulates all of the tokens it receives.
@@ -63,7 +69,7 @@ struct AccumulatingUnit : public PipelineUnit {
     next_unit->process(EndOfStream());
   }
 
-  void process(EndOfStream&& p) override {
+  void process(EndOfStream&&) override {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
       for (const SimplePacket& sp : this->packets) {
         os->write_output(&*sp.buffer.cbegin(), &*sp.buffer.cend());

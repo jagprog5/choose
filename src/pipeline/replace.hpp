@@ -28,10 +28,10 @@ struct ReplaceUnit : public PipelineUnit {
     throw std::runtime_error("A replace unit can only be proceeded by simple pipeline units.");
   }
 
-  virtual void process(SimplePacket&& p) {
+  void process(SimplePacket&&) override {
     wrong_type_err();
   }
-  virtual void process(ViewPacket&& p) {
+  void process(ViewPacket&&) override {
     wrong_type_err();
   }
 };

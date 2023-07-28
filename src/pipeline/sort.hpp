@@ -13,7 +13,7 @@ struct SortUnit : public AccumulatingUnit {
   // hook onto after the packets have been received but before they are sent to the next unit
   void process(EndOfStream&& p) override {
     auto comp = [](const SimplePacket& lhs, const SimplePacket& rhs) -> bool { //
-      return std::lexicographical_compare(&*lhs.t.buffer.cbegin(), &*lhs.t.buffer.cend(), &*rhs.t.buffer.cbegin(), &*rhs.t.buffer.cend());
+      return std::lexicographical_compare(&*lhs.buffer.cbegin(), &*lhs.buffer.cend(), &*rhs.buffer.cbegin(), &*rhs.buffer.cend());
     };
     std::sort(this->packets.begin(), this->packets.end(), comp);
     AccumulatingUnit::process(std::move(p));

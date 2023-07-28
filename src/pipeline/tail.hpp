@@ -16,7 +16,7 @@ struct TailUnit : public PipelineUnit {
     }
   }
 
-  void process(EndOfStream&& p) override {
+  void process(EndOfStream&&) override {
     if (TokenOutputStream* os = std::get_if<TokenOutputStream>(&this->next)) {
       for (const SimplePacket& sp : this->packets) {
         os->write_output(&*sp.buffer.cbegin(), &*sp.buffer.cend());

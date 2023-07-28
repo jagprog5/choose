@@ -10,7 +10,7 @@ option(NO_SCROLL_BORDER "Disable the scroll border" OFF)
 option(BUILD_TESTING "Build tests" OFF)
 option(CODE_COVERAGE "Create coverage stats. Requires BUILD_TESTING. Invoke with make cov-show" OFF)
 project(choose)
-add_executable(choose src/main.cpp)
+add_executable(choose src/main.cpp src/args/args.cpp)
 target_include_directories(choose PRIVATE src)
 
 target_compile_options(choose PRIVATE -Wall -Wextra -O3)
@@ -42,7 +42,7 @@ if(BUILD_TESTING)
   set(Boost_USE_STATIC_LIBS ON)
   find_package(Boost REQUIRED COMPONENTS unit_test_framework)
   
-  add_executable(unit_tests src/test.cpp)
+  add_executable(unit_tests src/test.cpp src/args/args.cpp)
   target_include_directories(unit_tests PRIVATE src)
   target_compile_options(unit_tests PRIVATE -Wall -Wextra -Og -g)
 

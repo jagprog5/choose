@@ -1,18 +1,16 @@
 #pragma once
 
+#include <variant>
 #include <vector>
-
 #include "pipeline/unit.hpp"
 #include "utils/regex.hpp"
 
 namespace choose {
 
-#define choose_xstr(a) choose_str(a)
-#define choose_str(a) #a
-
 #define BUF_SIZE_DEFAULT 32768
 
 struct Arguments {
+  TokenOutputStreamArgs tos_args;
   pipeline::NextUnit nu;
   // indicates that the tokens are displayed in the tui
   bool tui = false;
@@ -22,16 +20,11 @@ struct Arguments {
   bool use_input_delimiter = false;
   bool end = false;
 
-  bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
   // else, it matches the tokens themselves
   bool match = false;
-  // a modifier on match that also sends everything not included in the match
-  bool sed = false;
-  bool delimit_not_at_end = false;
-  bool delimit_on_empty = false;
-
+  
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
   uint32_t max_lookbehind = std::numeric_limits<decltype(max_lookbehind)>::max();
@@ -45,9 +38,6 @@ struct Arguments {
   size_t buf_size_frag = std::numeric_limits<decltype(buf_size_frag)>::max();
   const char* locale = "";
 
-  std::vector<char> out_delimiter = {'\n'};
-  std::vector<char> bout_delimiter;
-
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
@@ -59,7 +49,6 @@ struct Arguments {
   // testing purposes. if null, uses stdin and stdout.
   // if not null, files must be closed by the callee
   FILE* input = 0;
-  FILE* output = 0;
 
   // disable or allow warning
   bool can_drop_warn = true;

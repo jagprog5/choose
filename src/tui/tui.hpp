@@ -24,18 +24,18 @@ struct BatchOutputStream {
 
   BatchOutputStream(const Arguments& args)
       : args(args),                                        //
-        qo{isatty(fileno(args.output)) && args.tenacious ? // NOLINT args.output can never by null here
+        qo{isatty(fileno(args.tos_args.output)) && args.tenacious ? // NOLINT args.tos_args.output can never by null here
                std::optional<std::vector<char>>(std::vector<char>())
                                                          : std::nullopt} {}
 
   void write_output(const pipeline::SimplePacket& t) {
     if (!first_within_batch) {
-      qo.write_output(args.output, args.out_delimiter);
+      qo.write_output(args.tos_args.output, args.tos_args.out_delimiter);
     } else if (!first_batch) {
-      qo.write_output(args.output, args.bout_delimiter);
+      qo.write_output(args.tos_args.output, args.tos_args.bout_delimiter);
     }
     first_within_batch = false;
-    qo.write_output(args.output, t.buffer);
+    qo.write_output(args.tos_args.output, t.buffer);
   }
 
   void finish_batch() {
@@ -44,10 +44,10 @@ struct BatchOutputStream {
   }
 
   void finish_output() {
-    if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
-      qo.write_output(args.output, args.bout_delimiter);
+    if (!args.tos_args.delimit_not_at_end && (!first_batch || args.tos_args.delimit_on_empty)) {
+      qo.write_output(args.tos_args.output, args.tos_args.bout_delimiter);
     }
-    qo.flush_output(args.output);
+    qo.flush_output(args.tos_args.output);
     first_within_batch = true; // optional reset of state
     first_batch = true;
   }
@@ -271,7 +271,7 @@ again:
     if (args.tenacious) {
       selections.clear();
       if (!output_is_queued) {
-        str::flush_f(args.output);
+        str::flush_f(args.tos_args.output);
       }
     } else {
       os.finish_output();

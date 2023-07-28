@@ -13,7 +13,7 @@ struct TerminalUnit : public AccumulatingUnit {
   output_t& output;
   TerminalUnit(output_t& output) : AccumulatingUnit(NextUnit()), output(output) {}
 
-  void process(EndOfStream&& p) override {
+  void process(EndOfStream&&) override {
     output = std::move(this->packets);
     throw ready_for_ui();
   }

@@ -72,7 +72,7 @@ struct IndexUnit : public PipelineUnit {
     } else {
       std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
       SimplePacket next_packet(std::move(p));
-      this->apply(next_packet.t.buffer);
+      this->apply(next_packet.buffer);
       next_unit->process(std::move(next_packet));
     }
   }

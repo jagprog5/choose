@@ -18,8 +18,8 @@ struct UserDefinedSortUnit : public AccumulatingUnit {
   // hook onto after the packets have been received but before they are sent to the next unit
   void process(EndOfStream&& p) override {
     auto comp = [this](const SimplePacket& lhs, const SimplePacket& rhs) -> bool { //
-      int lhs_result = regex::match(this->comp, lhs.t.buffer.data(), lhs.t.buffer.size(), this->data, "user comp");
-      int rhs_result = regex::match(this->comp, rhs.t.buffer.data(), rhs.t.buffer.size(), this->data, "user comp");
+      int lhs_result = regex::match(this->comp, lhs.buffer.data(), lhs.buffer.size(), this->data, "user comp");
+      int rhs_result = regex::match(this->comp, rhs.buffer.data(), rhs.buffer.size(), this->data, "user comp");
       if (lhs_result && !rhs_result) {
         return 1;
       } else {

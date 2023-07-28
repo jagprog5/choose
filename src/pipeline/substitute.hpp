@@ -17,8 +17,9 @@ struct SubUnit : public PipelineUnit {
         data(regex::create_match_data(this->target)),
         replacement(replacement) {}
   
-  void apply(std::vector<char>& out, const char* begin, const char* end) { //
-    out = regex::substitute_global(target, begin, end - begin, replacement, this->ctx);
+  void apply(std::vector<char>& out) { //
+    // subtle copy then assign. needed to not overwrite sub as it is being written
+    out = regex::substitute_global(target, &*out.cbegin(), out.size(), replacement, this->ctx);
   }
 
   // same as apply, but no copies or moves. sent straight to the output
@@ -49,7 +50,7 @@ struct SubUnit : public PipelineUnit {
     } else {
       std::unique_ptr<PipelineUnit>& next_unit = std::get<std::unique_ptr<PipelineUnit>>(this->next);
       SimplePacket next_packet;
-      this->apply(next_packet.t.buffer, v.begin, v.end);
+      this->apply(next_packet.buffer);
       next_unit->process(std::move(next_packet));
     }
   }
