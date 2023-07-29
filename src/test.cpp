@@ -425,7 +425,7 @@ BOOST_AUTO_TEST_CASE(unique) {
 }
 
 BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--lex-unique-use-set", "-t"});
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--unique-use-set", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -434,29 +434,16 @@ BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
 
 BOOST_AUTO_TEST_CASE(defined_sort) {
   // this also checks the delimiter and sort stability
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-sort", "-t"});
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(defined_unique) {
-  // the comparison treats all John's as the same. so there's one John and one non John in the output.
-  choose_output out = run_choose("John Doe\nApple\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "Apple"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 // mix of both lex and user defined
 
 BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--unique", "--comp-sort", "-t"});
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--unique", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple", "Banana"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(defined_unique_lex_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp", "^John", "--comp-unique", "--sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"Apple", "John Doe"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

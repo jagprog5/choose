@@ -32,13 +32,10 @@ struct Arguments {
   bool sort = false; // indicates that any sort is applied
 
   // user defined comparison
-  regex::code comp = 0;
-  bool comp_unique = false;
-  // if comp_sort is set, then sort should also be set at the same time
-  bool comp_sort = false;
+  regex::code comp_sort = 0;
 
   bool unique = false; // lexicographical unique
-  bool lex_unique_use_set = false;
+  bool unique_use_set = false;
   bool reverse = false;
   bool flush = false;
   bool multiple_selections = false;
@@ -89,7 +86,7 @@ struct Arguments {
 
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
-    return is_direct_output() && !unique && !comp_unique;
+    return is_direct_output() && !unique;
   }
 };
 
@@ -136,7 +133,7 @@ struct UncompiledCodes {
     }
 
     if (comp) {
-      output.comp = regex::compile(comp, re_options, "defined comp");
+      output.comp_sort = regex::compile(comp, re_options, "user defined comparison for sort");
     }
   }
 };
@@ -231,17 +228,10 @@ void print_help_message() {
       "                then the content thus far is discarded. this limit is avoided\n"
       "                in the special case where there is no ordered ops, no sorting,\n"
       "                no uniqueness, no reverse, and no tui used.\n"
-      "        --comp <less than comparison>\n"
-      "                user defined comparison. pairs of tokens are evaluated. if only\n"
-      "                one matches, then it is less than the other. required by\n"
-      "                --comp-sort and --comp-unique. inherits the same match options\n"
-      "                as the positional argument\n"
-      "        --comp-sort\n"
-      "                requires --comp. does a stable sort using the comparison.\n"
-      "                ignores --sort\n"
-      "        --comp-unique\n"
-      "                requires --comp. allow only first instances of unique\n"
-      "                elements as defined by the comparison. ignores --unique\n"
+      "        --comp-sort <less than comparison>\n"
+      "                apply a stable sort using a user defined comparison. pairs of\n"
+      "                tokens are evaluated. if only one matches, then it is less than\n"
+      "                the other. inherits the same match options as the positional arg\n"
       "        -d, --delimit-same\n"
       "                applies both --delimit-not-at-end and --use-delimiter. this\n"
       "                makes the output end with a delimiter when the input also ends\n"
@@ -258,7 +248,7 @@ void print_help_message() {
       "                token is written\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
-      "        --lex-unique-use-set\n"
+      "        --unique-use-set\n"
       "                when applying --unique, use a tree instead of a hash table. this\n"
       "                makes a typical fast case slower and a typical slow case faster\n"
       "        --locale <locale>\n"
@@ -327,7 +317,7 @@ void print_help_message() {
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
-      "                -r --comp '^John' --comp-sort\n"
+      "                -r --comp-sort '^John'\n"
       "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --in-index\\\n"
       "                after --rm '^c' --sub '.+' '$0 out:' --out-index after\n"
       "        echo -e \"this\\nis\\na\\ntest\" | choose -r --sed \".+\" --replace banana\n"
@@ -405,7 +395,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"output-delimiter", required_argument, NULL, 'o'},
         {"batch-delimiter", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
-        {"comp", required_argument, NULL, 0},
+        {"comp-sort", required_argument, NULL, 0},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
@@ -424,8 +414,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"take", required_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
-        {"comp-sort", no_argument, NULL, 0},
-        {"comp-unique", no_argument, NULL, 0},
         {"delimit-same", no_argument, NULL, 'd'},
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
@@ -443,7 +431,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
-        {"lex-unique-use-set", no_argument, NULL, 0},
+        {"unique-use-set", no_argument, NULL, 0},
         {"use-delimiter", no_argument, NULL, 0},
         {"utf", no_argument, NULL, 0},
         {"utf-allow-invalid", no_argument, NULL, 0},
@@ -537,8 +525,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               ++optind;
               uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
             }
-          } else if (strcmp("comp", name) == 0) {
+          } else if (strcmp("comp-sort", name) == 0) {
             uncompiled_output.comp = optarg;
+            ret.sort = true;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
@@ -561,11 +550,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.reverse = true;
           } else if (strcmp("flush", name) == 0) {
             ret.flush = true;
-          } else if (strcmp("comp-sort", name) == 0) {
-            ret.comp_sort = true;
-            ret.sort = true;
-          } else if (strcmp("comp-unique", name) == 0) {
-            ret.comp_unique = true;
           } else if (strcmp("delimit-not-at-end", name) == 0) {
             ret.delimit_not_at_end = true;
           } else if (strcmp("delimit-on-empty", name) == 0) {
@@ -618,8 +602,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               align = IndexOp::BEFORE;
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::OUTPUT, align));
-          } else if (strcmp("lex-unique-use-set", name) == 0) {
-            ret.lex_unique_use_set = true;
+          } else if (strcmp("unique-use-set", name) == 0) {
+            ret.unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {
             ret.use_input_delimiter = true;
           } else if (strcmp("utf", name) == 0) {

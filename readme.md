@@ -167,7 +167,7 @@ And this command puts all tokens that start with "John" first, but otherwise the
 
 ```bash
 echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith"\
- | choose --comp '^John' --comp-sort -ru
+ | choose --comp-sort '^John' -ru
 ```
 
 </td>
@@ -231,7 +231,7 @@ echo "this is a test" | choose -r "\w+" -o banana -d
 
 # Speed
 
-See benchmarks [here](./perf.md)
+See benchmarks [here](./perf.md).
 
 # ch_hist
 
