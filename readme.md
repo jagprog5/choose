@@ -125,6 +125,22 @@ echo -n 'every other word is printed here' | \
                 --sub '(.*) [0-9]+' '$1' # 3
 ```
 
+## Lines vs Tokens
+
+There's a difference between a typical shell pipeline like:
+
+```bash
+cat some_content | grep "test" | head -n 5
+```
+
+Compared to this:
+
+```bash
+cat some_content | choose -f "test" --out 5
+```
+
+The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are arbitrary and can contain newline characters, whereas lines can't.
+
 # Ordering and Uniqueness
 
 choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply ordering and uniqueness.
@@ -184,7 +200,7 @@ Banana
 
 # Matching
 
-Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group form a token.
+Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group form a token. This is like `grep -o`.
 
 <table>
 <tr>
@@ -223,19 +239,35 @@ In contrast, this implicitly separates the input into tokens each delimited by a
 echo "this is a test" | choose -r --sub "\w+" banana
 ```
 
-Lastly, this is a weird hack the leverages the input and output delimiters. The replacement must be a literal string:
+Lastly, this is a weird hack that leverages the input and output delimiters. The replacement must be a literal string:
 
 ```bash
 echo "this is a test" | choose -r "\w+" -o banana -d
 ```
 
+## Compared to sed
+
+choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which only allows for [basic expressions](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires a different implementation as the matched buffer must be manage to properly retain lookbehind bytes as tokens are created. An expression like this can't be done in sed:
+
+```bash
+echo "banana test test" | choose -r --sed '(?<!banana )test' --replace hello
+```
+
+Additionally, sed works per line of the input. choose doesn't make this distinction. For example, here's a substitution which has a target that includes a newline and null character:
+
+```bash
+echo -e "this\n\0is\na\ntest" | choose -r --sed 'is\n\0is' --replace something
+```
+
+sed can't make a substitution where the target contains the delimiter, since the input is split into lines based on a delimiter before substitution occurs. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly.
+
 # Speed
 
-See benchmarks [here](./perf.md).
+See benchmarks [here](./perf.md) comparing choose to other tools with similar functionality.
 
 # ch_hist
 
-`ch_hist` is a bash function installed with `choose`. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
+`ch_hist` is a bash function installed with choose. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
 
 ```txt
   git log --oneline
