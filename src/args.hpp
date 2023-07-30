@@ -180,12 +180,10 @@ void print_help_message() {
       "        -f, --filter <target>\n"
       "                remove tokens that don't match. inherits the same match options\n"
       "                as the positional argument\n"
-      "        --in-index [b[efore]|a[fter]|<default: b>]\n"
+      "        --index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, insert the input index\n"
-      "        --in-limit <# tokens>\n"
+      "        --head <# tokens>\n"
       "                stop reading the input once n tokens have reached this point\n"
-      "        --out-index [b[efore]|a[fter]|<default: b>]\n"
-      "                on each token, insert the output index\n"
       "        --replace <replacement>\n"
       "                a special case of the substitution op where the match target is\n"
       "                the positional argument. --match or --sed must be specified.\n"
@@ -267,7 +265,8 @@ void print_help_message() {
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out <# tokens>\n"
-      "                send only the first n tokens to the output or tui\n"
+      "                send only the first n tokens to the output or tui. like --head\n"
+      "                after sorting and uniqueness\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the positional argument.\n"
@@ -287,7 +286,7 @@ void print_help_message() {
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
       "        --take <# tokens>\n"
-      "                sets --out, and a --in-limit at the beginning\n"
+      "                sets --out, and a --head at the beginning\n"
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
@@ -315,11 +314,11 @@ void print_help_message() {
       "                --selection-order -p \"space, enter, escape\" --tui\n"
       "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
-      "                --in-index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
+      "                --index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
       "                -r --comp-sort '^John'\n"
-      "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --in-index\\\n"
-      "                after --rm '^c' --sub '.+' '$0 out:' --out-index after\n"
+      "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --index\\\n"
+      "                after --rm '^c' --sub '.+' '$0 out:' --index after\n"
       "        echo -e \"this\\nis\\na\\ntest\" | choose -r --sed \".+\" --replace banana\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
@@ -405,11 +404,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
-        {"in-limit", required_argument, NULL, 0},
-        {"in-index", optional_argument, NULL, 0},
+        {"head", required_argument, NULL, 0},
+        {"index", optional_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"out", required_argument, NULL, 0},
-        {"out-index", optional_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
         {"take", required_argument, NULL, 0},
         // options
@@ -469,7 +467,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
             ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
-          } else if (strcmp("in-limit", name) == 0) {
+          } else if (strcmp("head", name) == 0) {
             auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
           } else if (strcmp("max-lookbehind", name) == 0) {
@@ -478,7 +476,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
           } else if (strcmp("out", name) == 0) {
             ret.out = num::parse_unsigned<decltype(ret.out)::value_type>(on_num_err, optarg);
-          } else if (strcmp("in-index", name) == 0) {
+          } else if (strcmp("index", name) == 0) {
             IndexOp::Align align; // NOLINT
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
               align = IndexOp::BEFORE;
@@ -491,19 +489,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               align = IndexOp::BEFORE;
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
-          } else if (strcmp("out-index", name) == 0) {
-            IndexOp::Align align; // NOLINT
-            if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-              align = IndexOp::BEFORE;
-            } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-              align = IndexOp::AFTER;
-            } else {
-              arg_error_preamble(argc, argv);
-              fprintf(stderr, "alignment must be before or after\n");
-              arg_has_errors = true;
-              align = IndexOp::BEFORE;
-            }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::OUTPUT, align));
           } else if (strcmp("replace", name) == 0) {
             for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
               if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
@@ -568,7 +553,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
-          } else if (strcmp("in-index", name) == 0) {
+          } else if (strcmp("index", name) == 0) {
             IndexOp::Align align; // NOLINT
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
               if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
@@ -585,23 +570,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               align = IndexOp::BEFORE;
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
-          } else if (strcmp("out-index", name) == 0) {
-            IndexOp::Align align; // NOLINT
-            if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-                align = IndexOp::BEFORE;
-              } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-                align = IndexOp::AFTER;
-              } else {
-                arg_error_preamble(argc, argv);
-                fprintf(stderr, "alignment must be before or after\n");
-                arg_has_errors = true;
-                align = IndexOp::BEFORE;
-              }
-            } else {
-              align = IndexOp::BEFORE;
-            }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::OUTPUT, align));
           } else if (strcmp("unique-use-set", name) == 0) {
             ret.unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {
