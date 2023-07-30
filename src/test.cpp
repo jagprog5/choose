@@ -367,7 +367,7 @@ BOOST_AUTO_TEST_CASE(delimiters) {
 }
 
 BOOST_AUTO_TEST_CASE(output_in_limit) {
-  choose_output out = run_choose("first\nsecond\nthird", {"--in-limit=2"});
+  choose_output out = run_choose("first\nsecond\nthird", {"--head=2"});
   choose_output correct_output{to_vec("first\nsecond\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -379,13 +379,13 @@ BOOST_AUTO_TEST_CASE(output_rm_filter) {
 }
 
 BOOST_AUTO_TEST_CASE(zero_with_tui) {
-  choose_output out = run_choose("anything", {"--in-limit=0", "-t"});
+  choose_output out = run_choose("anything", {"--head=0", "-t"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(zero_no_tui) {
-  choose_output out = run_choose("anything", {"--in-limit=0"});
+  choose_output out = run_choose("anything", {"--head=0"});
   choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -469,7 +469,7 @@ BOOST_AUTO_TEST_CASE(no_delimit_delimit_on_empty) {
 }
 
 BOOST_AUTO_TEST_CASE(in_limit) {
-  choose_output out = run_choose("d\nc\nb\na", {"--in-limit=3", "--sort", "-t"});
+  choose_output out = run_choose("d\nc\nb\na", {"--head=3", "--sort", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"b", "c", "d"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -506,13 +506,13 @@ BOOST_AUTO_TEST_CASE(ordered_ops) {
 
 BOOST_AUTO_TEST_CASE(in_limit_process_token) {
   // niche code coverage
-  choose_output out = run_choose("this\nis\na\ntest", {"--in-limit=2"});
+  choose_output out = run_choose("this\nis\na\ntest", {"--head=2"});
   choose_output correct_output{to_vec("this\nis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(ordered_op_in_limit) {
-  choose_output out = run_choose("z\nz\nz\nz\nthe\nthis\nthere", {"-r", "-f", "^t", "--in-limit=2"});
+  choose_output out = run_choose("z\nz\nz\nz\nthe\nthis\nthere", {"-r", "-f", "^t", "--head=2"});
   choose_output correct_output{to_vec("the\nthis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -531,7 +531,7 @@ BOOST_AUTO_TEST_CASE(replace_op_no_last) {
 
 BOOST_AUTO_TEST_CASE(sed_with_limit) {
   // this is a weird combination of args. should be allowed though
-  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in-limit=2"});
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--head=2"});
   choose_output correct_output{to_vec("aaaa1bbbb2cccc")}; // in limit stops at at the 3rd match, but allows everything before that
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -545,25 +545,25 @@ BOOST_AUTO_TEST_CASE(sed_buffer_full) {
 
 BOOST_AUTO_TEST_CASE(sed_beginning_discarded) {
   // niche code coverage check when beginning part is discarded
-  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--in-limit=2", "--read=2"});
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "[0-9]", "--head=2", "--read=2"});
   choose_output correct_output{to_vec("aaaa1bbbb2cccc")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sed_beginning_discarded_with_lookbehind) {
-  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "(?<=[a-z])[0-9]", "--in-limit=2", "--read=2"});
+  choose_output out = run_choose("aaaa1bbbb2cccc3dddd4", {"--sed", "-r", "(?<=[a-z])[0-9]", "--head=2", "--read=2"});
   choose_output correct_output{to_vec("aaaa1bbbb2cccc")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(index_op_last) {
-  choose_output out = run_choose("here are some words", {" ", "--in-index"});
+  choose_output out = run_choose("here are some words", {" ", "--index"});
   choose_output correct_output{to_vec("0 here\n1 are\n2 some\n3 words\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(index_op_after_last) {
-  choose_output out = run_choose("here are some words", {" ", "--in-index=after"});
+  choose_output out = run_choose("here are some words", {" ", "--index=after"});
   choose_output correct_output{to_vec("here 0\nare 1\nsome 2\nwords 3\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -575,7 +575,7 @@ BOOST_AUTO_TEST_CASE(literal_sub) {
 }
 
 BOOST_AUTO_TEST_CASE(index_ops) {
-  choose_output out = run_choose("every\nother\nword\nis\nremoved\n5\n6\n7\n8\n9\n10", {"-r", "--in-index=after", "-f", "[02468]$", "--sub", "(.*) [0-9]+", "$1", "--out-index", "-t"});
+  choose_output out = run_choose("every\nother\nword\nis\nremoved\n5\n6\n7\n8\n9\n10", {"-r", "--index=after", "-f", "[02468]$", "--sub", "(.*) [0-9]+", "$1", "--index", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"0 every", "1 word", "2 removed", "3 6", "4 8", "5 10"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -593,7 +593,7 @@ BOOST_AUTO_TEST_CASE(check_match_with_groups) {
 }
 
 BOOST_AUTO_TEST_CASE(check_match_with_groups_limit) {
-  choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "--in-limit=2", "-t"});
+  choose_output out = run_choose("abcde", {"-r", "--read=1", "--match", "b(c)(d)", "--head=2", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"bcd", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -800,7 +800,7 @@ BOOST_AUTO_TEST_CASE(process_fragments) {
 
 BOOST_AUTO_TEST_CASE(process_fragment_in_count) {
   // ensure that fragments are counted correctly. only on completion is the in count incremented
-  choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--in-limit=2"});
+  choose_output out = run_choose("zzzzzzzzz123hereisaline123aaaa", {"123", "--read=1", "--buf-size=3", "--head=2"});
   choose_output correct_output{to_vec("zzzzzzzzz\nhereisaline\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -892,7 +892,7 @@ BOOST_AUTO_TEST_CASE(null_input_delimiter) {
 }
 
 BOOST_AUTO_TEST_CASE(in_index_before) {
-  choose_output out = run_choose("this\nis\na\ntest", {"--in-index=before", "-t"});
+  choose_output out = run_choose("this\nis\na\ntest", {"--index=before", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"0 this", "1 is", "2 a", "3 test"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

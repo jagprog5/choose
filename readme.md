@@ -120,7 +120,7 @@ Transformations can be done in a specified order. This command prints every othe
 
 ```bash
 echo -n 'every other word is printed here' | \
-  choose -r ' ' --in-index=after\        # 1
+  choose -r ' ' --index=after\           # 1
                 -f '[02468]$'\           # 2
                 --sub '(.*) [0-9]+' '$1' # 3
 ```
@@ -136,7 +136,7 @@ cat some_content | grep "test" | head -n 5
 Compared to this:
 
 ```bash
-cat some_content | choose -f "test" --out 5
+cat some_content | choose -f "test" --head 5
 ```
 
 The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are arbitrary and can contain newline characters, whereas lines can't.
