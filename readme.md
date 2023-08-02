@@ -239,7 +239,7 @@ In contrast, this implicitly separates the input into tokens each delimited by a
 echo "this is a test" | choose -r --sub "\w+" banana
 ```
 
-Lastly, this is a weird hack that leverages the input and output delimiters. The replacement must be a literal string:
+Lastly, this is a weird hack that leverages the input and output delimiters. It can be faster, but the replacement must be a literal string:
 
 ```bash
 echo "this is a test" | choose -r "\w+" -o banana -d
@@ -247,19 +247,19 @@ echo "this is a test" | choose -r "\w+" -o banana -d
 
 ## Compared to sed
 
-choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which only allows for [basic expressions](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires a different implementation as the matched buffer must be manage to properly retain lookbehind bytes as tokens are created. An expression like this can't be done in sed:
+choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which allows only [basic expressions](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires [different logic](https://www.pcre.org/current/doc/html/pcre2partial.html#SEC4) for management of the match buffer, since lookbehind bytes must be properly retained as tokens are created. Meaning sed can't handle expressions like this:
 
 ```bash
 echo "banana test test" | choose -r --sed '(?<!banana )test' --replace hello
 ```
 
-Additionally, sed works per line of the input. choose doesn't make this distinction. For example, here's a substitution which has a target that includes a newline and null character:
+Additionally, sed works per line of the input. choose doesn't assume the distinction of lines. To emphasize a point, here is a tricky substitution which has a target that includes a newline and null character:
 
 ```bash
 echo -e "this\n\0is\na\ntest" | choose -r --sed 'is\n\0is' --replace something
 ```
 
-sed can't make a substitution where the target contains the delimiter, since the input is split into lines based on a delimiter before substitution occurs. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly.
+sed can't make a substitution if the target contains the delimiter (a newline character); the input is split into lines before substitution occurs, so the delimiter never makes it to the substitution logic. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly.
 
 # Speed
 
