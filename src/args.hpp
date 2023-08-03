@@ -184,7 +184,7 @@ void print_help_message() {
       "        --index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, concatenate the ascii representation of it's\n"
       "                arrival order."
-      "        --head <# tokens>\n"
+      "        --head [<# tokens>, default: 10]\n"
       "                stop reading the input once n tokens have reached this point\n"
       "        --replace <replacement>\n"
       "                a special case of the substitution op where the match target is\n"
@@ -403,7 +403,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
-        {"head", required_argument, NULL, 0},
+        {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"out", required_argument, NULL, 0},
@@ -452,13 +452,13 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 0: {
         // long option
         const char* name = long_options[option_index].name;
-        if (optarg) {
-          auto on_num_err = [&]() {
-            arg_error_preamble(argc, argv);
-            fprintf(stderr, "--%s parse error\n", name);
-            arg_has_errors = true;
-          };
+        auto on_num_err = [&]() {
+          arg_error_preamble(argc, argv);
+          fprintf(stderr, "--%s parse error\n", name);
+          arg_has_errors = true;
+        };
 
+        if (optarg) {
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
@@ -538,6 +538,15 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.delimit_not_at_end = true;
           } else if (strcmp("delimit-on-empty", name) == 0) {
             ret.delimit_on_empty = true;
+          } else if (strcmp("head", name) == 0) {
+            using T = decltype(InLimitOp(0).in_limit);
+            T val;
+            if (OPTIONAL_ARGUMENT_IS_PRESENT) {
+              val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
+            } else {
+              val = 10;
+            }
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
