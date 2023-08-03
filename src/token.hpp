@@ -140,7 +140,6 @@ struct BatchOutputStream {
 };
 
 // leads to an exit unless this is a unit test
-// effectively skips the tui interface
 struct termination_request : public std::exception {};
 
 namespace {
@@ -276,12 +275,21 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    // for when parts of a token are accumulated
+    // for when parts of a token are accumulated.
+    // this is neccesary when there isn't enough room in the match buffer
     std::vector<char> fragment;
 
     // this lambda applies the operations specified in the args to a candidate token.
     // returns true iff this should be the last token added to the output
     auto process_token = [&](const char* begin, const char* end) -> bool {
+      // the ops can be thought of as being applied in a pipeline, begin to end is the
+      // range of bytes currently being worked with; it is the thing being passed from
+      // the output of one op to the input of the next op. begin to end first points to
+      // memory existing in the match buffer. this buffer will get overwritten on the
+      // next match iteration, so it can be considered temporary. some ops need to
+      // store the result somewhere. they will take an input (begin to end) and place
+      // the result in t, a token (vec of chars). the next op will receive begin to end,
+      // but now begin and end will have been set to point within t.
       bool t_is_set = false;
       Token t;
 
@@ -340,6 +348,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               };
               direct_output.write_output(begin, end, direct_apply_index);
             }
+            // shortcut. the above ops wrote directly to the output
             goto after_direct_apply;
           } else {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
@@ -360,10 +369,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
       }
 
+      // if the tokens haven't been stored yet by the ops above,
+      // and a token t is needed
       if (!tokens_not_stored && !t_is_set) {
         str::append_to_buffer(t.buffer, begin, end);
-        begin = &*t.buffer.cbegin(); // not needed since it now points to a copy
-        end = &*t.buffer.cend();     // but keeps things clean
+        begin = &*t.buffer.cbegin();
+        end = &*t.buffer.cend();
       }
 
       if (is_direct_output) {
@@ -656,10 +667,12 @@ skip_read: // do another iteration but don't read in any more bytes
       }
     }
 
+    // apply after sorting
     if (args.reverse) {
       std::reverse(output.begin(), output.end());
     }
 
+    // last thing to be applied is truncating the result
     if (args.out.has_value() && output.size() > *args.out) {
       output.resize(*args.out);
     }
