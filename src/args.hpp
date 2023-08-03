@@ -1,7 +1,6 @@
 #pragma once
 #include <getopt.h>
 #include <unistd.h>
-#include <cassert>
 #include <csignal>
 #include <cstring>
 #include <limits>
@@ -189,25 +188,22 @@ void print_help_message() {
       "                the positional argument. --match or --sed must be specified.\n"
       "                this op must come before all ops that edit tokens: all except rm\n"
       "                or filter\n"
+#ifndef PCRE2_SUBSTITUTE_REPLACEMENT_ONLY
+      "                WARNING PCRE2 version old: lookaround outside match won't work\n"
+#endif
+#ifndef PCRE2_SUBSTITUTE_LITERAL
+      "                WARNING PCRE2 version old: replacement is never literal\n"
+#endif
       "        --rm, --remove <target>\n"
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
       "                apply a global text substitution on each token. the target\n"
-      "                inherits the same match options as the positional argument. "
-#ifdef PCRE2_SUBSTITUTE_LITERAL
-      "the\n"
-#else
-      "if\n"
-#endif
-#ifdef PCRE2_SUBSTITUTE_LITERAL
-      "                replacement is done literally if the positional argument is\n"
+      "                inherits the same match options as the positional argument.\n"
+      "                the replacement is done literally if the positional argument is\n"
       "                literal (aka the default without -r). otherwise, the replacement\n"
       "                is a regular expression\n"
-#else
-      "                compiled with a later verion of PCRE2, then the replacement\n"
-      "                would be been done literally if the positional argument is\n"
-      "                literal (aka the default without -r). however, this version does\n"
-      "                not support this, so the replacement is always a regex\n"
+#ifndef PCRE2_SUBSTITUTE_LITERAL
+      "                WARNING PCRE2 version old: replacement is never literal\n"
 #endif
       "options:\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
@@ -488,7 +484,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               arg_has_errors = true;
               align = IndexOp::BEFORE;
             }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(align));
           } else if (strcmp("replace", name) == 0) {
             for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
               if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
@@ -569,7 +565,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             } else {
               align = IndexOp::BEFORE;
             }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(align));
           } else if (strcmp("unique-use-set", name) == 0) {
             ret.unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {

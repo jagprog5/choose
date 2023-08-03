@@ -1,6 +1,5 @@
 #pragma once
 #include <algorithm>
-#include <cassert>
 #include <optional>
 #include <set>
 #include <string_view>
@@ -337,7 +336,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             } else {
               IndexOp& in_op = std::get<IndexOp>(op);
               auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
-                in_op.direct_apply(out, begin, end, direct_output.out_count);
+                in_op.direct_apply(out, begin, end);
               };
               direct_output.write_output(begin, end, direct_apply_index);
             }
@@ -352,7 +351,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               if (!t_is_set) {
                 str::append_to_buffer(t.buffer, begin, end);
               }
-              in_op.apply(t.buffer, tokens_not_stored ? direct_output.out_count : output.size());
+              in_op.apply(t.buffer);
             }
             t_is_set = true;
             begin = &*t.buffer.cbegin();

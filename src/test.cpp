@@ -176,36 +176,40 @@ BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
   BOOST_REQUIRE(str::utf8::last_completed_character_end(gotchya, std::end(gotchya)) == std::end(gotchya) - 1);
 }
 
-BOOST_AUTO_TEST_CASE(apply_index_op_before) {
-  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::BEFORE);
+BOOST_AUTO_TEST_CASE(apply_index_op) {
+  auto op = IndexOp(IndexOp::BEFORE);
+  op.index = 123;
   std::vector<char> empty;
-  op.apply(empty, 123);
+  op.apply(empty);
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
   std::vector<char> val_zero;
-  op.apply(val_zero, 0); // log edge case
+  op.index = 0; // log edge case
+  op.apply(val_zero);
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
 
-  auto in_op = IndexOp(IndexOp::INPUT, IndexOp::BEFORE);
-  in_op.in_index = 123; // used
+  op.index = 456;
   std::vector<char> not_empty{'a', 'b', 'c'};
-  in_op.apply(not_empty, 999);
-  BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
+  op.apply(not_empty);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'4', '5', '6', ' ', 'a', 'b', 'c'}));
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_after) {
-  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::AFTER);
+  auto op = IndexOp(IndexOp::AFTER);
   std::vector<char> empty;
-  op.apply(empty, 123);
+  op.index = 123;
+  op.apply(empty);
   BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
 
-  std::vector<char> less_than_10;
-  op.apply(less_than_10, 9);
+  std::vector<char> less_than_10; // after logic edge case
+  op.index = 9;
+  op.apply(less_than_10);
   BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
-  op.apply(not_empty, 123);
-  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
+  op.index = 456;
+  op.apply(not_empty);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '4', '5', '6'}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
