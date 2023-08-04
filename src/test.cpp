@@ -4,6 +4,11 @@
 #include "ncurses_wrapper.hpp"
 #include "token.hpp"
 
+/*
+valgrind should give a clean bill of health:
+valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt ./unit_tests
+*/
+
 using namespace choose;
 
 char continuation = (char)0b10000000;
