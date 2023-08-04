@@ -38,11 +38,38 @@ struct RmOrFilterOp {
 };
 
 struct InLimitOp {
-  size_t in_limit;
+  using T = size_t; // parse type put in args
+  enum Result { REMOVE, ALLOW, DONE };
+  T in_count = 0;
+  std::optional<T> low;
+  T high;
 
-  InLimitOp(size_t n) : in_limit(n) {}
+  InLimitOp(std::tuple<T, std::optional<T>> val) {
+    auto first = std::get<0>(val);
+    auto second = std::get<1>(val);
+    if (second) {
+      this->low = first;
+      this->high = *second;
+    } else {
+      this->high = first;
+    }
+  }
 
-  bool finished() { return !in_limit--; }
+  InLimitOp(T high) : InLimitOp(std::nullopt, high) {}
+  InLimitOp(std::optional<T> low, T high) : low(low), high(high) {}
+
+  Result apply() {
+    Result ret;
+    if (low && in_count < *low) {
+      ret = REMOVE;
+    } else if (in_count < high) {
+      ret = ALLOW;
+    } else {
+      ret = DONE;
+    }
+    ++in_count;
+    return ret;
+  }
 };
 
 struct SubOp {

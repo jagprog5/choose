@@ -9,6 +9,7 @@
 // for version
 #include <ncursesw/curses.h>
 
+#include "token_common.hpp"
 #include "numeric_utils.hpp"
 #include "ordered_op.hpp"
 
@@ -46,7 +47,7 @@ struct Arguments {
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
-  std::optional<typename std::vector<int>::size_type> out;
+  std::optional<typename std::vector<Token>::size_type> out;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -462,18 +463,18 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
           } else if (strcmp("buf-size", name) == 0) {
-            ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
+            ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
-            ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
+            ret.buf_size_frag = num::parse_number<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
           } else if (strcmp("head", name) == 0) {
-            auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
           } else if (strcmp("max-lookbehind", name) == 0) {
-            ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
+            ret.max_lookbehind = num::parse_number<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
           } else if (strcmp("read", name) == 0) {
-            ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
+            ret.bytes_to_read = num::parse_number<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
           } else if (strcmp("out", name) == 0) {
-            ret.out = num::parse_unsigned<decltype(ret.out)::value_type>(on_num_err, optarg);
+            ret.out = num::parse_number<decltype(ret.out)::value_type>(on_num_err, optarg);
           } else if (strcmp("index", name) == 0) {
             IndexOp::Align align; // NOLINT
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
@@ -514,14 +515,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
-            if (val > std::numeric_limits<decltype(ret.out)>::max()) {
-              // careful handling here since in limits are unsigned but out limit is signed
-              on_num_err();
-            } else {
-              ret.out = val;
-              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), uncompiled::UncompiledInLimitOp(val));
-            }
+            auto val = num::parse_number<InLimitOp::T>(on_num_err, optarg);
+            ret.out = val;
+            uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), uncompiled::UncompiledInLimitOp(val));
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -538,10 +534,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("delimit-on-empty", name) == 0) {
             ret.delimit_on_empty = true;
           } else if (strcmp("head", name) == 0) {
-            using T = decltype(InLimitOp(0).in_limit);
-            T val;
+            InLimitOp::T val;
             if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
+              val = num::parse_number<InLimitOp::T>(on_num_err, optarg);
             } else {
               val = 10;
             }

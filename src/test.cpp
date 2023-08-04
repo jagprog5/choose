@@ -376,6 +376,18 @@ BOOST_AUTO_TEST_CASE(output_in_limit) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(default_head) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10", {"--head"});
+  choose_output correct_output{to_vec("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(head_min_limit) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10", {"--head=3,5"});
+  choose_output correct_output{to_vec("3\n4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(output_rm_filter) {
   choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--rm=second", "--filter=first"});
   choose_output correct_output{to_vec("first\n")};
@@ -905,7 +917,7 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(numeric_utils)
 
-BOOST_AUTO_TEST_CASE(numeric_utils) {
+BOOST_AUTO_TEST_CASE(parse_number_unsigned) {
   BOOST_REQUIRE_EQUAL(*num::mul_overflow(7u, 15u), 105u);
   BOOST_REQUIRE(num::mul_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
   BOOST_REQUIRE_EQUAL(*num::add_overflow(7u, 15u), 22u);
@@ -913,21 +925,55 @@ BOOST_AUTO_TEST_CASE(numeric_utils) {
 
   auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "0"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "16"), 16);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "+0"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "16"), 16);
 
   int err_count = 0;
   auto must_be_called = [&]() { ++err_count; };
 
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "-17"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "   123"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, NULL), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967296"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "42949672950"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967295", true, false), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "0", false, true), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "-17"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "   123"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, NULL), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "4294967296"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "42949672950"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "4294967295", true, false), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "0", false, true), 0);
   BOOST_REQUIRE_EQUAL(err_count, 7);
+}
+
+BOOST_AUTO_TEST_CASE(parse_number_signed) {
+  auto should_not_be_called = []() { BOOST_REQUIRE(false); };
+
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-128"), -128);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "+127"), +127);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "72"), 72);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-72"), -72);
+
+  int err_count = 0;
+  auto must_be_called = [&]() { ++err_count; };
+
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "-129"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "+128"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, NULL), 0);
+  BOOST_REQUIRE_EQUAL(err_count, 3);
+}
+
+BOOST_AUTO_TEST_CASE(parse_number_pair) {
+  auto should_not_be_called = []() { BOOST_REQUIRE(false); };
+
+  using T = std::tuple<char, std::optional<char>>;
+
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15,51") == (T{15, 51}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "+15,-51") == (T{15, -51}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15") == (T{15, std::nullopt}));
+
+  int err_count = 0;
+  auto must_be_called = [&]() { ++err_count; };
+  BOOST_REQUIRE(num::parse_number_pair<char>(must_be_called, "abcdef") == (T{0, 0}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(must_be_called, "15a51") == (T{0, 0}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(must_be_called, "15,bcd51") == (T{0, 0}));
+  BOOST_REQUIRE_EQUAL(err_count, 3);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
