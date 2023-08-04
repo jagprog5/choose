@@ -6,7 +6,6 @@
 #include <unordered_set>
 #include <utility>
 
-#include "token_common.hpp"
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
@@ -20,6 +19,23 @@ make cov-clean && make cov-show
 */
 
 namespace choose {
+
+// Token is a thin wrapper around vector<char>. provides type clarity
+struct Token {
+  std::vector<char> buffer;
+
+  // for testing
+  Token(const char* in) : buffer(in, in + strlen(in)) {}
+  bool operator==(const Token& other) const { return this->buffer == other.buffer; }
+
+  Token(std::vector<char>&& i) : buffer(std::move(i)){};
+  Token() = default;
+  Token(const Token&) = default;
+  Token(Token&&) = default;
+  Token& operator=(const Token&) & = default;
+  Token& operator=(Token&&) & = default;
+  ~Token() = default;
+};
 
 // writes an output delimiter between each token
 // and (might, depending on args) a batch output delimiter on finish.
@@ -188,7 +204,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
   std::vector<Token> output;             // !tokens_not_stored, this is used
 
-  if (args.out == 0) {
+  if (args.out_end == 0) {
     // edge case on logic. it adds a token, then checks if the out limit has been hit
     goto skip_all;
   }
@@ -379,7 +395,7 @@ after_direct_apply:
         if (flush) {
           choose::str::flush_f(args.output);
         }
-        if (direct_output.out_count == args.out) {
+        if (direct_output.out_count == args.out_end) {
           // code coverage reaches here. mistakenly shows finish_output as
           // unreached but throw is reached. weird.
           direct_output.finish_output();
@@ -645,11 +661,16 @@ skip_read: // do another iteration but don't read in any more bytes
       set->clear();
     }
 
-    if (args.out.has_value() && output.size() > *args.out && args.sort && !args.comp_sort) {
+    // apply sorting
+    // if (!args.out.has_value() && ) {
+
+    // }
+
+    if (args.out_end.has_value() && output.size() > *args.out_end && args.sort && !args.comp_sort) {
       // if lexicographically sorting and the output is being truncated then do a
       // partial sort instead. can only be applied to lexicographical since there's no
       // stable partial sort (and stability is required for user defined comp sort)
-      std::partial_sort(output.begin(), output.begin() + *args.out, output.end(), lexicographical_comparison);
+      std::partial_sort(output.begin(), output.begin() + *args.out_end, output.end(), lexicographical_comparison);
     } else {
       if (args.comp_sort) {
         std::stable_sort(output.begin(), output.end(), user_defined_comparison);
@@ -664,8 +685,8 @@ skip_read: // do another iteration but don't read in any more bytes
     }
 
     // last thing to be applied is truncating the result
-    if (args.out.has_value() && output.size() > *args.out) {
-      output.resize(*args.out);
+    if (args.out_end.has_value() && output.size() > *args.out_end) {
+      output.resize(*args.out_end);
     }
 
   } // scope for goto

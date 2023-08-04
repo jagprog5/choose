@@ -38,7 +38,7 @@ struct RmOrFilterOp {
 };
 
 struct InLimitOp {
-  using T = size_t; // parse type put in args
+  using T = size_t; // type for arg parsing
   enum Result { REMOVE, ALLOW, DONE };
   T in_count = 0;
   std::optional<T> low;
@@ -55,8 +55,9 @@ struct InLimitOp {
     }
   }
 
-  InLimitOp(T high) : InLimitOp(std::nullopt, high) {}
-  InLimitOp(std::optional<T> low, T high) : low(low), high(high) {}
+  InLimitOp(T low, T high) : low(low), high(high) {}
+
+  InLimitOp(T high) : low(std::nullopt), high(high) {}
 
   Result apply() {
     Result ret;

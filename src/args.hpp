@@ -9,7 +9,6 @@
 // for version
 #include <ncursesw/curses.h>
 
-#include "token_common.hpp"
 #include "numeric_utils.hpp"
 #include "ordered_op.hpp"
 
@@ -47,7 +46,10 @@ struct Arguments {
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
-  std::optional<typename std::vector<Token>::size_type> out;
+  // truncate beginning of result, inclusive
+  std::optional<ssize_t> out_start;
+  // truncate end of result, exclusive
+  std::optional<ssize_t> out_end;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -185,7 +187,7 @@ void print_help_message() {
       "        --index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, concatenate the ascii representation of it's\n"
       "                arrival order."
-      "        --head [<# tokens>, default: 10]\n"
+      "        --head [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                stop reading the input once n tokens have reached this point\n"
       "        --replace <replacement>\n"
       "                a special case of the substitution op where the match target is\n"
@@ -264,9 +266,9 @@ void print_help_message() {
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
-      "        --out <# tokens>\n"
+      "        --out [<+/-# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
       "                send only the first n tokens to the output or tui. like --head\n"
-      "                after sorting, uniqueness, and reverse.\n"
+      "                applied after sorting, uniqueness, and reverse.\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the positional argument.\n"
@@ -284,8 +286,9 @@ void print_help_message() {
       "                the input order. an indicator displays the order\n"
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
-      "        --take <# tokens>\n"
-      "                sets --out, and a --head at the beginning\n"
+      "        --take [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "                sets --out, and a --head at the beginning. this places a limit\n"
+      "                on the input and the output\n"
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
@@ -403,12 +406,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
+        {"locale", required_argument, NULL, 0},
+        {"replace", required_argument, NULL, 0},
         {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
-        {"locale", required_argument, NULL, 0},
-        {"out", required_argument, NULL, 0},
-        {"replace", required_argument, NULL, 0},
-        {"take", required_argument, NULL, 0},
+        {"out", optional_argument, NULL, 0},
+        {"take", optional_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
         {"delimit-same", no_argument, NULL, 'd'},
@@ -458,25 +461,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           arg_has_errors = true;
         };
 
-        if (optarg) {
-          // long option with argument
-          if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
-          } else if (strcmp("buf-size", name) == 0) {
-            ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
-          } else if (strcmp("buf-size-frag", name) == 0) {
-            ret.buf_size_frag = num::parse_number<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
-          } else if (strcmp("head", name) == 0) {
-            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
-          } else if (strcmp("max-lookbehind", name) == 0) {
-            ret.max_lookbehind = num::parse_number<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
-          } else if (strcmp("read", name) == 0) {
-            ret.bytes_to_read = num::parse_number<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
-          } else if (strcmp("out", name) == 0) {
-            ret.out = num::parse_number<decltype(ret.out)::value_type>(on_num_err, optarg);
-          } else if (strcmp("index", name) == 0) {
-            IndexOp::Align align; // NOLINT
+        // helper lambdas for optional args
+        auto index_handler = [&](bool has_arg) {
+          IndexOp::Align align; // NOLINT
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
               align = IndexOp::BEFORE;
             } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
@@ -487,7 +475,83 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               arg_has_errors = true;
               align = IndexOp::BEFORE;
             }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(align));
+          } else {
+            align = IndexOp::BEFORE;
+          }
+          uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(align));
+        };
+
+        auto head_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
+          } else {
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(10));
+          }
+        };
+
+        auto take_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
+            InLimitOp::T first = std::get<0>(val);
+            std::optional<InLimitOp::T> second = std::get<1>(val);
+            if (first > std::numeric_limits<decltype(ret.out_start)::value_type>::max() //
+                || (second && *second > std::numeric_limits<decltype(ret.out_end)::value_type>::max())) {
+              // careful for bounds since out_start and out_end are signed
+              on_num_err();
+            } else {
+              if (second) {
+                ret.out_start = first;
+                ret.out_end = second;
+                uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                    uncompiled::UncompiledInLimitOp(first, *second));
+              } else {
+                ret.out_end = first;
+                uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                    uncompiled::UncompiledInLimitOp(first));
+              }
+            }
+          } else {
+            ret.out_end = 10;
+            uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                 uncompiled::UncompiledInLimitOp(10));
+          }
+        };
+
+        auto out_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<ssize_t>(on_num_err, optarg);
+            auto first = std::get<0>(val);
+            auto second = std::get<1>(val);
+            if (second) {
+              ret.out_start = first;
+              ret.out_end = second;
+            } else {
+              ret.out_end = first;
+            }
+          } else {
+            ret.out_start = 10;
+          }
+        };
+
+        if (optarg) {
+          // long option with argument
+          if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
+          } else if (strcmp("buf-size", name) == 0) {
+            ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
+          } else if (strcmp("buf-size-frag", name) == 0) {
+            ret.buf_size_frag = num::parse_number<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
+          } else if (strcmp("head", name) == 0) {
+            head_handler(true);
+          } else if (strcmp("max-lookbehind", name) == 0) {
+            ret.max_lookbehind = num::parse_number<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
+          } else if (strcmp("read", name) == 0) {
+            ret.bytes_to_read = num::parse_number<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
+          } else if (strcmp("out", name) == 0) {
+            out_handler(true);
+          } else if (strcmp("index", name) == 0) {
+            index_handler(true);
           } else if (strcmp("replace", name) == 0) {
             for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
               if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
@@ -515,9 +579,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            auto val = num::parse_number<InLimitOp::T>(on_num_err, optarg);
-            ret.out = val;
-            uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), uncompiled::UncompiledInLimitOp(val));
+            take_handler(true);
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -534,13 +596,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("delimit-on-empty", name) == 0) {
             ret.delimit_on_empty = true;
           } else if (strcmp("head", name) == 0) {
-            InLimitOp::T val;
-            if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              val = num::parse_number<InLimitOp::T>(on_num_err, optarg);
-            } else {
-              val = 10;
-            }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
+            head_handler(false);
+          } else if (strcmp("out", name) == 0) {
+            out_handler(false);
+          } else if (strcmp("take", name) == 0) {
+            take_handler(false);
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
@@ -556,22 +616,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("index", name) == 0) {
-            IndexOp::Align align; // NOLINT
-            if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-                align = IndexOp::BEFORE;
-              } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-                align = IndexOp::AFTER;
-              } else {
-                arg_error_preamble(argc, argv);
-                fprintf(stderr, "alignment must be before or after\n");
-                arg_has_errors = true;
-                align = IndexOp::BEFORE;
-              }
-            } else {
-              align = IndexOp::BEFORE;
-            }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(align));
+            index_handler(false);
           } else if (strcmp("unique-use-set", name) == 0) {
             ret.unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {
