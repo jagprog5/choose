@@ -1,7 +1,6 @@
 #pragma once
 #include <getopt.h>
 #include <unistd.h>
-#include <cassert>
 #include <csignal>
 #include <cstring>
 #include <limits>
@@ -47,7 +46,10 @@ struct Arguments {
   bool delimit_not_at_end = false;
   bool delimit_on_empty = false;
 
-  std::optional<typename std::vector<int>::size_type> out;
+  // truncate beginning of result, inclusive
+  std::optional<size_t> out_start;
+  // truncate end of result, exclusive
+  std::optional<size_t> out_end;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -176,38 +178,38 @@ void print_help_message() {
       "        -h, --help\n"
       "        -v, --version\n"
       "ordered operations can be specified multiple times and are applied in the order\n"
-      "they are stated. they are applied before any sorting or uniqueness options.\n"
+      "they are stated. they are applied before any sorting or uniqueness options. if\n"
+      "ops need to be applied after sorting an uniqueness, then multiple instances of\n"
+      "choose should be chained together via a pipe\n"
       "        -f, --filter <target>\n"
       "                remove tokens that don't match. inherits the same match options\n"
       "                as the positional argument\n"
       "        --index [b[efore]|a[fter]|<default: b>]\n"
-      "                on each token, insert the input index\n"
-      "        --head <# tokens>\n"
+      "                on each token, concatenate the ascii representation of it's\n"
+      "                arrival order."
+      "        --head [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                stop reading the input once n tokens have reached this point\n"
       "        --replace <replacement>\n"
       "                a special case of the substitution op where the match target is\n"
       "                the positional argument. --match or --sed must be specified.\n"
       "                this op must come before all ops that edit tokens: all except rm\n"
       "                or filter\n"
+#ifndef PCRE2_SUBSTITUTE_REPLACEMENT_ONLY
+      "                WARNING PCRE2 version old: lookaround outside match won't work\n"
+#endif
+#ifndef PCRE2_SUBSTITUTE_LITERAL
+      "                WARNING PCRE2 version old: replacement is never literal\n"
+#endif
       "        --rm, --remove <target>\n"
       "                inverse of --filter\n"
       "        --sub, --substitute <target> <replacement>\n"
       "                apply a global text substitution on each token. the target\n"
-      "                inherits the same match options as the positional argument. "
-#ifdef PCRE2_SUBSTITUTE_LITERAL
-      "the\n"
-#else
-      "if\n"
-#endif
-#ifdef PCRE2_SUBSTITUTE_LITERAL
-      "                replacement is done literally if the positional argument is\n"
+      "                inherits the same match options as the positional argument.\n"
+      "                the replacement is done literally if the positional argument is\n"
       "                literal (aka the default without -r). otherwise, the replacement\n"
       "                is a regular expression\n"
-#else
-      "                compiled with a later verion of PCRE2, then the replacement\n"
-      "                would be been done literally if the positional argument is\n"
-      "                literal (aka the default without -r). however, this version does\n"
-      "                not support this, so the replacement is always a regex\n"
+#ifndef PCRE2_SUBSTITUTE_LITERAL
+      "                WARNING PCRE2 version old: replacement is never literal\n"
 #endif
       "options:\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
@@ -264,17 +266,16 @@ void print_help_message() {
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
-      "        --out <# tokens>\n"
-      "                send only the first n tokens to the output or tui. like --head\n"
-      "                after sorting and uniqueness\n"
+      "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "                truncate after sorting and uniqueness\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
       "        --reverse\n"
-      "                reverse the token order. this happens just before it is sent to\n"
-      "                the output or tui\n"
+      "                reverse the token order. this is the last step before being sent\n"
+      "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sed\n"
@@ -285,8 +286,9 @@ void print_help_message() {
       "                the input order. an indicator displays the order\n"
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
-      "        --take <# tokens>\n"
-      "                sets --out, and a --head at the beginning\n"
+      "        --take [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "                sets --out, and a --head at the beginning. this places a limit\n"
+      "                on the input and the output\n"
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
@@ -404,12 +406,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
-        {"head", required_argument, NULL, 0},
-        {"index", optional_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
-        {"out", required_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
-        {"take", required_argument, NULL, 0},
+        {"head", optional_argument, NULL, 0},
+        {"index", optional_argument, NULL, 0},
+        {"out", optional_argument, NULL, 0},
+        {"take", optional_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
         {"delimit-same", no_argument, NULL, 'd'},
@@ -453,31 +455,16 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 0: {
         // long option
         const char* name = long_options[option_index].name;
-        if (optarg) {
-          auto on_num_err = [&]() {
-            arg_error_preamble(argc, argv);
-            fprintf(stderr, "--%s parse error\n", name);
-            arg_has_errors = true;
-          };
+        auto on_num_err = [&]() {
+          arg_error_preamble(argc, argv);
+          fprintf(stderr, "--%s parse error\n", name);
+          arg_has_errors = true;
+        };
 
-          // long option with argument
-          if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
-          } else if (strcmp("buf-size", name) == 0) {
-            ret.buf_size = num::parse_unsigned<decltype(ret.buf_size)>(on_num_err, optarg, false);
-          } else if (strcmp("buf-size-frag", name) == 0) {
-            ret.buf_size_frag = num::parse_unsigned<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
-          } else if (strcmp("head", name) == 0) {
-            auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
-          } else if (strcmp("max-lookbehind", name) == 0) {
-            ret.max_lookbehind = num::parse_unsigned<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
-          } else if (strcmp("read", name) == 0) {
-            ret.bytes_to_read = num::parse_unsigned<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
-          } else if (strcmp("out", name) == 0) {
-            ret.out = num::parse_unsigned<decltype(ret.out)::value_type>(on_num_err, optarg);
-          } else if (strcmp("index", name) == 0) {
-            IndexOp::Align align; // NOLINT
+        // helper lambdas for optional args
+        auto index_handler = [&](bool has_arg) {
+          IndexOp::Align align; // NOLINT
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
             if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
               align = IndexOp::BEFORE;
             } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
@@ -488,7 +475,77 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               arg_has_errors = true;
               align = IndexOp::BEFORE;
             }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
+          } else {
+            align = IndexOp::BEFORE;
+          }
+          uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(align));
+        };
+
+        auto head_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
+          } else {
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(10));
+          }
+        };
+
+        auto take_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
+            InLimitOp::T first = std::get<0>(val);
+            std::optional<InLimitOp::T> second = std::get<1>(val);
+            if (second) {
+              ret.out_start = first;
+              ret.out_end = second;
+              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                   uncompiled::UncompiledInLimitOp(first, *second));
+            } else {
+              ret.out_end = first;
+              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                   uncompiled::UncompiledInLimitOp(first));
+            }
+          } else {
+            ret.out_end = 10;
+            uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                 uncompiled::UncompiledInLimitOp(10));
+          }
+        };
+
+        auto out_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<size_t>(on_num_err, optarg);
+            auto first = std::get<0>(val);
+            auto second = std::get<1>(val);
+            if (second) {
+              ret.out_start = first;
+              ret.out_end = second;
+            } else {
+              ret.out_end = first;
+            }
+          } else {
+            ret.out_end = 10;
+          }
+        };
+
+        if (optarg) {
+          // long option with argument
+          if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
+          } else if (strcmp("buf-size", name) == 0) {
+            ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
+          } else if (strcmp("buf-size-frag", name) == 0) {
+            ret.buf_size_frag = num::parse_number<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
+          } else if (strcmp("head", name) == 0) {
+            head_handler(true);
+          } else if (strcmp("max-lookbehind", name) == 0) {
+            ret.max_lookbehind = num::parse_number<decltype(ret.max_lookbehind)>(on_num_err, optarg, true, false);
+          } else if (strcmp("read", name) == 0) {
+            ret.bytes_to_read = num::parse_number<decltype(ret.bytes_to_read)>(on_num_err, optarg, false, false);
+          } else if (strcmp("out", name) == 0) {
+            out_handler(true);
+          } else if (strcmp("index", name) == 0) {
+            index_handler(true);
           } else if (strcmp("replace", name) == 0) {
             for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
               if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
@@ -516,14 +573,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
-            auto val = num::parse_unsigned<decltype(InLimitOp(0).in_limit)>(on_num_err, optarg);
-            if (val > std::numeric_limits<decltype(ret.out)>::max()) {
-              // careful handling here since in limits are unsigned but out limit is signed
-              on_num_err();
-            } else {
-              ret.out = val;
-              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), uncompiled::UncompiledInLimitOp(val));
-            }
+            take_handler(true);
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -539,6 +589,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.delimit_not_at_end = true;
           } else if (strcmp("delimit-on-empty", name) == 0) {
             ret.delimit_on_empty = true;
+          } else if (strcmp("head", name) == 0) {
+            head_handler(false);
+          } else if (strcmp("out", name) == 0) {
+            out_handler(false);
+          } else if (strcmp("take", name) == 0) {
+            take_handler(false);
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
@@ -554,22 +610,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
           } else if (strcmp("index", name) == 0) {
-            IndexOp::Align align; // NOLINT
-            if (OPTIONAL_ARGUMENT_IS_PRESENT) {
-              if (strcasecmp("before", optarg) == 0 || strcasecmp("b", optarg) == 0) {
-                align = IndexOp::BEFORE;
-              } else if (strcasecmp("after", optarg) == 0 || strcasecmp("a", optarg) == 0) {
-                align = IndexOp::AFTER;
-              } else {
-                arg_error_preamble(argc, argv);
-                fprintf(stderr, "alignment must be before or after\n");
-                arg_has_errors = true;
-                align = IndexOp::BEFORE;
-              }
-            } else {
-              align = IndexOp::BEFORE;
-            }
-            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledIndexOp(IndexOp::INPUT, align));
+            index_handler(false);
           } else if (strcmp("unique-use-set", name) == 0) {
             ret.unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {

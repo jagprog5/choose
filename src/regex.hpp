@@ -141,6 +141,8 @@ std::vector<char> substitute_global(const code& re, //
   if (options(re) & PCRE2_LITERAL) {
     sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
   }
+#else
+#warning "PCRE2 old version. replacement is never literal"
 #endif
 
   std::vector<char> ret;
@@ -195,9 +197,10 @@ std::vector<char> substitute_global(const code& re, //
 std::vector<char> substitute_on_match(const match_data& data, //
                                       const code& re,
                                       const char* subject,
-                                      PCRE2_SIZE subject_length,
+                                      [[maybe_unused]] PCRE2_SIZE subject_length,
                                       const char* replacement,
                                       SubstitutionContext& context) {
+#ifdef PCRE2_SUBSTITUTE_REPLACEMENT_ONLY
   apply_null_guard(subject, subject_length);
   uint32_t sub_flags = PCRE2_SUBSTITUTE_REPLACEMENT_ONLY //
                        | PCRE2_SUBSTITUTE_MATCHED        //
@@ -250,6 +253,14 @@ std::vector<char> substitute_on_match(const match_data& data, //
   } else {
     throw get_sub_err(sub_rc);
   }
+#else
+#warning "PCRE2 old version. --replace with lookaround outside target bounds will not work"
+  // emulate same result
+  PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(data.get());
+  const char* target_begin = subject + ovector[0];
+  const char* target_end = subject + ovector[1];
+  return substitute_global(re, target_begin, target_end - target_begin, replacement, context);
+#endif
 }
 
 struct Match {

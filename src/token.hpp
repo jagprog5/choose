@@ -1,12 +1,12 @@
 #pragma once
 #include <algorithm>
-#include <cassert>
 #include <optional>
 #include <set>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
 
+#include "algo_utils.hpp"
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
@@ -57,14 +57,20 @@ struct TokenOutputStream {
 
   TokenOutputStream(const Arguments& args) : args(args) {}
 
+  bool begin_discard() const { //
+    return this->args.out_start && this->out_count < *this->args.out_start;
+  }
+
   // write a part of a token to the output.
   // the last part of a token must instead use write_output
   void write_output_fragment(const char* begin, const char* end) {
-    if (delimit_required_ && !args.sed) {
-      str::write_f(args.output, args.out_delimiter);
+    if (!begin_discard()) {
+      if (delimit_required_ && !args.sed) {
+        str::write_f(args.output, args.out_delimiter);
+      }
+      delimit_required_ = false;
+      has_written = true;
     }
-    delimit_required_ = false;
-    has_written = true;
     str::write_f(args.output, begin, end);
   }
 
@@ -76,12 +82,14 @@ struct TokenOutputStream {
   void write_output(const char* begin, //
                     const char* end,
                     T handler = TokenOutputStream::default_write) {
-    if (delimit_required_ && !args.sed) {
-      str::write_f(args.output, args.out_delimiter);
+    if (!begin_discard()) {
+      if (delimit_required_ && !args.sed) {
+        str::write_f(args.output, args.out_delimiter);
+      }
+      delimit_required_ = true;
+      has_written = true;
+      handler(args.output, begin, end);
     }
-    delimit_required_ = true;
-    has_written = true;
-    handler(args.output, begin, end);
     ++out_count;
   }
 
@@ -141,7 +149,6 @@ struct BatchOutputStream {
 };
 
 // leads to an exit unless this is a unit test
-// effectively skips the tui interface
 struct termination_request : public std::exception {};
 
 namespace {
@@ -206,7 +213,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
   std::vector<Token> output;             // !tokens_not_stored, this is used
 
-  if (args.out == 0) {
+  if (args.out_end == 0) {
     // edge case on logic. it adds a token, then checks if the out limit has been hit
     goto skip_all;
   }
@@ -277,12 +284,21 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    // for when parts of a token are accumulated
+    // for when parts of a token are accumulated.
+    // this is neccesary when there isn't enough room in the match buffer
     std::vector<char> fragment;
 
     // this lambda applies the operations specified in the args to a candidate token.
     // returns true iff this should be the last token added to the output
     auto process_token = [&](const char* begin, const char* end) -> bool {
+      // the ops can be thought of as being applied in a pipeline, begin to end is the
+      // range of bytes currently being worked with; it is the thing being passed from
+      // the output of one op to the input of the next op. begin to end first points to
+      // memory existing in the match buffer. this buffer will get overwritten on the
+      // next match iteration, so it can be considered temporary. some ops need to
+      // store the result somewhere. they will take an input (begin to end) and place
+      // the result in t, a token (vec of chars). the next op will receive begin to end,
+      // but now begin and end will have been set to point within t.
       bool t_is_set = false;
       Token t;
 
@@ -319,9 +335,16 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (rf_op->removes(begin, end)) {
             return false;
           }
-        } else if (InLimitOp* rf_op = std::get_if<InLimitOp>(&op)) {
-          if (rf_op->finished()) {
-            return true;
+        } else if (InLimitOp* head_op = std::get_if<InLimitOp>(&op)) {
+          switch (head_op->apply()) {
+            case InLimitOp::REMOVE:
+              return false;
+              break;
+            case InLimitOp::DONE:
+              return true;
+              break;
+            default:
+              break;
           }
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
@@ -337,10 +360,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             } else {
               IndexOp& in_op = std::get<IndexOp>(op);
               auto direct_apply_index = [&](FILE* out, const char* begin, const char* end) { //
-                in_op.direct_apply(out, begin, end, direct_output.out_count);
+                in_op.direct_apply(out, begin, end);
               };
               direct_output.write_output(begin, end, direct_apply_index);
             }
+            // shortcut. the above ops wrote directly to the output
             goto after_direct_apply;
           } else {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
@@ -352,7 +376,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               if (!t_is_set) {
                 str::append_to_buffer(t.buffer, begin, end);
               }
-              in_op.apply(t.buffer, tokens_not_stored ? direct_output.out_count : output.size());
+              in_op.apply(t.buffer);
             }
             t_is_set = true;
             begin = &*t.buffer.cbegin();
@@ -361,10 +385,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
       }
 
+      // if the tokens haven't been stored yet by the ops above,
+      // and a token t is needed
       if (!tokens_not_stored && !t_is_set) {
         str::append_to_buffer(t.buffer, begin, end);
-        begin = &*t.buffer.cbegin(); // not needed since it now points to a copy
-        end = &*t.buffer.cend();     // but keeps things clean
+        begin = &*t.buffer.cbegin();
+        end = &*t.buffer.cend();
       }
 
       if (is_direct_output) {
@@ -378,7 +404,7 @@ after_direct_apply:
         if (flush) {
           choose::str::flush_f(args.output);
         }
-        if (direct_output.out_count == args.out) {
+        if (direct_output.out_count == args.out_end) {
           // code coverage reaches here. mistakenly shows finish_output as
           // unreached but throw is reached. weird.
           direct_output.finish_output();
@@ -644,27 +670,43 @@ skip_read: // do another iteration but don't read in any more bytes
       set->clear();
     }
 
-    if (args.out.has_value() && output.size() > *args.out && args.sort && !args.comp_sort) {
-      // if lexicographically sorting and the output is being truncated then do a
-      // partial sort instead. can only be applied to lexicographical since there's no
-      // stable partial sort (and stability is required for user defined comp sort)
-      std::partial_sort(output.begin(), output.begin() + *args.out, output.end(), lexicographical_comparison);
-    } else {
+    if (!args.out_start && !args.out_end) {
+      // no truncation needed. this is the simplest case
       if (args.comp_sort) {
         std::stable_sort(output.begin(), output.end(), user_defined_comparison);
       } else if (args.sort) {
         std::sort(output.begin(), output.end(), lexicographical_comparison);
       }
-    }
+    } else {
+      // truncate the end, leaving only the beginning elements
+      typename std::vector<Token>::iterator middle;
+      middle = output.begin() + *args.out_end;
+      if (middle > output.end()) {
+        middle = output.end();
+      }
 
+      if (args.comp_sort) {
+        choose::stable_partial_sort(output.begin(), middle, output.end(), user_defined_comparison);
+      } else if (args.sort) {
+        std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
+      }
+      output.resize(middle - output.begin());
+      if (args.out_start) {
+        if (*args.out_start < output.size()) {
+          output.erase(output.begin(), output.begin() + *args.out_start);
+        } else {
+          output.clear();
+        }
+      }
+    }
+    // don't apply truncation again, since it was just done above
+    args.out_start = std::nullopt;
+    args.out_end = std::nullopt;
+
+    // apply reverse last
     if (args.reverse) {
       std::reverse(output.begin(), output.end());
     }
-
-    if (args.out.has_value() && output.size() > *args.out) {
-      output.resize(*args.out);
-    }
-
   } // scope for goto
 
 skip_all:

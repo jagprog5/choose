@@ -4,6 +4,11 @@
 #include "ncurses_wrapper.hpp"
 #include "token.hpp"
 
+/*
+valgrind should give a clean bill of health:
+valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt ./unit_tests
+*/
+
 using namespace choose;
 
 char continuation = (char)0b10000000;
@@ -176,36 +181,40 @@ BOOST_AUTO_TEST_CASE(test_end_of_last_complete_character) {
   BOOST_REQUIRE(str::utf8::last_completed_character_end(gotchya, std::end(gotchya)) == std::end(gotchya) - 1);
 }
 
-BOOST_AUTO_TEST_CASE(apply_index_op_before) {
-  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::BEFORE);
+BOOST_AUTO_TEST_CASE(apply_index_op) {
+  auto op = IndexOp(IndexOp::BEFORE);
+  op.index = 123;
   std::vector<char> empty;
-  op.apply(empty, 123);
+  op.apply(empty);
   BOOST_REQUIRE((empty == std::vector<char>{'1', '2', '3', ' '}));
 
   std::vector<char> val_zero;
-  op.apply(val_zero, 0); // log edge case
+  op.index = 0; // log edge case
+  op.apply(val_zero);
   BOOST_REQUIRE((val_zero == std::vector<char>{'0', ' '}));
 
-  auto in_op = IndexOp(IndexOp::INPUT, IndexOp::BEFORE);
-  in_op.in_index = 123; // used
+  op.index = 456;
   std::vector<char> not_empty{'a', 'b', 'c'};
-  in_op.apply(not_empty, 999);
-  BOOST_REQUIRE((not_empty == std::vector<char>{'1', '2', '3', ' ', 'a', 'b', 'c'}));
+  op.apply(not_empty);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'4', '5', '6', ' ', 'a', 'b', 'c'}));
 }
 
 BOOST_AUTO_TEST_CASE(apply_index_op_after) {
-  auto op = IndexOp(IndexOp::OUTPUT, IndexOp::AFTER);
+  auto op = IndexOp(IndexOp::AFTER);
   std::vector<char> empty;
-  op.apply(empty, 123);
+  op.index = 123;
+  op.apply(empty);
   BOOST_REQUIRE((empty == std::vector<char>{' ', '1', '2', '3'}));
 
-  std::vector<char> less_than_10;
-  op.apply(less_than_10, 9);
+  std::vector<char> less_than_10; // after logic edge case
+  op.index = 9;
+  op.apply(less_than_10);
   BOOST_REQUIRE((less_than_10 == std::vector<char>{' ', '9'}));
 
   std::vector<char> not_empty{'a', 'b', 'c'};
-  op.apply(not_empty, 123);
-  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '1', '2', '3'}));
+  op.index = 456;
+  op.apply(not_empty);
+  BOOST_REQUIRE((not_empty == std::vector<char>{'a', 'b', 'c', ' ', '4', '5', '6'}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -372,6 +381,18 @@ BOOST_AUTO_TEST_CASE(output_in_limit) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(default_head) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10", {"--head"});
+  choose_output correct_output{to_vec("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(head_min_limit) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10", {"--head=3,5"});
+  choose_output correct_output{to_vec("3\n4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(output_rm_filter) {
   choose_output out = run_choose("first\nsecond\nthird\nfourth", {"--rm=second", "--filter=first"});
   choose_output correct_output{to_vec("first\n")};
@@ -379,13 +400,13 @@ BOOST_AUTO_TEST_CASE(output_rm_filter) {
 }
 
 BOOST_AUTO_TEST_CASE(zero_with_tui) {
-  choose_output out = run_choose("anything", {"--head=0", "-t"});
+  choose_output out = run_choose("anything", {"--out=0", "-t"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(zero_no_tui) {
-  choose_output out = run_choose("anything", {"--head=0"});
+  choose_output out = run_choose("anything", {"--out=0"});
   choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -439,6 +460,13 @@ BOOST_AUTO_TEST_CASE(defined_sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(partial_stable_sort) {
+  // this also checks the delimiter and sort stability
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--out=3", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 // mix of both lex and user defined
 
 BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
@@ -489,6 +517,36 @@ BOOST_AUTO_TEST_CASE(direct_limit) {
 BOOST_AUTO_TEST_CASE(out_limit) {
   choose_output out = run_choose("a\nb\nc", {"--sort", "--out=2"});
   choose_output correct_output{to_vec("a\nb\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_start) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9", {"--out=2,5"});
+  choose_output correct_output{to_vec("2\n3\n4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_with_index) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9", {"--index=before", "--out=2,5"});
+  choose_output correct_output{to_vec("0 2\n1 3\n2 4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_start_with_sort) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=1,3"});
+  choose_output correct_output{to_vec("is\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_stop) {
+  choose_output out = run_choose("a\nb\nc", {"--sort", "--out=70"});
+  choose_output correct_output{to_vec("a\nb\nc\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_start) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=100000,3"});
+  choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -901,7 +959,7 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(numeric_utils)
 
-BOOST_AUTO_TEST_CASE(numeric_utils) {
+BOOST_AUTO_TEST_CASE(parse_number_unsigned) {
   BOOST_REQUIRE_EQUAL(*num::mul_overflow(7u, 15u), 105u);
   BOOST_REQUIRE(num::mul_overflow<uint16_t>(0xFFFF, 0xFFFF) == std::nullopt);
   BOOST_REQUIRE_EQUAL(*num::add_overflow(7u, 15u), 22u);
@@ -909,21 +967,55 @@ BOOST_AUTO_TEST_CASE(numeric_utils) {
 
   auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "0"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(should_not_be_called, "16"), 16);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "+0"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "16"), 16);
 
   int err_count = 0;
   auto must_be_called = [&]() { ++err_count; };
 
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "-17"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "   123"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, NULL), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967296"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "42949672950"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "4294967295", true, false), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_unsigned<uint32_t>(must_be_called, "0", false, true), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "-17"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "   123"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, NULL), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "4294967296"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "42949672950"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "4294967295", true, false), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "0", false, true), 0);
   BOOST_REQUIRE_EQUAL(err_count, 7);
+}
+
+BOOST_AUTO_TEST_CASE(parse_number_signed) {
+  auto should_not_be_called = []() { BOOST_REQUIRE(false); };
+
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-128"), -128);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "+127"), +127);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "72"), 72);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-72"), -72);
+
+  int err_count = 0;
+  auto must_be_called = [&]() { ++err_count; };
+
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "-129"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "+128"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, NULL), 0);
+  BOOST_REQUIRE_EQUAL(err_count, 3);
+}
+
+BOOST_AUTO_TEST_CASE(parse_number_pair) {
+  auto should_not_be_called = []() { BOOST_REQUIRE(false); };
+
+  using T = std::tuple<char, std::optional<char>>;
+
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15,51") == (T{15, 51}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "+15,-51") == (T{15, -51}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15") == (T{15, std::nullopt}));
+
+  int err_count = 0;
+  auto must_be_called = [&]() { ++err_count; };
+  BOOST_REQUIRE(num::parse_number_pair<char>(must_be_called, "abcdef") == (T{0, 0}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(must_be_called, "15a51") == (T{0, 0}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(must_be_called, "15,bcd51") == (T{0, 0}));
+  BOOST_REQUIRE_EQUAL(err_count, 3);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
