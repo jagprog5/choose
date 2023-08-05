@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "algo_utils.hpp"
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
@@ -56,14 +57,20 @@ struct TokenOutputStream {
 
   TokenOutputStream(const Arguments& args) : args(args) {}
 
+  bool begin_discard() const { //
+    return this->args.out_start && this->out_count < *this->args.out_start;
+  }
+
   // write a part of a token to the output.
   // the last part of a token must instead use write_output
   void write_output_fragment(const char* begin, const char* end) {
-    if (delimit_required_ && !args.sed) {
-      str::write_f(args.output, args.out_delimiter);
+    if (!begin_discard()) {
+      if (delimit_required_ && !args.sed) {
+        str::write_f(args.output, args.out_delimiter);
+      }
+      delimit_required_ = false;
+      has_written = true;
     }
-    delimit_required_ = false;
-    has_written = true;
     str::write_f(args.output, begin, end);
   }
 
@@ -75,12 +82,14 @@ struct TokenOutputStream {
   void write_output(const char* begin, //
                     const char* end,
                     T handler = TokenOutputStream::default_write) {
-    if (delimit_required_ && !args.sed) {
-      str::write_f(args.output, args.out_delimiter);
+    if (!begin_discard()) {
+      if (delimit_required_ && !args.sed) {
+        str::write_f(args.output, args.out_delimiter);
+      }
+      delimit_required_ = true;
+      has_written = true;
+      handler(args.output, begin, end);
     }
-    delimit_required_ = true;
-    has_written = true;
-    handler(args.output, begin, end);
     ++out_count;
   }
 
@@ -661,34 +670,43 @@ skip_read: // do another iteration but don't read in any more bytes
       set->clear();
     }
 
-    // apply sorting
-    // if (!args.out.has_value() && ) {
-
-    // }
-
-    if (args.out_end.has_value() && output.size() > *args.out_end && args.sort && !args.comp_sort) {
-      // if lexicographically sorting and the output is being truncated then do a
-      // partial sort instead. can only be applied to lexicographical since there's no
-      // stable partial sort (and stability is required for user defined comp sort)
-      std::partial_sort(output.begin(), output.begin() + *args.out_end, output.end(), lexicographical_comparison);
-    } else {
+    if (!args.out_start && !args.out_end) {
+      // no truncation needed. this is the simplest case
       if (args.comp_sort) {
         std::stable_sort(output.begin(), output.end(), user_defined_comparison);
       } else if (args.sort) {
         std::sort(output.begin(), output.end(), lexicographical_comparison);
       }
-    }
+    } else {
+      // truncate the end, leaving only the beginning elements
+      typename std::vector<Token>::iterator middle;
+      middle = output.begin() + *args.out_end;
+      if (middle > output.end()) {
+        middle = output.end();
+      }
 
-    // apply after sorting
+      if (args.comp_sort) {
+        choose::stable_partial_sort(output.begin(), middle, output.end(), user_defined_comparison);
+      } else if (args.sort) {
+        std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
+      }
+      output.resize(middle - output.begin());
+      if (args.out_start) {
+        if (*args.out_start < output.size()) {
+          output.erase(output.begin(), output.begin() + *args.out_start);
+        } else {
+          output.clear();
+        }
+      }
+    }
+    // don't apply truncation again, since it was just done above
+    args.out_start = std::nullopt;
+    args.out_end = std::nullopt;
+
+    // apply reverse last
     if (args.reverse) {
       std::reverse(output.begin(), output.end());
     }
-
-    // last thing to be applied is truncating the result
-    if (args.out_end.has_value() && output.size() > *args.out_end) {
-      output.resize(*args.out_end);
-    }
-
   } // scope for goto
 
 skip_all:

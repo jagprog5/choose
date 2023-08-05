@@ -47,9 +47,9 @@ struct Arguments {
   bool delimit_on_empty = false;
 
   // truncate beginning of result, inclusive
-  std::optional<ssize_t> out_start;
+  std::optional<size_t> out_start;
   // truncate end of result, exclusive
-  std::optional<ssize_t> out_end;
+  std::optional<size_t> out_end;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -266,16 +266,16 @@ void print_help_message() {
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
-      "        --out [<+/-# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
-      "                send only the first n tokens to the output or tui. like --head\n"
-      "                applied after sorting, uniqueness, and reverse.\n"
+      "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "                truncate after sorting and uniqueness\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
       "        --reverse\n"
-      "                reverse the token order after sorting\n"
+      "                reverse the token order. this is the last step before being sent\n"
+      "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sed\n"
@@ -495,21 +495,15 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
             InLimitOp::T first = std::get<0>(val);
             std::optional<InLimitOp::T> second = std::get<1>(val);
-            if (first > std::numeric_limits<decltype(ret.out_start)::value_type>::max() //
-                || (second && *second > std::numeric_limits<decltype(ret.out_end)::value_type>::max())) {
-              // careful for bounds since out_start and out_end are signed
-              on_num_err();
+            if (second) {
+              ret.out_start = first;
+              ret.out_end = second;
+              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                   uncompiled::UncompiledInLimitOp(first, *second));
             } else {
-              if (second) {
-                ret.out_start = first;
-                ret.out_end = second;
-                uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                    uncompiled::UncompiledInLimitOp(first, *second));
-              } else {
-                ret.out_end = first;
-                uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                    uncompiled::UncompiledInLimitOp(first));
-              }
+              ret.out_end = first;
+              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
+                                                   uncompiled::UncompiledInLimitOp(first));
             }
           } else {
             ret.out_end = 10;
@@ -520,7 +514,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
         auto out_handler = [&](bool has_arg) {
           if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
-            auto val = num::parse_number_pair<ssize_t>(on_num_err, optarg);
+            auto val = num::parse_number_pair<size_t>(on_num_err, optarg);
             auto first = std::get<0>(val);
             auto second = std::get<1>(val);
             if (second) {
@@ -530,7 +524,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               ret.out_end = first;
             }
           } else {
-            ret.out_start = 10;
+            ret.out_end = 10;
           }
         };
 

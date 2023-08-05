@@ -141,9 +141,9 @@ cat some_content | choose -f "test" --head 5
 
 The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are arbitrary and can contain newline characters, whereas lines can't.
 
-# Ordering and Uniqueness
+# Sorting and Uniqueness
 
-choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply ordering and uniqueness.
+choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
@@ -197,6 +197,8 @@ Banana
 </td>
 </tr>
 </table>
+
+Additionally, if the output is truncated via `--out`, then a partial sort is applied to only sort the range of elements that are used.
 
 # Matching
 

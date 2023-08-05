@@ -400,13 +400,13 @@ BOOST_AUTO_TEST_CASE(output_rm_filter) {
 }
 
 BOOST_AUTO_TEST_CASE(zero_with_tui) {
-  choose_output out = run_choose("anything", {"--head=0", "-t"});
+  choose_output out = run_choose("anything", {"--out=0", "-t"});
   choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(zero_no_tui) {
-  choose_output out = run_choose("anything", {"--head=0"});
+  choose_output out = run_choose("anything", {"--out=0"});
   choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -460,6 +460,13 @@ BOOST_AUTO_TEST_CASE(defined_sort) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(partial_stable_sort) {
+  // this also checks the delimiter and sort stability
+  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--out=3", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 // mix of both lex and user defined
 
 BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
@@ -510,6 +517,36 @@ BOOST_AUTO_TEST_CASE(direct_limit) {
 BOOST_AUTO_TEST_CASE(out_limit) {
   choose_output out = run_choose("a\nb\nc", {"--sort", "--out=2"});
   choose_output correct_output{to_vec("a\nb\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_start) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9", {"--out=2,5"});
+  choose_output correct_output{to_vec("2\n3\n4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_with_index) {
+  choose_output out = run_choose("0\n1\n2\n3\n4\n5\n6\n7\n8\n9", {"--index=before", "--out=2,5"});
+  choose_output correct_output{to_vec("0 2\n1 3\n2 4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_start_with_sort) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=1,3"});
+  choose_output correct_output{to_vec("is\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_stop) {
+  choose_output out = run_choose("a\nb\nc", {"--sort", "--out=70"});
+  choose_output correct_output{to_vec("a\nb\nc\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_start) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=100000,3"});
+  choose_output correct_output{to_vec("")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

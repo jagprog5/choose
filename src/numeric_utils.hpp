@@ -137,7 +137,7 @@ std::tuple<T, std::optional<T>> parse_number_pair(OnErr onErr, const char* str) 
   while (1) {
     char ch = *str;
     if (ch == '\0') {
-      return { first, std::nullopt };
+      return {first, std::nullopt};
     } else if (ch == ',') {
       ++str;
       break;
