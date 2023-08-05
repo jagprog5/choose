@@ -122,7 +122,7 @@ struct ReplaceOp {
 struct IndexOp {
   enum Align { BEFORE, AFTER };
   IndexOp(Align align) : align(align) {}
-  size_t index;
+  size_t index = 0;
   Align align;
 
  private:

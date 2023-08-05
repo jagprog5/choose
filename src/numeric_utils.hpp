@@ -1,6 +1,7 @@
 #pragma once
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <type_traits>
 
 namespace choose {
