@@ -90,6 +90,19 @@ struct Arguments {
   bool tokens_not_stored() const { //
     return is_direct_output() && !unique;
   }
+
+  void drop_warning() {
+    if (this->can_drop_warn) {
+      this->can_drop_warn = false;
+      if (fileno(this->output) == STDOUT_FILENO) { // not unit test
+        fputs(
+            "Warning: bytes were dropped from overlong token. "
+            "Set --no-warn, or increase --buf-size-frag, "
+            "or set the delimiter to something matched more frequently.\n",
+            stderr);
+      }
+    }
+  }
 };
 
 namespace {

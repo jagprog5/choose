@@ -108,46 +108,6 @@ struct TokenOutputStream {
   }
 };
 
-// writes an output delimiter between tokens,
-// and a batch delimiter between batches and at the end
-struct BatchOutputStream {
-  bool first_within_batch = true;
-  bool first_batch = true;
-
-  const Arguments& args;
-  str::QueuedOutput qo;
-
-  BatchOutputStream(const Arguments& args)
-      : args(args),                                        //
-        qo{isatty(fileno(args.output)) && args.tenacious ? // NOLINT args.output can never by null here
-               std::optional<std::vector<char>>(std::vector<char>())
-                                                         : std::nullopt} {}
-
-  void write_output(const Token& t) {
-    if (!first_within_batch) {
-      qo.write_output(args.output, args.out_delimiter);
-    } else if (!first_batch) {
-      qo.write_output(args.output, args.bout_delimiter);
-    }
-    first_within_batch = false;
-    qo.write_output(args.output, t.buffer);
-  }
-
-  void finish_batch() {
-    first_batch = false;
-    first_within_batch = true;
-  }
-
-  void finish_output() {
-    if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
-      qo.write_output(args.output, args.bout_delimiter);
-    }
-    qo.flush_output(args.output);
-    first_within_batch = true; // optional reset of state
-    first_batch = true;
-  }
-};
-
 // leads to an exit unless this is a unit test
 struct termination_request : public std::exception {};
 
@@ -158,19 +118,6 @@ const char* id(bool is_match) {
     return "match pattern";
   } else {
     return "input delimiter";
-  }
-}
-
-void drop_warning(Arguments& args) {
-  if (args.can_drop_warn) {
-    args.can_drop_warn = false;
-    if (fileno(args.output) == STDOUT_FILENO) { // not unit test
-      fputs(
-          "Warning: bytes were dropped from overlong token. "
-          "Set --no-warn, or increase --buf-size-frag, "
-          "or set the delimiter to something matched more frequently.\n",
-          stderr);
-    }
   }
 }
 
@@ -304,7 +251,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       if (!fragment.empty()) {
         if (fragment.size() + (end - begin) > args.buf_size_frag) {
-          drop_warning(args);
+          args.drop_warning();
           fragment.clear();
           // still use an empty token to be consistent with the delimiters in the output
           end = begin;
@@ -614,7 +561,7 @@ skip_read: // do another iteration but don't read in any more bytes
                   direct_output.write_output_fragment(begin, end);
                 } else {
                   if (fragment.size() + (end - begin) > args.buf_size_frag) {
-                    drop_warning(args);
+                    args.drop_warning();
                     fragment.clear();
                   } else {
                     str::append_to_buffer(fragment, begin, end);
