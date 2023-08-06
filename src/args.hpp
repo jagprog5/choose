@@ -45,9 +45,13 @@ struct Arguments {
   bool delimit_on_empty = false;
 
   // truncate beginning of result, inclusive
-  std::optional<size_t> out_start;
+  std::optional<InLimitOp::T> out_start;
   // truncate end of result, exclusive
-  std::optional<size_t> out_end;
+  std::optional<InLimitOp::T> out_end;
+
+  // truncate and leave last n tokens
+  // the "n" value is stored in out_end
+  bool tail = false;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -82,7 +86,9 @@ struct Arguments {
   bool can_drop_warn = true;
 
   // a special case where the tokens can be sent directly to the output as they are received
-  bool is_direct_output() const { return !tui && !sort && !flip; }
+  bool is_direct_output() const { //
+    return !tui && !sort && !flip && !tail;
+  }
 
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
@@ -112,6 +118,8 @@ struct UncompiledCodes {
   std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
   std::vector<char> primary;
+
+  std::optional<InLimitOp::T> tail;
 
   // disambiguate between empty and unset
   // needed since they take default values
@@ -143,6 +151,17 @@ struct UncompiledCodes {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
     }
 
+    if (this->tail) {
+      output.tail = true;
+      output.out_start = std::nullopt; // --tail overrides --out
+      output.out_end = *tail;
+      if (output.sort) {
+        // tail is applied via concurrent_sort.
+        // it does some fancy flipping to achieve this
+        output.sort_reverse ^= true;
+        output.flip ^= true;
+      }
+    }
   }
 };
 
@@ -198,8 +217,8 @@ void print_help_message() {
       "        --replace <replacement>\n"
       "                a special case of the substitution op where the match target is\n"
       "                the positional argument. --match or --sed must be specified.\n"
-      "                this op must come before all ops that edit tokens: all except rm\n"
-      "                or filter\n"
+      "                this op must come before all ops that edit tokens: all except\n"
+      "                rm, filter, or head\n"
 #ifndef PCRE2_SUBSTITUTE_REPLACEMENT_ONLY
       "                WARNING PCRE2 version old: lookaround outside match won't work\n"
 #endif
@@ -268,7 +287,7 @@ void print_help_message() {
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
-      "                truncate after sorting and uniqueness\n"
+      "                truncate the output\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the positional argument.\n"
@@ -289,7 +308,9 @@ void print_help_message() {
       "                the input order. an indicator displays the order\n"
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
-      "        --take [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "        --tail [<# tokens, default: 10>]\n"
+      "                truncate the output, leaving the last n tokens. ignores --out\n"
+      "        --take [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                sets --out, and a --head at the beginning. this places a limit\n"
       "                on the input and the output\n"
       "        --tenacious\n"
@@ -411,6 +432,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
         {"out", optional_argument, NULL, 0},
+        {"tail", optional_argument, NULL, 0},
         {"take", optional_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
@@ -515,7 +537,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
         auto out_handler = [&](bool has_arg) {
           if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
-            auto val = num::parse_number_pair<size_t>(on_num_err, optarg);
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
             auto first = std::get<0>(val);
             auto second = std::get<1>(val);
             if (second) {
@@ -526,6 +548,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             }
           } else {
             ret.out_end = 10;
+          }
+        };
+
+        auto tail_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            uncompiled_output.tail = num::parse_number<InLimitOp::T>(on_num_err, optarg);
+          } else {
+            uncompiled_output.tail = 10;
           }
         };
 
@@ -572,6 +602,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
             take_handler(true);
+          } else if (strcmp("tail", name) == 0) {
+            tail_handler(true);
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -584,7 +616,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("sort-reverse", name) == 0) {
             ret.sort = true;
             ret.sort_reverse = true;
-          }else if (strcmp("flush", name) == 0) {
+          } else if (strcmp("flush", name) == 0) {
             ret.flush = true;
           } else if (strcmp("delimit-not-at-end", name) == 0) {
             ret.delimit_not_at_end = true;
@@ -596,6 +628,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             out_handler(false);
           } else if (strcmp("take", name) == 0) {
             take_handler(false);
+          } else if (strcmp("tail", name) == 0) {
+            tail_handler(false);
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {

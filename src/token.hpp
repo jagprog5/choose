@@ -144,6 +144,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool tokens_not_stored = args.tokens_not_stored();
   const bool has_ops = !args.ordered_ops.empty();
   const bool flush = args.flush;
+  const bool tail = args.tail;
   const bool sort_reversed = args.sort_reverse;
 
   const bool is_unique = args.unique;
@@ -268,6 +269,23 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               return false;
             }
           }
+          if (tail) {
+            if (output.size() > *args.out_end) {
+              output.erase(output.begin());
+              if (is_unique) {
+                // adjust uniqueness since indices have shifted
+                if (unordered_set_T* set = std::get_if<unordered_set_T>(&unique_checker)) {
+                  for (const auto& elem : *set) {
+                    --const_cast<indirect&>(elem);
+                  }
+                } else {
+                  for (const auto& elem : *set) {
+                    --const_cast<indirect&>(elem);
+                  }
+                }
+              }
+            }
+          }
         } else {
           auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, lexicographical_comparison);
           output.insert(insertion_pos, std::move(t));
@@ -342,10 +360,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
 
       if (is_direct_output) {
-        if (!tokens_not_stored) {
-          if (!check_unique_then_append()) {
-            return false;
-          }
+        if (!check_unique_then_append()) {
+          return false;
         }
         direct_output.write_output(begin, end);
 after_direct_apply:
