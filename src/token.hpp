@@ -144,6 +144,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool tokens_not_stored = args.tokens_not_stored();
   const bool has_ops = !args.ordered_ops.empty();
   const bool flush = args.flush;
+  const bool sort_reversed = args.sort_reverse;
 
   const bool is_unique = args.unique;
   const bool unique_use_set = args.unique_use_set;
@@ -170,6 +171,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     auto lexicographical_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
+      if (sort_reversed) {
+        std::swap(lhs, rhs);
+      }
       return std::lexicographical_compare( //
           lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
     };
@@ -643,8 +647,8 @@ skip_read: // do another iteration but don't read in any more bytes
       }
     }
 
-    // apply reverse last
-    if (args.reverse) {
+    // applied last
+    if (args.flip) {
       std::reverse(output.begin(), output.end());
     }
   } // scope for goto

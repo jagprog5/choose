@@ -29,10 +29,11 @@ struct Arguments {
   bool use_input_delimiter = false;
   bool end = false;
   bool sort = false; // indicates that any sort is applied
+  bool sort_reverse = false;
 
   bool unique = false; // lexicographical unique
   bool unique_use_set = false;
-  bool reverse = false;
+  bool flip = false;
   bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
@@ -81,7 +82,7 @@ struct Arguments {
   bool can_drop_warn = true;
 
   // a special case where the tokens can be sent directly to the output as they are received
-  bool is_direct_output() const { return !tui && !sort && !reverse; }
+  bool is_direct_output() const { return !tui && !sort && !flip; }
 
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
@@ -232,7 +233,7 @@ void print_help_message() {
       "                token that can be created. if it's size would exceed this arg\n"
       "                then the content thus far is discarded. this limit is avoided\n"
       "                in the special case where there is no ordered ops, no sorting,\n"
-      "                no uniqueness, no reverse, and no tui used.\n"
+      "                no uniqueness, no flip, and no tui used.\n"
       "        -d, --delimit-same\n"
       "                applies both --delimit-not-at-end and --use-delimiter. this\n"
       "                makes the output end with a delimiter when the input also ends\n"
@@ -273,11 +274,13 @@ void print_help_message() {
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
-      "        --reverse\n"
+      "        --flip\n"
       "                reverse the token order. this is the last step before being sent\n"
       "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
+      "        --sort-reverse\n"
+      "                apply the sort in reverse order\n"
       "        --sed\n"
       "                --match, but also writes everything around the tokens, and the\n"
       "                match groups aren't used as individual tokens\n"
@@ -415,7 +418,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
-        {"reverse", no_argument, NULL, 0},
+        {"flip", no_argument, NULL, 0},
+        {"sort-reverse", no_argument, NULL, 0},
         {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
         {"multi", no_argument, NULL, 'm'},
@@ -575,9 +579,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           }
         } else {
           // long option without argument or optional argument
-          if (strcmp("reverse", name) == 0) {
-            ret.reverse = true;
-          } else if (strcmp("flush", name) == 0) {
+          if (strcmp("flip", name) == 0) {
+            ret.flip = true;
+          } else if (strcmp("sort-reverse", name) == 0) {
+            ret.sort = true;
+            ret.sort_reverse = true;
+          }else if (strcmp("flush", name) == 0) {
             ret.flush = true;
           } else if (strcmp("delimit-not-at-end", name) == 0) {
             ret.delimit_not_at_end = true;
