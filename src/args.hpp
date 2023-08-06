@@ -258,7 +258,7 @@ void print_help_message() {
       "                begin cursor and prompt at the bottom of the tui\n"
       "        --flush\n"
       "                makes the input unbuffered, and the output is flushed after each\n"
-      "                token is written\n"
+      "                token is written. this is useful for long running inputs with -u\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
