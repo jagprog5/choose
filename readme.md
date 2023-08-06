@@ -198,7 +198,13 @@ Banana
 </tr>
 </table>
 
-If the output is being truncated via `--out`, then each new element is stored in its sorted order, and excess element are discarded.
+Sorting is implemented to effectively leverage truncation. For example:
+
+```bash
+echo very_long_input | choose --sort --out=5
+```
+
+That command will only stores the top 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this.
 
 # Matching
 
