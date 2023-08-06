@@ -108,46 +108,6 @@ struct TokenOutputStream {
   }
 };
 
-// writes an output delimiter between tokens,
-// and a batch delimiter between batches and at the end
-struct BatchOutputStream {
-  bool first_within_batch = true;
-  bool first_batch = true;
-
-  const Arguments& args;
-  str::QueuedOutput qo;
-
-  BatchOutputStream(const Arguments& args)
-      : args(args),                                        //
-        qo{isatty(fileno(args.output)) && args.tenacious ? // NOLINT args.output can never by null here
-               std::optional<std::vector<char>>(std::vector<char>())
-                                                         : std::nullopt} {}
-
-  void write_output(const Token& t) {
-    if (!first_within_batch) {
-      qo.write_output(args.output, args.out_delimiter);
-    } else if (!first_batch) {
-      qo.write_output(args.output, args.bout_delimiter);
-    }
-    first_within_batch = false;
-    qo.write_output(args.output, t.buffer);
-  }
-
-  void finish_batch() {
-    first_batch = false;
-    first_within_batch = true;
-  }
-
-  void finish_output() {
-    if (!args.delimit_not_at_end && (!first_batch || args.delimit_on_empty)) {
-      qo.write_output(args.output, args.bout_delimiter);
-    }
-    qo.flush_output(args.output);
-    first_within_batch = true; // optional reset of state
-    first_batch = true;
-  }
-};
-
 // leads to an exit unless this is a unit test
 struct termination_request : public std::exception {};
 
@@ -158,19 +118,6 @@ const char* id(bool is_match) {
     return "match pattern";
   } else {
     return "input delimiter";
-  }
-}
-
-void drop_warning(Arguments& args) {
-  if (args.can_drop_warn) {
-    args.can_drop_warn = false;
-    if (fileno(args.output) == STDOUT_FILENO) { // not unit test
-      fputs(
-          "Warning: bytes were dropped from overlong token. "
-          "Set --no-warn, or increase --buf-size-frag, "
-          "or set the delimiter to something matched more frequently.\n",
-          stderr);
-    }
   }
 }
 
@@ -201,6 +148,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   const bool is_unique = args.unique;
   const bool unique_use_set = args.unique_use_set;
+
+  // the elements in output are being inserted in sorted order, and any excess
+  // is being discarded. this keeps the memory bounded for long running sort with --out
+  const bool concurrent_sort = args.sort && !is_unique && args.out_end.has_value();
 
   regex::match_data comp_data = args.comp_sort ? regex::create_match_data(args.comp_sort) : NULL;
 
@@ -304,7 +255,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       if (!fragment.empty()) {
         if (fragment.size() + (end - begin) > args.buf_size_frag) {
-          drop_warning(args);
+          args.drop_warning();
           fragment.clear();
           // still use an empty token to be consistent with the delimiters in the output
           end = begin;
@@ -319,12 +270,29 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
 
       auto check_unique_then_append = [&]() -> bool {
-        output.push_back(std::move(t));
-        if (args.unique) {
-          if (!uniqueness_check(output.size() - 1)) {
-            // the element is not unique. nothing was added to the uniqueness set
+        if (!concurrent_sort) {
+          // typical case
+          output.push_back(std::move(t));
+          if (is_unique) {
+            if (!uniqueness_check(output.size() - 1)) {
+              // the element is not unique. nothing was added to the uniqueness set
+              output.pop_back();
+              return false;
+            }
+          }
+        } else {
+          // insert element in sorted order
+          auto comp = [&](const Token& lhs, const Token& rhs) -> bool {
+            if (args.comp_sort) {
+              return user_defined_comparison(lhs, rhs);
+            } else { // sort implied here since concurrent_sort
+              return lexicographical_comparison(lhs, rhs);
+            }
+          };
+          auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, comp);
+          output.insert(insertion_pos, std::move(t));
+          if (output.size() > *args.out_end) {
             output.pop_back();
-            return false;
           }
         }
         return true;
@@ -614,7 +582,7 @@ skip_read: // do another iteration but don't read in any more bytes
                   direct_output.write_output_fragment(begin, end);
                 } else {
                   if (fragment.size() + (end - begin) > args.buf_size_frag) {
-                    drop_warning(args);
+                    args.drop_warning();
                     fragment.clear();
                   } else {
                     str::append_to_buffer(fragment, begin, end);
@@ -678,19 +646,22 @@ skip_read: // do another iteration but don't read in any more bytes
         std::sort(output.begin(), output.end(), lexicographical_comparison);
       }
     } else {
-      // truncate the end, leaving only the beginning elements
-      typename std::vector<Token>::iterator middle;
-      middle = output.begin() + *args.out_end;
-      if (middle > output.end()) {
-        middle = output.end();
+      // truncate the ends, leaving only the beginning elements
+      if (concurrent_sort) {
+        // partial sort and end truncation has already been applied
+      } else {
+        typename std::vector<Token>::iterator middle;
+        middle = output.begin() + *args.out_end;
+        if (middle > output.end()) {
+          middle = output.end();
+        }
+        if (args.comp_sort) {
+          choose::stable_partial_sort(output.begin(), middle, output.end(), user_defined_comparison);
+        } else if (args.sort) {
+          std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
+        }
+        output.resize(middle - output.begin());
       }
-
-      if (args.comp_sort) {
-        choose::stable_partial_sort(output.begin(), middle, output.end(), user_defined_comparison);
-      } else if (args.sort) {
-        std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
-      }
-      output.resize(middle - output.begin());
       if (args.out_start) {
         if (*args.out_start < output.size()) {
           output.erase(output.begin(), output.begin() + *args.out_start);
@@ -699,9 +670,6 @@ skip_read: // do another iteration but don't read in any more bytes
         }
       }
     }
-    // don't apply truncation again, since it was just done above
-    args.out_start = std::nullopt;
-    args.out_end = std::nullopt;
 
     // apply reverse last
     if (args.reverse) {
@@ -712,6 +680,9 @@ skip_read: // do another iteration but don't read in any more bytes
 skip_all:
 
   if (!args.tui) {
+    // don't apply truncation again (in direct_output logic below), since it was already done above
+    args.out_start = std::nullopt;
+    args.out_end = std::nullopt;
     for (const Token& t : output) {
       direct_output.write_output(t);
     }

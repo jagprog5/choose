@@ -198,7 +198,7 @@ Banana
 </tr>
 </table>
 
-Additionally, if the output is truncated via `--out`, then a partial sort is applied to only sort the range of elements that are used.
+If the output is being truncated via `--out`, then each new element is stored in its sorted order, and excess element are discarded.
 
 # Matching
 

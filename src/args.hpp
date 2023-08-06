@@ -90,6 +90,19 @@ struct Arguments {
   bool tokens_not_stored() const { //
     return is_direct_output() && !unique;
   }
+
+  void drop_warning() {
+    if (this->can_drop_warn) {
+      this->can_drop_warn = false;
+      if (fileno(this->output) == STDOUT_FILENO) { // not unit test
+        fputs(
+            "Warning: bytes were dropped from overlong token. "
+            "Set --no-warn, or increase --buf-size-frag, "
+            "or set the delimiter to something matched more frequently.\n",
+            stderr);
+      }
+    }
+  }
 };
 
 namespace {
@@ -245,7 +258,7 @@ void print_help_message() {
       "                begin cursor and prompt at the bottom of the tui\n"
       "        --flush\n"
       "                makes the input unbuffered, and the output is flushed after each\n"
-      "                token is written\n"
+      "                token is written. this is useful for long running inputs with -u\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
