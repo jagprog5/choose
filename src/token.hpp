@@ -6,7 +6,6 @@
 #include <unordered_set>
 #include <utility>
 
-#include "algo_utils.hpp"
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
@@ -153,8 +152,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   // is being discarded. this keeps the memory bounded for long running sort with --out
   const bool concurrent_sort = args.sort && !is_unique && args.out_end.has_value();
 
-  regex::match_data comp_data = args.comp_sort ? regex::create_match_data(args.comp_sort) : NULL;
-
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
   PCRE2_SIZE match_offset = 0;
@@ -170,19 +167,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto user_defined_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
-      const Token* lhs = &lhs_arg;
-      const Token* rhs = &rhs_arg;
-
-      int lhs_result = regex::match(args.comp_sort, lhs->buffer.data(), lhs->buffer.size(), comp_data, "user comp");
-      int rhs_result = regex::match(args.comp_sort, rhs->buffer.data(), rhs->buffer.size(), comp_data, "user comp");
-      if (lhs_result && !rhs_result) {
-        return 1;
-      } else {
-        return 0;
-      }
-    };
-
     auto lexicographical_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
@@ -281,15 +265,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             }
           }
         } else {
-          // insert element in sorted order
-          auto comp = [&](const Token& lhs, const Token& rhs) -> bool {
-            if (args.comp_sort) {
-              return user_defined_comparison(lhs, rhs);
-            } else { // sort implied here since concurrent_sort
-              return lexicographical_comparison(lhs, rhs);
-            }
-          };
-          auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, comp);
+          auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, lexicographical_comparison);
           output.insert(insertion_pos, std::move(t));
           if (output.size() > *args.out_end) {
             output.pop_back();
@@ -640,9 +616,7 @@ skip_read: // do another iteration but don't read in any more bytes
 
     if (!args.out_start && !args.out_end) {
       // no truncation needed. this is the simplest case
-      if (args.comp_sort) {
-        std::stable_sort(output.begin(), output.end(), user_defined_comparison);
-      } else if (args.sort) {
+      if (args.sort) {
         std::sort(output.begin(), output.end(), lexicographical_comparison);
       }
     } else {
@@ -655,9 +629,7 @@ skip_read: // do another iteration but don't read in any more bytes
         if (middle > output.end()) {
           middle = output.end();
         }
-        if (args.comp_sort) {
-          choose::stable_partial_sort(output.begin(), middle, output.end(), user_defined_comparison);
-        } else if (args.sort) {
+        if (args.sort) {
           std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
         }
         output.resize(middle - output.begin());

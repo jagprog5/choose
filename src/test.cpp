@@ -451,52 +451,6 @@ BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-// user defined sorting and uniqueness
-
-BOOST_AUTO_TEST_CASE(defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(partial_stable_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--out=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(partial_stable_sort_not_concurrent) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-rut", "--comp-sort", "^John", "--out=3"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(concurrent_sort_stable) {
-  // for this test it is manually verified that the output size remains bounded to 6.
-  // this is an important property, so the memory usage remains bounded even for very large inputs.
-  std::string in;
-  for (int i = 0; i < 100; ++i) {
-    in += "apple ";
-    in += std::to_string(i);
-    in += '\n';
-  }
-  in += "John first\n";
-  in += "John second\n";
-  in += "John third\n";
-
-  choose_output out = run_choose(in.c_str(), {"-r", "--comp-sort", "^John", "--out=6", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John first", "John second", "John third", "apple 0", "apple 1", "apple 2"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-// mix of both lex and user defined
-
-BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple", "Banana"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
 // ========================
 
 BOOST_AUTO_TEST_CASE(no_delimit) {

@@ -30,9 +30,6 @@ struct Arguments {
   bool end = false;
   bool sort = false; // indicates that any sort is applied
 
-  // user defined comparison
-  regex::code comp_sort = 0;
-
   bool unique = false; // lexicographical unique
   bool unique_use_set = false;
   bool reverse = false;
@@ -115,8 +112,6 @@ struct UncompiledCodes {
 
   std::vector<char> primary;
 
-  const char* comp = 0;
-
   // disambiguate between empty and unset
   // needed since they take default values
   bool bout_delimiter_set = false;
@@ -147,9 +142,6 @@ struct UncompiledCodes {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
     }
 
-    if (comp) {
-      output.comp_sort = regex::compile(comp, re_options, "user defined comparison for sort");
-    }
   }
 };
 
@@ -241,10 +233,6 @@ void print_help_message() {
       "                then the content thus far is discarded. this limit is avoided\n"
       "                in the special case where there is no ordered ops, no sorting,\n"
       "                no uniqueness, no reverse, and no tui used.\n"
-      "        --comp-sort <less than comparison>\n"
-      "                apply a stable sort using a user defined comparison. pairs of\n"
-      "                tokens are evaluated. if only one matches, then it is less than\n"
-      "                the other. inherits the same match options as the positional arg\n"
       "        -d, --delimit-same\n"
       "                applies both --delimit-not-at-end and --use-delimiter. this\n"
       "                makes the output end with a delimiter when the input also ends\n"
@@ -262,8 +250,7 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
-      "                when applying --unique, use a tree instead of a hash table. this\n"
-      "                makes a typical fast case slower and a typical slow case faster\n"
+      "                when applying --unique, use a tree instead of a hash table.\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -330,8 +317,6 @@ void print_help_message() {
       "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
-      "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
-      "                -r --comp-sort '^John'\n"
       "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --index\\\n"
       "                after --rm '^c' --sub '.+' '$0 out:' --index after\n"
       "        echo -e \"this\\nis\\na\\ntest\" | choose -r --sed \".+\" --replace banana\n"
@@ -409,7 +394,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"output-delimiter", required_argument, NULL, 'o'},
         {"batch-delimiter", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
-        {"comp-sort", required_argument, NULL, 0},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
@@ -561,7 +545,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             index_handler(true);
           } else if (strcmp("replace", name) == 0) {
             for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
-              if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
+              if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledInLimitOp>(op)) {
                 arg_error_preamble(argc, argv);
                 fprintf(stderr, "option '--%s' can't be proceeded by an editing op\n", name);
                 arg_has_errors = true;
@@ -580,9 +564,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               ++optind;
               uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
             }
-          } else if (strcmp("comp-sort", name) == 0) {
-            uncompiled_output.comp = optarg;
-            ret.sort = true;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {

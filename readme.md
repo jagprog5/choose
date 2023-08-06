@@ -143,7 +143,7 @@ The former is restricted to working with `lines`, whereas the latter works with 
 
 # Sorting and Uniqueness
 
-choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
+choose allows for lexicographical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
@@ -166,33 +166,6 @@ echo -n "this is is test test "\
 is
 test
 this
-</pre>  
-</td>
-</tr>
-</table>
-
-And this command puts all tokens that start with "John" first, but otherwise the order is retained and tokens are unique lexicographically:
-
-<table>
-<tr>
-<th>Command</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>
-
-```bash
-echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith"\
- | choose --comp-sort '^John' -ru
-```
-
-</td>
-<td>
-<pre>
-John Doe
-John Smith
-Apple
-Banana
 </pre>  
 </td>
 </tr>
