@@ -674,11 +674,17 @@ BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_start) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-// BOOST_AUTO_TEST_CASE(_with_min_limit_past_bound) {
-//   choose_output out = run_choose("this\nis\na\ntest", {"--unique", "--out=100000,3"});
-//   choose_output correct_output{std::vector<choose::Token>{}};
-//   BOOST_REQUIRE_EQUAL(out, correct_output);
-// }
+BOOST_AUTO_TEST_CASE(out_unique_sort_with_limit_past_bound) {
+  choose_output out = run_choose("this\nis\na\ntest", {"-t", "--unique", "--sort", "--out=100000"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(tail_unique_with_min_limit_past_bound) {
+  choose_output out = run_choose("this\nis\na\ntest", {"-t", "--unique", "--tail=100000,100000"});
+  choose_output correct_output{std::vector<choose::Token>{}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
 
 BOOST_AUTO_TEST_CASE(out_limit_unique) {
   choose_output out = run_choose("d\nd\nd\nd\nc\nb\na", {"--out=2", "--unique"});
