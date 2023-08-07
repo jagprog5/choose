@@ -380,8 +380,8 @@ struct OutputSizeBoundFixture {
 BOOST_AUTO_TEST_SUITE(create_tokens_test_suite)
 
 BOOST_AUTO_TEST_CASE(simple) {
-  choose_output out = run_choose("a\nb\nc", {"-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
+  choose_output out = run_choose("a\na\nb\nc", {"-t"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "a", "b", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -581,9 +581,21 @@ BOOST_AUTO_TEST_CASE(sort_unique_out) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(sort_unique_out_min) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=1,2"});
+  choose_output correct_output{to_vec("is\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(sort_unique_tail) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=2"});
   choose_output correct_output{to_vec("test\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_unique_tail_min) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=1,2"});
+  choose_output correct_output{to_vec("test\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -765,6 +777,12 @@ BOOST_AUTO_TEST_CASE(index_op_after_last) {
 BOOST_AUTO_TEST_CASE(literal_sub) {
   choose_output out = run_choose("literal substitution", {"--sub", "literal", "good", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"good substitution"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(delimiter_sub) {
+  choose_output out = run_choose("very long line here test other long line test test hello", {"test", "-o", "banana", "-d", "--buf-size=4"});
+  choose_output correct_output{to_vec("very long line here banana other long line banana banana hello")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
