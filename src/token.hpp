@@ -18,6 +18,10 @@ cmake .. -DBUILD_TESTING=true -DCODE_COVERAGE=true
 make cov-clean && make cov-show
 */
 
+#ifdef OUTPUT_SIZE_BOUND_TESTING
+extern std::optional<size_t> output_size_bound_testing;
+#endif
+
 namespace choose {
 
 // Token is a thin wrapper around vector<char>. provides type clarity
@@ -147,12 +151,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool tail = args.tail;
   const bool sort_reversed = args.sort_reverse;
 
-  const bool is_unique = args.unique;
+  const bool unique = args.unique;
   const bool unique_use_set = args.unique_use_set;
+  const bool sort = args.sort;
 
-  // the elements in output are being inserted in sorted order, and any excess
-  // is being discarded. this keeps the memory bounded for long running sort with --out
-  const bool concurrent_sort = args.sort && !is_unique && args.out_end.has_value();
+  // the elements in output are being inserted with any excess being discarded.
+  // this keeps the memory bounded for e.g. long running sort with --out
+  const bool output_size_bounded = args.out_end.has_value() && !unique;
 
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
@@ -197,16 +202,16 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     // is used. in contrast, the user defined comparison uses a std::set, as it
     // is easier in the args to specify a comparison with regex compared to a
     // hash with regex.
-    using lexicographical_uniqueness_set = std::set<indirect, decltype(lexicographical_uniqueness_set_comp)>;
-    using unordered_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
-    using unique_checker_T = std::variant<std::monostate, lexicographical_uniqueness_set, unordered_set_T>;
+    using uniqueness_set_T = std::set<indirect, decltype(lexicographical_uniqueness_set_comp)>;
+    using unordered_uniqueness_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
+    using unique_checker_T = std::variant<std::monostate, uniqueness_set_T, unordered_uniqueness_set_T>;
 
     unique_checker_T unique_checker = [&]() -> unique_checker_T {
-      if (is_unique) {
+      if (unique) {
         if (unique_use_set) {
-          return unique_checker_T(lexicographical_uniqueness_set(lexicographical_uniqueness_set_comp));
+          return unique_checker_T(uniqueness_set_T(lexicographical_uniqueness_set_comp));
         } else {
-          auto s = unordered_set_T(8, unordered_set_hash, unordered_set_equals);
+          auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
           s.max_load_factor(0.125); // obtained experimentally. see perf.md
           return unique_checker_T(std::move(s));
         }
@@ -217,10 +222,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     // returns true if output[elem] is unique
     auto uniqueness_check = [&](indirect elem) -> bool { //
-      if (unordered_set_T* set = std::get_if<unordered_set_T>(&unique_checker)) {
+      if (unordered_uniqueness_set_T* set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
         return set->insert(elem).second;
       } else {
-        return std::get<lexicographical_uniqueness_set>(unique_checker).insert(elem).second;
+        return std::get<uniqueness_set_T>(unique_checker).insert(elem).second;
       }
     };
 
@@ -258,41 +263,49 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         }
       }
 
+      // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
-        if (!concurrent_sort) {
+        if (!output_size_bounded) {
           // typical case
           output.push_back(std::move(t));
-          if (is_unique) {
+          if (unique) {
             if (!uniqueness_check(output.size() - 1)) {
               // the element is not unique. nothing was added to the uniqueness set
               output.pop_back();
               return false;
             }
           }
-          if (tail) {
+        } else {
+          // output size is bounded.
+          // precondition here is that unique is false. but everything else should be handled
+          if (sort) {
+            // note that the sorting is reversed if tail is used. so this
+            // handles tail and non tail cases. see UncompiledCodes
+            auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, lexicographical_comparison);
+            output.insert(insertion_pos, std::move(t));
             if (output.size() > *args.out_end) {
-              output.erase(output.begin());
-              if (is_unique) {
-                // adjust uniqueness since indices have shifted
-                if (unordered_set_T* set = std::get_if<unordered_set_T>(&unique_checker)) {
-                  for (const auto& elem : *set) {
-                    --const_cast<indirect&>(elem);
-                  }
-                } else {
-                  for (const auto& elem : *set) {
-                    --const_cast<indirect&>(elem);
-                  }
-                }
+              output.pop_back();
+              return false;
+            }
+          } else {
+            output.push_back(std::move(t));
+            if (tail) {
+              if (output.size() > *args.out_end) {
+                output.erase(output.begin());
+                return false;
               }
+            } else {
+              // for non tail case caller looks at size of output to determine
+              // if finished
             }
           }
-        } else {
-          auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, lexicographical_comparison);
-          output.insert(insertion_pos, std::move(t));
-          if (output.size() > *args.out_end) {
-            output.pop_back();
-          }
         }
+#ifdef OUTPUT_SIZE_BOUND_TESTING
+        if (output_size_bound_testing && output.size() > *output_size_bound_testing) {
+          throw std::runtime_error("max output size exceeded!\n");
+          return false;
+        }
+#endif
         return true;
       };
 
@@ -360,8 +373,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
 
       if (is_direct_output) {
-        if (!check_unique_then_append()) {
-          return false;
+        if (!tokens_not_stored) {
+          if (!check_unique_then_append()) {
+            return false;
+          }
         }
         direct_output.write_output(begin, end);
 after_direct_apply:
@@ -377,6 +392,12 @@ after_direct_apply:
         return false;
       } else {
         check_unique_then_append(); // result ignored
+        // handle the case mentioned in check_unique_then_append
+        if (output_size_bounded && !sort && !tail) {
+          if (output.size() == *args.out_end) {
+            return true;
+          }
+        }
         return false;
       }
     };
@@ -628,9 +649,9 @@ skip_read: // do another iteration but don't read in any more bytes
       throw termination_request();
     }
 
-    if (unordered_set_T* uniqueness_unordered_set = std::get_if<unordered_set_T>(&unique_checker)) {
+    if (unordered_uniqueness_set_T* uniqueness_unordered_set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
       uniqueness_unordered_set->clear();
-    } else if (lexicographical_uniqueness_set* set = std::get_if<lexicographical_uniqueness_set>(&unique_checker)) {
+    } else if (uniqueness_set_T* set = std::get_if<uniqueness_set_T>(&unique_checker)) {
       set->clear();
     }
 
@@ -641,24 +662,42 @@ skip_read: // do another iteration but don't read in any more bytes
       }
     } else {
       // truncate the ends, leaving only the beginning elements
-      if (concurrent_sort) {
-        // partial sort and end truncation has already been applied
+      if (output_size_bounded) {
+        // sort and end truncation has already been applied
       } else {
-        typename std::vector<Token>::iterator middle;
-        middle = output.begin() + *args.out_end;
-        if (middle > output.end()) {
-          middle = output.end();
-        }
-        if (args.sort) {
-          std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
-        }
-        output.resize(middle - output.begin());
-      }
-      if (args.out_start) {
-        if (*args.out_start < output.size()) {
-          output.erase(output.begin(), output.begin() + *args.out_start);
+        // truncate the end
+        if (tail && !sort) {
+          // !sort since tail reversed the sorting order. see UncompiledCodes
+          // truncate based on tail
+          if (*args.out_end < output.size()) {
+            output.erase(output.begin(), output.end() - *args.out_end);
+          }
         } else {
-          output.clear();
+          typename std::vector<Token>::iterator middle;
+          middle = output.begin() + *args.out_end;
+          if (middle > output.end()) {
+            middle = output.end();
+          }
+          if (args.sort) {
+            std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
+          }
+          output.resize(middle - output.begin());
+        }
+      }
+      // truncate the beginning
+      if (args.out_start) {
+        if (tail && !sort) {
+          if (*args.out_start < output.size()) {
+            output.erase(output.end() - *args.out_start, output.end());
+          } else {
+            output.clear();
+          }
+        } else {
+          if (*args.out_start < output.size()) {
+            output.erase(output.begin(), output.begin() + *args.out_start);
+          } else {
+            output.clear();
+          }
         }
       }
     }

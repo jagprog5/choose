@@ -49,8 +49,7 @@ struct Arguments {
   // truncate end of result, exclusive
   std::optional<InLimitOp::T> out_end;
 
-  // truncate and leave last n tokens
-  // the "n" value is stored in out_end
+  // modifier on out_start and out_end. truncation is from the end not the beginning
   bool tail = false;
 
   // number of bytes
@@ -119,7 +118,8 @@ struct UncompiledCodes {
 
   std::vector<char> primary;
 
-  std::optional<InLimitOp::T> tail;
+  std::optional<InLimitOp::T> tail_start;
+  std::optional<InLimitOp::T> tail_end;
 
   // disambiguate between empty and unset
   // needed since they take default values
@@ -151,13 +151,12 @@ struct UncompiledCodes {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
     }
 
-    if (this->tail) {
+    if (this->tail_end) {
       output.tail = true;
-      output.out_start = std::nullopt; // --tail overrides --out
-      output.out_end = *tail;
+      output.out_start = tail_start; // --tail overrides --out
+      output.out_end = tail_end;
       if (output.sort) {
-        // tail is applied via concurrent_sort.
-        // it does some fancy flipping to achieve this
+        // if sorting and tail, then tail is applied via fancy flipping
         output.sort_reverse ^= true;
         output.flip ^= true;
       }
@@ -310,7 +309,7 @@ void print_help_message() {
       "                display the tokens in a selection tui. ignores --out\n"
       "        --tail [<# tokens, default: 10>]\n"
       "                truncate the output, leaving the last n tokens. ignores --out\n"
-      "        --take [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
+      "        --take [<# tokens>|<start from end>,<stop from end>|<default: 10>]\n"
       "                sets --out, and a --head at the beginning. this places a limit\n"
       "                on the input and the output\n"
       "        --tenacious\n"
@@ -553,9 +552,17 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
         auto tail_handler = [&](bool has_arg) {
           if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
-            uncompiled_output.tail = num::parse_number<InLimitOp::T>(on_num_err, optarg);
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
+            auto first = std::get<0>(val);
+            auto second = std::get<1>(val);
+            if (second) {
+              uncompiled_output.tail_start = first;
+              uncompiled_output.tail_end = second;
+            } else {
+              uncompiled_output.tail_end = first;
+            }
           } else {
-            uncompiled_output.tail = 10;
+            uncompiled_output.tail_end = 10;
           }
         };
 
