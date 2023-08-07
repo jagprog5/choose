@@ -143,7 +143,7 @@ The former is restricted to working with `lines`, whereas the latter works with 
 
 # Sorting and Uniqueness
 
-choose allows for lexicographical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
+choose uses lexicographical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
