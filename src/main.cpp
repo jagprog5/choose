@@ -28,14 +28,14 @@ struct BatchOutputStream {
                std::optional<std::vector<char>>(std::vector<char>())
                                                          : std::nullopt} {}
 
-  void write_output(const choose::Token& t) {
+  void write_output(const char* begin, const char* end) {
     if (!first_within_batch) {
       qo.write_output(args.output, args.out_delimiter);
     } else if (!first_batch) {
       qo.write_output(args.output, args.bout_delimiter);
     }
     first_within_batch = false;
-    qo.write_output(args.output, t.buffer);
+    qo.write_output(args.output, begin, end);
   }
 
   void finish_batch() {
@@ -56,7 +56,7 @@ struct BatchOutputStream {
 // a single instance of UIState is used, with a static lifetime
 struct UIState {
   choose::Arguments args;
-  std::vector<choose::Token> tokens;
+  std::vector<std::string> tokens;
   BatchOutputStream os;
 
   // ncurses
@@ -226,8 +226,8 @@ again:
     }
 
     for (const auto& s : selections) {
-      const choose::Token& token = tokens[s];
-      os.write_output(token);
+      const std::string& token = tokens[s];
+      os.write_output(&*token.cbegin(), &*token.cend());
     }
     os.finish_batch();
 
@@ -349,8 +349,8 @@ again:
         // 2 leaves a space for the indicator '>' and a single space
         const int INITIAL_X = selection_text_space + 2;
         int x = INITIAL_X;
-        const char* pos = &*tokens[y + scroll_position].buffer.cbegin();
-        const char* end = &*tokens[y + scroll_position].buffer.cend();
+        const char* pos = &*tokens[y + scroll_position].cbegin();
+        const char* end = &*tokens[y + scroll_position].cend();
 
         // ============================ draw token =============================
 
@@ -418,9 +418,9 @@ again:
         }
 
         if (invisible_only) {
-          const choose::Token& token = tokens[y + scroll_position];
+          const std::string& token = tokens[y + scroll_position];
           wattron(selection_window.get(), A_DIM);
-          mvwprintw(selection_window.get(), y, INITIAL_X, "\\s{%d bytes}", (int)(token.buffer.end() - token.buffer.begin()));
+          mvwprintw(selection_window.get(), y, INITIAL_X, "\\s{%d bytes}", (int)(token.size()));
           wattroff(selection_window.get(), A_DIM);
         }
 
@@ -449,7 +449,7 @@ again:
 int main(int argc, char* const* argv) {
   choose::Arguments args = choose::handle_args(argc, argv);
   setlocale(LC_ALL, args.locale);
-  std::vector<choose::Token> tokens;
+  std::vector<std::string> tokens;
   try {
     tokens = choose::create_tokens(args);
   } catch (const choose::termination_request&) {

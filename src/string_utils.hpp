@@ -283,12 +283,16 @@ struct QueuedOutput {
   // selected. in this case, queue up the output, and sends it on exit.
   std::optional<std::vector<char>> queued;
 
-  void write_output(FILE* f, const std::vector<char>& v) {
+  void write_output(FILE* f, const char* begin, const char* end) {
     if (this->queued) {
-      append_to_buffer(*this->queued, v);
+      append_to_buffer(*this->queued, begin, end);
     } else {
-      write_f(f, v);
+      write_f(f, begin, end);
     }
+  }
+
+  void write_output(FILE* f, const std::vector<char>& v) {
+    this->write_output(f, &*v.cbegin(), &*v.cend());
   }
 
   void flush_output(FILE* f) {

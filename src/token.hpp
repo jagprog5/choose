@@ -124,7 +124,7 @@ const char* id(bool is_match) {
   }
 }
 
-using indirect = std::vector<Token>::size_type; // an index into output
+using indirect = std::vector<std::string>::size_type; // an index into output
 
 } // namespace
 
@@ -134,7 +134,7 @@ using indirect = std::vector<Token>::size_type; // an index into output
 // else
 //      writes to args.output, then throws a termination_request exception,
 //      which the caller should handle (exit unless unit test)
-std::vector<Token> create_tokens(choose::Arguments& args) {
+std::vector<std::string> create_tokens(choose::Arguments& args) {
   const bool single_byte_delimiter = args.in_byte_delimiter.has_value();
   const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
   const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
@@ -166,7 +166,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   uint32_t match_options = PCRE2_PARTIAL_HARD;
 
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
-  std::vector<Token> output;             // !tokens_not_stored, this is used
+  std::vector<std::string> output;             // !tokens_not_stored, this is used
 
   if (args.out_end == 0) {
     // edge case on logic. it adds a token, then checks if the out limit has been hit
@@ -174,14 +174,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto lexicographical_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
-      const Token* lhs = &lhs_arg;
-      const Token* rhs = &rhs_arg;
+    auto lexicographical_comparison = [&](const std::string& lhs_arg, const std::string& rhs_arg) -> bool {
+      const std::string* lhs = &lhs_arg;
+      const std::string* rhs = &rhs_arg;
       if (sort_reversed) {
         std::swap(lhs, rhs);
       }
-      return std::lexicographical_compare( //
-          lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
+      return *lhs < *rhs;
     };
 
     auto lexicographical_uniqueness_set_comp = [&](indirect lhs, indirect rhs) -> bool { //
@@ -189,8 +188,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     };
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
-      const Token& t = output[val];
-      auto view = std::string_view(t.buffer.data(), t.buffer.size());
+      const std::string& t = output[val];
+      auto view = std::string_view(t.data(), t.size());
       return std::hash<std::string_view>{}(view);
     };
 
@@ -265,9 +264,16 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
+        // this copy sucks, I hate it.
+        std::string s(t.buffer.data(), t.buffer.size());
+        t.buffer.clear();
         if (!output_size_bounded) {
           // typical case
-          output.push_back(std::move(t));
+          output.push_back(std::move(s));
+          // begin and end might still be needed for direct output, after this
+          // is called
+          begin = &*output.rbegin()->cbegin();
+          end = &*output.rbegin()->cend();
           if (unique) {
             if (!uniqueness_check(output.size() - 1)) {
               // the element is not unique. nothing was added to the uniqueness set
@@ -281,14 +287,14 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (sort) {
             // note that the sorting is reversed if tail is used. so this
             // handles tail and non tail cases. see UncompiledCodes
-            auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, lexicographical_comparison);
-            output.insert(insertion_pos, std::move(t));
+            auto insertion_pos = std::upper_bound(output.begin(), output.end(), s, lexicographical_comparison);
+            output.insert(insertion_pos, std::move(s));
             if (output.size() > *args.out_end) {
               output.pop_back();
               return false;
             }
           } else {
-            output.push_back(std::move(t));
+            output.push_back(std::move(s));
             if (tail) {
               if (output.size() > *args.out_end) {
                 output.erase(output.begin());
@@ -673,7 +679,7 @@ skip_read: // do another iteration but don't read in any more bytes
             output.erase(output.begin(), output.end() - *args.out_end);
           }
         } else {
-          typename std::vector<Token>::iterator middle;
+          typename std::vector<std::string>::iterator middle;
           middle = output.begin() + *args.out_end;
           if (middle > output.end()) {
             middle = output.end();
@@ -714,8 +720,8 @@ skip_all:
     // don't apply truncation again (in direct_output logic below), since it was already done above
     args.out_start = std::nullopt;
     args.out_end = std::nullopt;
-    for (const Token& t : output) {
-      direct_output.write_output(t);
+    for (const std::string& t : output) {
+      direct_output.write_output(&*t.cbegin(), &*t.cend());
     }
     direct_output.finish_output();
     throw termination_request();
