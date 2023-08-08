@@ -1,3 +1,10 @@
+#define OUTPUT_SIZE_BOUND_TESTING
+// this ensure that through the lifetime of the program the output vector does
+// not exceed a certain amount. this was needed since without this check, only
+// the end result could be seen.
+#include <optional>
+std::optional<size_t> output_size_bound_testing;
+
 #define BOOST_TEST_MODULE choose_test_module
 #include <boost/test/unit_test.hpp>
 #include "args.hpp"
@@ -18,7 +25,11 @@ char three = (char)0b11100000;
 char four = (char)0b11110000;
 
 struct GlobalInit {
-  GlobalInit() { setlocale(LC_ALL, ""); }
+  GlobalInit() {
+    setlocale(LC_ALL, "");
+    // if choose fails in run_choose
+    signal(SIGPIPE, SIG_IGN);
+  }
 };
 
 BOOST_GLOBAL_FIXTURE(GlobalInit);
@@ -361,15 +372,21 @@ choose_output run_choose(const char* null_terminating_input, const std::vector<c
   return run_choose(to_vec(null_terminating_input), argv);
 }
 
+struct OutputSizeBoundFixture {
+  OutputSizeBoundFixture(size_t max) { output_size_bound_testing = max; }
+  ~OutputSizeBoundFixture() { output_size_bound_testing = std::nullopt; }
+};
+
 BOOST_AUTO_TEST_SUITE(create_tokens_test_suite)
 
 BOOST_AUTO_TEST_CASE(simple) {
-  choose_output out = run_choose("a\nb\nc", {"-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
+  choose_output out = run_choose("a\na\nb\nc", {"-t"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "a", "b", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(delimiters) {
+  OutputSizeBoundFixture o(0);
   choose_output out = run_choose("first\nsecond\nthird", {"--output-delimiter", " ", "--batch-delimiter=\n"});
   choose_output correct_output{to_vec("first second third\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -425,75 +442,166 @@ BOOST_AUTO_TEST_CASE(output_match) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-// lexicographical sorting and uniqueness
-
 BOOST_AUTO_TEST_CASE(sort) {
-  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_partial) {
-  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=2", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "is"}};
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort"});
+  choose_output correct_output{to_vec("a\nis\ntest\nthis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(unique) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique"});
+  choose_output correct_output{to_vec("this\nis\na\ntest\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
-BOOST_AUTO_TEST_CASE(lex_unique_with_set) {
+BOOST_AUTO_TEST_CASE(out) {
+  OutputSizeBoundFixture f(0);
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=3"});
+  choose_output correct_output{to_vec("this\nis\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_tui) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=3", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"this", "is", "a"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_min) {
+  OutputSizeBoundFixture f(0);
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=1,3"});
+  choose_output correct_output{to_vec("is\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_min_tui) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=1,3", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"is", "a"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(tail) {
+  OutputSizeBoundFixture f(3);
+  choose_output out = run_choose("here\nthis\nis\na\ntest", {"--tail=3"});
+  choose_output correct_output{to_vec("is\na\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(tail_min) {
+  OutputSizeBoundFixture f(4);
+  choose_output out = run_choose("blah\nhere\nthis\nis\na\ntest", {"--tail=1,4"});
+  choose_output correct_output{to_vec("this\nis\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_unique) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique"});
+  choose_output correct_output{to_vec("a\nis\ntest\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_out) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--out=5"});
+  choose_output correct_output{to_vec("a\nb\nc\nd\ne\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_out_tui) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--out=5", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "b", "c", "d", "e"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_out_min) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--out=2,5"});
+  choose_output correct_output{to_vec("c\nd\ne\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_tail) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--tail=5"});
+  choose_output correct_output{to_vec("e\nf\ng\nh\ni\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_tail_min) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--tail=2,5"});
+  choose_output correct_output{to_vec("e\nf\ng\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_reverse_tail) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("a\nb\nc\nd\ne\nf\ng\nh\ni\n", {"--sort-reverse", "--tail=5"});
+  choose_output correct_output{to_vec("e\nd\nc\nb\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_flip_tail) {
+  OutputSizeBoundFixture f(5);
+  choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--tail=5", "--flip"});
+  choose_output correct_output{to_vec("i\nh\ng\nf\ne\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_out) {
+  choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--out=1,2"});
+  choose_output correct_output{to_vec("b\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_tail) {
+  choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--tail=2"});
+  choose_output correct_output{to_vec("b\nc\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_tail_min) {
+  choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--tail=1,2"});
+  choose_output correct_output{to_vec("b\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_tail) {
+  // tail has higher priority
+  OutputSizeBoundFixture f(2);
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=1,2", "--tail=2"});
+  choose_output correct_output{to_vec("a\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_unique_out) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=2"});
+  choose_output correct_output{to_vec("a\nis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_unique_out_min) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=1,2"});
+  choose_output correct_output{to_vec("is\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_unique_tail) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=2"});
+  choose_output correct_output{to_vec("test\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_unique_tail_min) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=1,2"});
+  choose_output correct_output{to_vec("test\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_with_set) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--unique-use-set", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-// user defined sorting and uniqueness
-
-BOOST_AUTO_TEST_CASE(defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith", "Apple", "Banana"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(partial_stable_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--out=3", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Doe", "John Smith"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(partial_stable_sort_not_concurrent) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-rut", "--comp-sort", "^John", "--out=3"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(concurrent_sort_stable) {
-  // for this test it is manually verified that the output size remains bounded to 6.
-  // this is an important property, so the memory usage remains bounded even for very large inputs.
-  std::string in;
-  for (int i = 0; i < 100; ++i) {
-    in += "apple ";
-    in += std::to_string(i);
-    in += '\n';
-  }
-  in += "John first\n";
-  in += "John second\n";
-  in += "John third\n";
-
-  choose_output out = run_choose(in.c_str(), {"-r", "--comp-sort", "^John", "--out=6", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John first", "John second", "John third", "apple 0", "apple 1", "apple 2"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-// mix of both lex and user defined
-
-BOOST_AUTO_TEST_CASE(lex_unique_defined_sort) {
-  choose_output out = run_choose("John Doe\nApple\nJohn Doe\nBanana\nJohn Smith", {"-r", "--comp-sort", "^John", "--unique", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"John Doe", "John Smith", "Apple", "Banana"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -524,8 +632,14 @@ BOOST_AUTO_TEST_CASE(in_limit) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(flip) {
+  choose_output out = run_choose("a\nb\nc\nd", {"--flip"});
+  choose_output correct_output{to_vec("d\nc\nb\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(reverse) {
-  choose_output out = run_choose("a\nb\nc\nd", {"--reverse"});
+  choose_output out = run_choose("a\nb\nc\nd", {"--sort-reverse"});
   choose_output correct_output{to_vec("d\nc\nb\na\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -569,6 +683,18 @@ BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_stop) {
 BOOST_AUTO_TEST_CASE(out_limit_with_sort_past_end_start) {
   choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=100000,3"});
   choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(out_unique_sort_with_limit_past_bound) {
+  choose_output out = run_choose("this\nis\na\ntest", {"-t", "--unique", "--sort", "--out=100000"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(tail_unique_with_min_limit_past_bound) {
+  choose_output out = run_choose("this\nis\na\ntest", {"-t", "--unique", "--tail=100000,100000"});
+  choose_output correct_output{std::vector<choose::Token>{}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -651,6 +777,12 @@ BOOST_AUTO_TEST_CASE(index_op_after_last) {
 BOOST_AUTO_TEST_CASE(literal_sub) {
   choose_output out = run_choose("literal substitution", {"--sub", "literal", "good", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"good substitution"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(delimiter_sub) {
+  choose_output out = run_choose("very long line here test other long line test test hello", {"test", "-o", "banana", "-d", "--buf-size=4"});
+  choose_output correct_output{to_vec("very long line here banana other long line banana banana hello")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

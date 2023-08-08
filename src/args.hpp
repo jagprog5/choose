@@ -29,13 +29,11 @@ struct Arguments {
   bool use_input_delimiter = false;
   bool end = false;
   bool sort = false; // indicates that any sort is applied
-
-  // user defined comparison
-  regex::code comp_sort = 0;
+  bool sort_reverse = false;
 
   bool unique = false; // lexicographical unique
   bool unique_use_set = false;
-  bool reverse = false;
+  bool flip = false;
   bool flush = false;
   bool multiple_selections = false;
   // match is false indicates that Arguments::primary is the delimiter after tokens.
@@ -47,9 +45,12 @@ struct Arguments {
   bool delimit_on_empty = false;
 
   // truncate beginning of result, inclusive
-  std::optional<size_t> out_start;
+  std::optional<InLimitOp::T> out_start;
   // truncate end of result, exclusive
-  std::optional<size_t> out_end;
+  std::optional<InLimitOp::T> out_end;
+
+  // modifier on out_start and out_end. truncation is from the end not the beginning
+  bool tail = false;
 
   // number of bytes
   // args will set it to a default value if it is unset. max indicates unset
@@ -84,7 +85,9 @@ struct Arguments {
   bool can_drop_warn = true;
 
   // a special case where the tokens can be sent directly to the output as they are received
-  bool is_direct_output() const { return !tui && !sort && !reverse; }
+  bool is_direct_output() const { //
+    return !tui && !sort && !flip && !tail;
+  }
 
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
@@ -115,7 +118,8 @@ struct UncompiledCodes {
 
   std::vector<char> primary;
 
-  const char* comp = 0;
+  std::optional<InLimitOp::T> tail_start;
+  std::optional<InLimitOp::T> tail_end;
 
   // disambiguate between empty and unset
   // needed since they take default values
@@ -147,8 +151,15 @@ struct UncompiledCodes {
       output.primary = regex::compile(primary, re_options, "positional argument", PCRE2_JIT_PARTIAL_HARD);
     }
 
-    if (comp) {
-      output.comp_sort = regex::compile(comp, re_options, "user defined comparison for sort");
+    if (this->tail_end) {
+      output.tail = true;
+      output.out_start = tail_start; // --tail overrides --out
+      output.out_end = tail_end;
+      if (output.sort) {
+        // if sorting and tail, then tail is applied via fancy flipping
+        output.sort_reverse ^= true;
+        output.flip ^= true;
+      }
     }
   }
 };
@@ -167,7 +178,7 @@ void arg_error_preamble(int argc, const char* const* argv) {
 
 // this function exits
 void print_version_message() {
-  int exit_code = puts("choose 0.2.0, "
+  int exit_code = puts("choose 0.3.0, "
     "ncurses " choose_xstr(NCURSES_VERSION_MAJOR) "." choose_xstr(NCURSES_VERSION_MINOR) "." choose_xstr(NCURSES_VERSION_PATCH) ", "
     "pcre2 " choose_xstr(PCRE2_MAJOR) "." choose_xstr(PCRE2_MINOR)) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
   exit(exit_code);
@@ -205,8 +216,8 @@ void print_help_message() {
       "        --replace <replacement>\n"
       "                a special case of the substitution op where the match target is\n"
       "                the positional argument. --match or --sed must be specified.\n"
-      "                this op must come before all ops that edit tokens: all except rm\n"
-      "                or filter\n"
+      "                this op must come before all ops that edit tokens: all except\n"
+      "                rm, filter, or head\n"
 #ifndef PCRE2_SUBSTITUTE_REPLACEMENT_ONLY
       "                WARNING PCRE2 version old: lookaround outside match won't work\n"
 #endif
@@ -240,11 +251,7 @@ void print_help_message() {
       "                token that can be created. if it's size would exceed this arg\n"
       "                then the content thus far is discarded. this limit is avoided\n"
       "                in the special case where there is no ordered ops, no sorting,\n"
-      "                no uniqueness, no reverse, and no tui used.\n"
-      "        --comp-sort <less than comparison>\n"
-      "                apply a stable sort using a user defined comparison. pairs of\n"
-      "                tokens are evaluated. if only one matches, then it is less than\n"
-      "                the other. inherits the same match options as the positional arg\n"
+      "                no uniqueness, no flip, and no tui used.\n"
       "        -d, --delimit-same\n"
       "                applies both --delimit-not-at-end and --use-delimiter. this\n"
       "                makes the output end with a delimiter when the input also ends\n"
@@ -262,8 +269,7 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
-      "                when applying --unique, use a tree instead of a hash table. this\n"
-      "                makes a typical fast case slower and a typical slow case faster\n"
+      "                when applying --unique, use a tree instead of a hash table.\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -280,17 +286,19 @@ void print_help_message() {
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
-      "                truncate after sorting and uniqueness\n"
+      "                truncate the output\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
-      "        --reverse\n"
+      "        --flip\n"
       "                reverse the token order. this is the last step before being sent\n"
       "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
+      "        --sort-reverse\n"
+      "                apply the sort in reverse order\n"
       "        --sed\n"
       "                --match, but also writes everything around the tokens, and the\n"
       "                match groups aren't used as individual tokens\n"
@@ -299,7 +307,9 @@ void print_help_message() {
       "                the input order. an indicator displays the order\n"
       "        -t, --tui\n"
       "                display the tokens in a selection tui. ignores --out\n"
-      "        --take [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "        --tail [<# tokens, default: 10>]\n"
+      "                truncate the output, leaving the last n tokens. ignores --out\n"
+      "        --take [<# tokens>|<start from end>,<stop from end>|<default: 10>]\n"
       "                sets --out, and a --head at the beginning. this places a limit\n"
       "                on the input and the output\n"
       "        --tenacious\n"
@@ -330,8 +340,6 @@ void print_help_message() {
       "        echo -n 'hello world' | choose -r --sub 'hello (\\w+)' 'hi $1'\n"
       "        echo -n 'every other word is printed here' | choose ' ' -r --out\\\n"
       "                --index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
-      "        echo -en \"John Doe\\nApple\\nJohn Doe\\nBanana\\nJohn Smith\" | choose\\\n"
-      "                -r --comp-sort '^John'\n"
       "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --index\\\n"
       "                after --rm '^c' --sub '.+' '$0 out:' --index after\n"
       "        echo -e \"this\\nis\\na\\ntest\" | choose -r --sed \".+\" --replace banana\n"
@@ -409,7 +417,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"output-delimiter", required_argument, NULL, 'o'},
         {"batch-delimiter", required_argument, NULL, 'b'},
         {"prompt", required_argument, NULL, 'p'},
-        {"comp-sort", required_argument, NULL, 0},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
@@ -424,6 +431,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
         {"out", optional_argument, NULL, 0},
+        {"tail", optional_argument, NULL, 0},
         {"take", optional_argument, NULL, 0},
         // options
         {"tui", no_argument, NULL, 't'},
@@ -431,7 +439,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
-        {"reverse", no_argument, NULL, 0},
+        {"flip", no_argument, NULL, 0},
+        {"sort-reverse", no_argument, NULL, 0},
         {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
         {"multi", no_argument, NULL, 'm'},
@@ -527,7 +536,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 
         auto out_handler = [&](bool has_arg) {
           if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
-            auto val = num::parse_number_pair<size_t>(on_num_err, optarg);
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
             auto first = std::get<0>(val);
             auto second = std::get<1>(val);
             if (second) {
@@ -538,6 +547,22 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             }
           } else {
             ret.out_end = 10;
+          }
+        };
+
+        auto tail_handler = [&](bool has_arg) {
+          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
+            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
+            auto first = std::get<0>(val);
+            auto second = std::get<1>(val);
+            if (second) {
+              uncompiled_output.tail_start = first;
+              uncompiled_output.tail_end = second;
+            } else {
+              uncompiled_output.tail_end = first;
+            }
+          } else {
+            uncompiled_output.tail_end = 10;
           }
         };
 
@@ -561,7 +586,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             index_handler(true);
           } else if (strcmp("replace", name) == 0) {
             for (const uncompiled::UncompiledOrderedOp& op : uncompiled_output.ordered_ops) {
-              if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledIndexOp>(op)) {
+              if (!std::holds_alternative<uncompiled::UncompiledRmOrFilterOp>(op) && !std::holds_alternative<uncompiled::UncompiledInLimitOp>(op)) {
                 arg_error_preamble(argc, argv);
                 fprintf(stderr, "option '--%s' can't be proceeded by an editing op\n", name);
                 arg_has_errors = true;
@@ -580,13 +605,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               ++optind;
               uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
             }
-          } else if (strcmp("comp-sort", name) == 0) {
-            uncompiled_output.comp = optarg;
-            ret.sort = true;
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
             take_handler(true);
+          } else if (strcmp("tail", name) == 0) {
+            tail_handler(true);
           } else {
             arg_error_preamble(argc, argv);
             fprintf(stderr, "unknown arg \"%s\"\n", name);
@@ -594,8 +618,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           }
         } else {
           // long option without argument or optional argument
-          if (strcmp("reverse", name) == 0) {
-            ret.reverse = true;
+          if (strcmp("flip", name) == 0) {
+            ret.flip = true;
+          } else if (strcmp("sort-reverse", name) == 0) {
+            ret.sort = true;
+            ret.sort_reverse = true;
           } else if (strcmp("flush", name) == 0) {
             ret.flush = true;
           } else if (strcmp("delimit-not-at-end", name) == 0) {
@@ -608,6 +635,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             out_handler(false);
           } else if (strcmp("take", name) == 0) {
             take_handler(false);
+          } else if (strcmp("tail", name) == 0) {
+            tail_handler(false);
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {

@@ -143,7 +143,7 @@ The former is restricted to working with `lines`, whereas the latter works with 
 
 # Sorting and Uniqueness
 
-choose allows for lexicographical comparison and **user defined** comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
+choose uses lexicographical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
@@ -171,34 +171,13 @@ this
 </tr>
 </table>
 
-And this command puts all tokens that start with "John" first, but otherwise the order is retained and tokens are unique lexicographically:
-
-<table>
-<tr>
-<th>Command</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>
+Sorting is implemented to effectively leverage truncation. For example:
 
 ```bash
-echo -en "John Doe\nApple\nJohn Doe\nBanana\nJohn Smith"\
- | choose --comp-sort '^John' -ru
+echo very_long_input | choose --sort --out=5
 ```
 
-</td>
-<td>
-<pre>
-John Doe
-John Smith
-Apple
-Banana
-</pre>  
-</td>
-</tr>
-</table>
-
-If the output is being truncated via `--out`, then each new element is stored in its sorted order, and excess element are discarded.
+That command will only stores the top 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this.
 
 # Matching
 
