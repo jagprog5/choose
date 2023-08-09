@@ -53,7 +53,22 @@ run_get_time() {
     echo -n " | "
 }
 
-echo -en "\
+echo -e "### Versions\n\`\`\`txt"
+choose --version
+pcre2grep --version
+sed --version | head -n 1
+awk --version | head -n 1
+sort --version | head -n 1
+
+echo -e "\`\`\`\n### Specs\n\`\`\`txt"
+uname -r
+if command -v lscpu &> /dev/null ; then
+lscpu | grep -oP '^Model name: *\K.*' --color=never
+fi
+echo -n "ram: "
+cat /proc/meminfo | grep -oP '^MemTotal: *\K.*' --color=never
+
+echo -en "\`\`\`\\n
 ### Grepping
 
 | (ms)             | choose | pcre2grep  |
