@@ -7,6 +7,8 @@
 #include <memory>
 #include <stdexcept>
 
+#include "string_utils.hpp"
+
 namespace choose {
 
 namespace regex {
@@ -260,6 +262,83 @@ std::vector<char> substitute_on_match(const match_data& data, //
   const char* target_begin = subject + ovector[0];
   const char* target_end = subject + ovector[1];
   return substitute_global(re, target_begin, target_end - target_begin, replacement, context);
+#endif
+}
+
+// like substitute_on_match but writes result to file
+void substitute_on_match_direct(FILE* out,
+                                const match_data& data, //
+                                const code& re,
+                                const char* subject,
+                                [[maybe_unused]] PCRE2_SIZE subject_length,
+                                const char* replacement,
+                                SubstitutionContext& context) {
+#ifdef PCRE2_SUBSTITUTE_REPLACEMENT_ONLY
+  apply_null_guard(subject, subject_length);
+  uint32_t sub_flags = PCRE2_SUBSTITUTE_REPLACEMENT_ONLY //
+                       | PCRE2_SUBSTITUTE_MATCHED        //
+                       | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+#ifdef PCRE2_SUBSTITUTE_LITERAL
+  if (options(re) & PCRE2_LITERAL) {
+    sub_flags |= PCRE2_SUBSTITUTE_LITERAL;
+  }
+#endif
+  PCRE2_SIZE output_size = context.max_replacement;
+  int sub_rc;
+  {
+    char buf[context.max_replacement];
+    sub_rc = pcre2_substitute(re.get(),                //
+                              (PCRE2_SPTR)subject,     //
+                              subject_length,          //
+                              0,                       //
+                              sub_flags,               //
+                              data.get(),              //
+                              NULL,                    //
+                              (PCRE2_SPTR)replacement, //
+                              PCRE2_ZERO_TERMINATED,   //
+                              (PCRE2_UCHAR8*)buf,      //
+                              &output_size);
+
+    if (sub_rc >= 0) { // successful sub
+      str::write_f(out, buf, buf + output_size);
+      return;
+    }
+  } // scope for buf on stack
+
+  if (sub_rc != PCRE2_ERROR_NOMEMORY) {
+    throw get_sub_err(sub_rc);
+  }
+
+  // error is not enough memory. proceed to second pass
+  sub_flags &= ~PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+  context.max_replacement = output_size;
+  char buf[context.max_replacement];
+  sub_rc = pcre2_substitute(re.get(),                //
+                            (PCRE2_SPTR)subject,     //
+                            subject_length,          //
+                            0,                       //
+                            sub_flags,               //
+                            data.get(),              //
+                            NULL,                    //
+                            (PCRE2_SPTR)replacement, //
+                            PCRE2_ZERO_TERMINATED,   //
+                            (PCRE2_UCHAR8*)buf,      //
+                            &output_size);
+
+  if (sub_rc >= 0) {
+    str::write_f(out, buf, buf + output_size);
+    return;
+  }
+
+  throw get_sub_err(sub_rc);
+#else
+#warning "PCRE2 old version. --replace with lookaround outside target bounds will not work"
+  // emulate same result
+  PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(data.get());
+  const char* target_begin = subject + ovector[0];
+  const char* target_end = subject + ovector[1];
+  std::vector<char> ret = substitute_global(re, target_begin, target_end - target_begin, replacement, context);
+  str::write_f(out, ret);
 #endif
 }
 

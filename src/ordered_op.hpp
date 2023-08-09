@@ -98,8 +98,7 @@ struct SubOp {
       regex::Match match = regex::get_match(begin, data, "match before substitution");
       str::write_f(out, offset, match.begin);
       offset = match.end;
-      std::vector<char> replacement = regex::substitute_on_match(data, this->target, begin, end - begin, this->replacement, this->ctx);
-      str::write_f(out, replacement);
+      regex::substitute_on_match_direct(out, data, this->target, begin, end - begin, this->replacement, this->ctx);
     }
     str::write_f(out, offset, end);
   }
@@ -109,6 +108,14 @@ struct ReplaceOp {
   const char* replacement;
   regex::SubstitutionContext ctx;
   ReplaceOp(const char* replacement) : replacement(replacement) {}
+
+  void direct_apply(FILE* out,                     //
+                    const char* subj_begin,        //
+                    const char* subj_end,          //
+                    const regex::match_data& data, //
+                    const regex::code& re) {
+    regex::substitute_on_match_direct(out, data, re, subj_begin, subj_end - subj_begin, this->replacement, this->ctx);
+  }
 
   void apply(std::vector<char>& out,        //
              const char* subj_begin,        //

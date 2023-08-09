@@ -166,7 +166,7 @@ std::vector<std::string> create_tokens(choose::Arguments& args) {
   uint32_t match_options = PCRE2_PARTIAL_HARD;
 
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
-  std::vector<std::string> output;             // !tokens_not_stored, this is used
+  std::vector<std::string> output;       // !tokens_not_stored, this is used
 
   if (args.out_end == 0) {
     // edge case on logic. it adds a token, then checks if the out limit has been hit
@@ -264,7 +264,10 @@ std::vector<std::string> create_tokens(choose::Arguments& args) {
 
       // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
-        // this copy sucks, I hate it.
+        // this copy sucks, I hate it. originally, everything was a
+        // std::vector<char>. but now, std::string is used just before being
+        // evaluated for sorting and uniqueness. it's faster but the conversion
+        // requires a copy.
         std::string s(t.buffer.data(), t.buffer.size());
         t.buffer.clear();
         if (!output_size_bounded) {
@@ -334,9 +337,10 @@ std::vector<std::string> create_tokens(choose::Arguments& args) {
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
-              std::vector<char> out;
-              rep_op->apply(out, subject, subject + subject_size, primary_data, args.primary);
-              direct_output.write_output(&*out.cbegin(), &*out.cend());
+              auto direct_apply_replace = [&](FILE* out, const char*, const char*) { //
+                rep_op->direct_apply(out, subject, subject + subject_size, primary_data, args.primary);
+              };
+              direct_output.write_output(begin, end, direct_apply_replace);
             } else if (SubOp* sub_op = std::get_if<SubOp>(&op)) {
               auto direct_apply_sub = [&](FILE* out, const char* begin, const char* end) { //
                 sub_op->direct_apply(out, begin, end);
