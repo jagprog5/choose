@@ -39,51 +39,51 @@ ram: 16331032 kB
 
 | (ms)             | choose | pcre2grep  |
 |------------------|--------|------------|
-| plain_text       | 249.21 | 280.52 | 
-| test_repeated    | 1667.86 | 1613.70 | 
-| no_duplicates    | 330.10 | 366.01 | 
+| plain_text       | 248.26 | 284.37 | 
+| test_repeated    | 1662.68 | 1611.63 | 
+| no_duplicates    | 336.01 | 367.92 | 
 
 ### Stream Editing
 
 | (ms)             | choose | sed  |
 |------------------|--------|------|
-| plain_text       | 189.94 | 134.90 | 
-| test_repeated    | 2628.95 | 1155.71 | 
-| no_duplicates    | 5.24 | 44.88 | 
+| plain_text       | 180.83 | 140.47 | 
+| test_repeated    | 2604.82 | 1163.14 | 
+| no_duplicates    | 5.25 | 44.23 | 
 
 (here is a cherry picked great case for choose compared to sed)
 
 | (ms)             | choose | sed (with newline delimiter) |
 |------------------|--------|------|
-| no_duplicates    | 5.59 | 533.39 | 
+| no_duplicates    | 5.68 | 530.66 | 
 
 ### Sorting
 
-| (ms)             | choose | awk  |
+| (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 674.98 | 2124.21 | 
-| test_repeated    | 1846.22 | 2327.35 | 
-| no_duplicates    | 1895.45 | 8123.26 | 
+| plain_text       | 650.84 | 2254.89 | 
+| test_repeated    | 1884.06 | 2252.19 | 
+| no_duplicates    | 1849.60 | 7685.43 | 
 
 (a cherry picked case that leverages truncation)
 
 
 | (ms)             | choose --tail 5 | sort \| tail -n 5 |
 |------------------|--------|------|
-| no_duplicates    | 284.82 | 7137.14 | 
+| no_duplicates    | 287.62 | 7578.84 | 
 
 ### Uniqueness
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
-| plain_text       | 100.32 | 229.74 | 
-| test_repeated    | 504.57 | 1140.30 | 
-| no_duplicates    | 1971.65 | 1563.60 | 
+| plain_text       | 98.66 | 210.19 | 
+| test_repeated    | 507.41 | 1152.60 | 
+| no_duplicates    | 2018.39 | 1576.48 | 
 
 ### Sorting and Uniqueness
 
 | (ms)             | choose | sort -u |
 |------------------|--------|---------|
-| plain_text       | 99.93 | 2137.85 | 
-| test_repeated    | 512.56 | 2380.91 | 
-| no_duplicates    | 3722.76 | 8108.00 | 
+| plain_text       | 100.69 | 2100.42 | 
+| test_repeated    | 502.81 | 2333.96 | 
+| no_duplicates    | 3741.21 | 7988.70 | 

@@ -111,7 +111,7 @@ run_get_time "$SCRIPT_DIR/no_duplicates.txt" sed "s/test/banana/g"
 echo -en "\n\n\
 ### Sorting
 
-| (ms)             | choose | awk  |
+| (ms)             | choose | sort |
 |------------------|--------|------|
 | plain_text       | "
 
