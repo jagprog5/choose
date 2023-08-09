@@ -108,6 +108,15 @@ echo -en "\n\n(here is a cherry picked great case for choose compared to sed)
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" --sed test --replace banana
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" sed "s/test/banana/g"
 
+echo -en "\n\n(a special case, where choose cheats by using a literal replacement string)
+
+| (ms)             | choose (delimiter sub) | sed |
+|------------------|------------------------|-----|
+| test_repeated    | "
+
+run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" test -o banana -d
+run_get_time "$SCRIPT_DIR/test_repeated.txt" sed -z "s/test/banana/g"
+
 echo -en "\n\n\
 ### Sorting
 

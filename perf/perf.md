@@ -39,51 +39,57 @@ ram: 16331032 kB
 
 | (ms)             | choose | pcre2grep  |
 |------------------|--------|------------|
-| plain_text       | 248.26 | 284.37 | 
-| test_repeated    | 1662.68 | 1611.63 | 
-| no_duplicates    | 336.01 | 367.92 | 
+| plain_text       | 255.38 | 267.21 | 
+| test_repeated    | 1748.80 | 1607.19 | 
+| no_duplicates    | 331.00 | 371.78 | 
 
 ### Stream Editing
 
 | (ms)             | choose | sed  |
 |------------------|--------|------|
-| plain_text       | 180.83 | 140.47 | 
-| test_repeated    | 2604.82 | 1163.14 | 
-| no_duplicates    | 5.25 | 44.23 | 
+| plain_text       | 189.39 | 134.62 | 
+| test_repeated    | 2385.72 | 1149.04 | 
+| no_duplicates    | 5.14 | 44.85 | 
 
 (here is a cherry picked great case for choose compared to sed)
 
 | (ms)             | choose | sed (with newline delimiter) |
 |------------------|--------|------|
-| no_duplicates    | 5.68 | 530.66 | 
+| no_duplicates    | 5.18 | 537.59 | 
+
+(a special case, where choose cheats by using a literal replacement string)
+
+| (ms)             | choose (delimiter sub) | sed |
+|------------------|------------------------|-----|
+| test_repeated    | 1655.90 | 1158.88 | 
 
 ### Sorting
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 650.84 | 2254.89 | 
-| test_repeated    | 1884.06 | 2252.19 | 
-| no_duplicates    | 1849.60 | 7685.43 | 
+| plain_text       | 492.46 | 2155.83 | 
+| test_repeated    | 1915.23 | 2378.51 | 
+| no_duplicates    | 1974.91 | 7401.19 | 
 
 (a cherry picked case that leverages truncation)
 
 
 | (ms)             | choose --tail 5 | sort \| tail -n 5 |
 |------------------|--------|------|
-| no_duplicates    | 287.62 | 7578.84 | 
+| no_duplicates    | 426.37 | 7671.96 | 
 
 ### Uniqueness
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
-| plain_text       | 98.66 | 210.19 | 
-| test_repeated    | 507.41 | 1152.60 | 
-| no_duplicates    | 2018.39 | 1576.48 | 
+| plain_text       | 114.84 | 208.41 | 
+| test_repeated    | 568.89 | 1131.56 | 
+| no_duplicates    | 1944.59 | 1681.84 | 
 
 ### Sorting and Uniqueness
 
 | (ms)             | choose | sort -u |
 |------------------|--------|---------|
-| plain_text       | 100.69 | 2100.42 | 
-| test_repeated    | 502.81 | 2333.96 | 
-| no_duplicates    | 3741.21 | 7988.70 | 
+| plain_text       | 116.08 | 2081.22 | 
+| test_repeated    | 585.39 | 2324.01 | 
+| no_duplicates    | 3405.57 | 8049.54 | 
