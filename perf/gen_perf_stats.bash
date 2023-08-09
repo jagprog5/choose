@@ -7,14 +7,16 @@ sudo echo -n '' # do nothing. perf requires sudo. doing the prompt at the beginn
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-if ! command -v perf &> /dev/null
-then
-    echo "perf could not be found"
+# point to different perf paths for issues like this: https://github.com/microsoft/WSL/issues/9917
+PERF_TOOL="${PERF_TOOL:-perf}" 
+
+if ! command -v "$PERF_TOOL" &> /dev/null ; then
+    echo "$PERF_TOOL could not be found. typically needs apt package linux-tools-generic"
     exit 1
 fi
 
-CHOOSE_PATH=$(whereis choose | cut -d' ' -f2)
-if [ "$CHOOSE_PATH" = "choose:" ]; then
+CHOOSE_PATH=~/.choose/choose
+if ! command -v "$CHOOSE_PATH" &> /dev/null ; then
     echo "choose couldn't be found."
     echo " - make sure it's installed"
     echo " - try running this script without sudo (since choose is installed under user dir)"
@@ -47,11 +49,11 @@ if [ ! -e "$SCRIPT_DIR/no_duplicates.txt" ]; then
 fi
 
 run_get_time() {
-    echo -n $(2>&1 sudo perf stat --field-separator " " -- "${@:2}" < "$1" > /dev/null) | cut -d " " -f1 | tr -d '\n'
+    echo -n $(2>&1 sudo "$PERF_TOOL" stat --field-separator " " -- "${@:2}" < "$1" > /dev/null) | cut -d " " -f1 | tr -d '\n'
     echo -n " | "
 }
 
-echo -en "\n\n\
+echo -en "\
 ### Grepping
 
 | (ms)             | choose | pcre2grep  |
@@ -147,3 +149,4 @@ run_get_time "$SCRIPT_DIR/test_repeated.txt" sort -u
 echo -en "\n| no_duplicates    | "
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -su
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort -u
+echo ""
