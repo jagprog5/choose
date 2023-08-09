@@ -26,6 +26,9 @@ namespace choose {
 
 // Token is a thin wrapper around vector<char>. provides type clarity
 struct Token {
+  // one might question, why a char vector? why not a std::string? it's easier
+  // to work with the c libraries (like pcre2), and there wasn't a difference in
+  // performance
   std::vector<char> buffer;
 
   // for testing
@@ -328,6 +331,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
+              // placing this on the stack instead had no noticable difference
+              // in performance. perhaps elided
               std::vector<char> out;
               rep_op->apply(out, subject, subject + subject_size, primary_data, args.primary);
               direct_output.write_output(&*out.cbegin(), &*out.cend());

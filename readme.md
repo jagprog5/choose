@@ -234,17 +234,17 @@ choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), whi
 echo "banana test test" | choose -r --sed '(?<!banana )test' --replace hello
 ```
 
-Additionally, sed works per line of the input. choose doesn't assume the distinction of lines. To emphasize a point, here is a tricky substitution which has a target that includes a newline and null character:
+sed works per line of the input. choose doesn't assume the distinction of lines. To emphasize a point, here is a tricky substitution which has a target that includes a newline and null character:
 
 ```bash
 echo -e "this\n\0is\na\ntest" | choose -r --sed 'is\n\0is' --replace something
 ```
 
-sed can't make a substitution if the target contains the delimiter (a newline character); the input is split into lines before substitution occurs, so the delimiter never makes it to the substitution logic. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly.
+sed can't make a substitution if the target contains the delimiter (a newline character); the input is split into lines before substitution occurs, so the delimiter never makes it to the substitution logic. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly. One quick way of fixing this is to use `tr` to change the input before it gets to sed (by changing null to a different character), but this can lose information and lead to ambiguous cases (if the delimiter is changed to something found naturally in the input).
 
 # Speed
 
-See benchmarks [here](./perf.md) comparing choose to other tools with similar functionality.
+See benchmarks [here](./perf/perf.md) comparing choose to other tools with similar functionality.
 
 # ch_hist
 
