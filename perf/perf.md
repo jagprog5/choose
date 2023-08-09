@@ -2,21 +2,66 @@
 
 Results are generated from [this script](./gen_perf_stats.bash).
 
+## Summary
+
+### Grepping
+
+`pcre2grep` and `choose` have about the same speed.
+
+### Stream Editing
+
+`sed` reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, `sed` performs extremely poorly on input files that contain many small lines (for the `no_duplicates` case below, `sed` with a newline delimiter (default) was 10278% slower than `choose`). To normalize the performance, the `-z` option was used with `sed` (to change the delimiter to a null char, which never occurs in the input). `choose` doesn't use delimiters in this way, and can't come across this type of pathological case. After this normalization, `sed` is faster than `choose` except in cases where there are few substitutions to apply.
+
+### Uniqueness
+
+`choose` is faster than `awk` except in cases where there are few duplicates.
+
+### Sorting, and Sorting + Uniqueness
+
+`choose` is faster than `sort` and `sort -u`.
+
 ## Input Data
 
 Each input file is the same size (50 million bytes), but the type of data is different.
 
 ### plain_text
 
-This file represents an average random workload, which includes text from a novel repeated
+This file represents an average random workload, which includes text from a novel repeated.
+
+```txt
+The Project Gutenberg eBook of Pride and prejudice, by Jane Austen
+
+This eBook is for the use of anyone anywhere in the United States and
+most other parts of the world at no cost and with almost no restrictions
+whatsoever. You may copy it, give it away or re-use it under the terms
+...
+```
 
 ### test_repeated
 
-This file has the line "test" repeated. "test" is the match target used throughout, below.
+This file has the line "test" repeated. "test" is the match target used throughout, below. This includes grepping for the word "test", or substituting "test" to "banana".
+
+```txt
+test
+test
+test
+test
+test
+...
+```
 
 ### no_duplicates
 
 For filtering by uniqueness, there are two extremes. One is where the entire file consists of the same element repeatedly, which is in `test_repeated.txt`. The other is when every element is different. This file counts upwards from 1 for each line:
+
+```txt
+1
+2
+3
+4
+5
+...
+```
 
 ## Results
 

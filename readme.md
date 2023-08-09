@@ -21,22 +21,14 @@ make uninstall
 choose --help
 ```
 # Dialogs
-Dialogs can be used to select between tokens. By default, each token is delimited by a newline character:
-<table>
-<tr>
-<th>Command</th>
-<th>Interface</th>
-</tr>
-<tr>
-<td>
+Dialogs can be used to select between tokens. By default, each token is delimited by a newline character. This command:
 
 ```bash
 echo $'here❗\nis\neach\noption📋'\
   | choose --tui -p "Pick a word!"
 ```
 
-</td>
-<td>
+Gives this interface:
 
 <pre>
 ┌───────────────────────┐  
@@ -48,56 +40,29 @@ echo $'here❗\nis\neach\noption📋'\
   option📋  
 </pre>
 
-</td>
-</tr>
-</table>
-
 # Delimiters
 
 Instead of a newline character, a literal sequence or regular expression can delimit the input.
-
-<table>
-<tr>
-<th>Command</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>
 
 ```bash
 echo -n "this 1 is 2 a 3 test"\
   | choose -r " [0-9] "
 ```
 
-</td>
-<td>
 <pre>
 this  
 is  
 a  
 test
 </pre>  
-</td>
-</tr>
-</table>
 
-The delimiter in the output can also be set
-
-<table>
-<tr>
-<th>Command</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>
+The delimiter in the output can also be set.
 
 ```bash
 echo -n "this test here"\
   | choose " " -o $'\n===\n'
 ```
 
-</td>
-<td>
 <pre>
 this
 ===
@@ -106,9 +71,6 @@ test
 here
 ===
 </pre>  
-</td>
-</tr>
-</table>
 
 # Ordered Operations
 
@@ -147,29 +109,16 @@ choose uses lexicographical comparison between tokens. Using this comparison, it
 
 For example, this command sorts the input and leaves only unique entries:
 
-<table>
-<tr>
-<th>Command</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>
-
 ```bash
 echo -n "this is is test test "\
   | choose " " -us
 ```
 
-</td>
-<td>
 <pre>
 is
 test
 this
 </pre>  
-</td>
-</tr>
-</table>
 
 Sorting is implemented to effectively leverage truncation. For example:
 
@@ -177,34 +126,21 @@ Sorting is implemented to effectively leverage truncation. For example:
 echo very_long_input | choose --sort --out=5
 ```
 
-That command will only stores the top 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this.
+That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this and will be slower.
 
 # Matching
 
 Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group form a token. This is like `grep -o`.
-
-<table>
-<tr>
-<th>Command</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>
 
 ```bash
 echo "aaabbbccc"\
   | choose --match "bbb(...)" -r
 ```
 
-</td>
-<td>
 <pre>
 bbbccc
 ccc
-</pre>  
-</td>
-</tr>
-</table>
+</pre>
 
 # Stream Editing
 
