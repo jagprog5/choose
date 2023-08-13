@@ -272,9 +272,10 @@ struct choose_output {
     } else {
       const std::vector<choose::Token>& first = std::get<std::vector<choose::Token>>(o);
       const std::vector<choose::Token>& second = std::get<std::vector<choose::Token>>(other.o);
-      return std::equal(first.begin(), first.end(), second.begin(), second.end(), [](const choose::Token& lhs, const choose::Token& rhs) -> bool {
-        return lhs.buffer == rhs.buffer;
-      });
+      return std::equal(first.begin(), first.end(), second.begin(), second.end(),        //
+                        [](const choose::Token& lhs, const choose::Token& rhs) -> bool { //
+                          return lhs.buffer == rhs.buffer;
+                        });
     }
   }
 
