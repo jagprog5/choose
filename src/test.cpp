@@ -137,6 +137,33 @@ BOOST_AUTO_TEST_CASE(wide_utf8) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(field_locate_test_suite)
+
+BOOST_AUTO_TEST_CASE(field_locate) {
+  choose::Token t("first,,last");
+  t.set_field(std::tuple<char, size_t>{',', 0});
+  BOOST_REQUIRE(t.begin == &*t.buffer.cbegin());
+  BOOST_REQUIRE(t.end == &*t.buffer.cbegin() + 5);
+
+  t.set_field(std::tuple<char, size_t>{',', 1});
+  BOOST_REQUIRE(t.begin == &*t.buffer.cbegin() + 6);
+  BOOST_REQUIRE(t.end == &*t.buffer.cbegin() + 6);
+
+  t.set_field(std::tuple<char, size_t>{',', 2});
+  BOOST_REQUIRE(t.begin == &*t.buffer.cbegin() + 7);
+  BOOST_REQUIRE(t.end == &*t.buffer.cbegin() + 11);
+
+  t.set_field(std::tuple<char, size_t>{',', 3});
+  BOOST_REQUIRE(t.begin == &*t.buffer.cbegin() + 11);
+  BOOST_REQUIRE(t.end == &*t.buffer.cbegin() + 11);
+
+  choose::Token empty("");
+  t.set_field(std::tuple<char, size_t>{',', 5});
+  BOOST_REQUIRE(t.begin == t.end);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(other_string_utils_test_suite)
 
 BOOST_AUTO_TEST_CASE(test_last_character_start) {
@@ -608,13 +635,13 @@ BOOST_AUTO_TEST_CASE(unique_with_set) {
 }
 
 BOOST_AUTO_TEST_CASE(unique_by_field) {
-  choose_output out = run_choose("alpha,tester\nbeta,tester\ngamma,tester,abcde", {"-t", "--unique", "--field", "[^,]*,\\K[^,]*"});
+  choose_output out = run_choose("alpha,tester\nbeta,tester\ngamma,tester,abcde", {"-t", "--unique", "--field", ",", "1"});
   choose_output correct_output{std::vector<choose::Token>{"alpha,tester"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_by_field) {
-  choose_output out = run_choose("a,z\nb,y\nc,x", {"-t", "--sort", "--field", "[^,]*,\\K[^,]*"});
+  choose_output out = run_choose("a,z\nb,y\nc,x", {"-t", "--sort", "--field", ",", "1"});
   choose_output correct_output{std::vector<choose::Token>{"c,x", "b,y", "a,z"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

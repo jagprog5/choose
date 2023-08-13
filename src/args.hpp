@@ -71,7 +71,9 @@ struct Arguments {
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
-  regex::code field = 0; // match special field on token, like what section to sort on
+
+  // sorting and uniqueness field
+  std::optional<std::tuple<char, size_t>> field = {};
 
   // shortcut for if the delimiter is a single byte; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
@@ -118,7 +120,6 @@ struct UncompiledCodes {
   std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
   std::vector<char> primary;
-  const char* field = 0;
 
   std::optional<InLimitOp::T> tail_start;
   std::optional<InLimitOp::T> tail_end;
@@ -162,10 +163,6 @@ struct UncompiledCodes {
         output.sort_reverse ^= true;
         output.flip ^= true;
       }
-    }
-
-    if (this->field) {
-      output.field = regex::compile(this->field, re_options & ~PCRE2_LITERAL, "field");
     }
   }
 };
@@ -298,10 +295,8 @@ void print_help_message() {
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
-      "        --field <expr>\n"
-      "                match pattern for field used in sorting and uniqueness. inherits\n"
-      "                the same match options as the positional argument, except it is\n"
-      "                never literal"
+      "        --field <field character delimiter> <field number, starting at 0>\n"
+      "                use a field for sorting and uniqueness\n"
       "        --flip\n"
       "                reverse the token order. this is the last step before being sent\n"
       "                to the output or to the tui\n"
@@ -581,8 +576,19 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
-          } else if (strcmp("field", name) == 0)  {
-            uncompiled_output.field = optarg;
+          } else if (strcmp("field", name) == 0) {
+            // special handing here since getopt doesn't normally support multiple arguments
+            if (optind >= argc) {
+              // ran off end
+              arg_error_preamble(argc, argv);
+              fprintf(stderr, "option '--%s' requires two arguments\n", name);
+              arg_has_errors = true;
+            } else {
+              ++optind;
+              char field_sep = *argv[optind - 2];
+              size_t field_number = num::parse_number<decltype(field_number)>(on_num_err, argv[optind - 1]);
+              ret.field = std::tuple<char, size_t>{field_sep, field_number};
+            }
           } else if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {

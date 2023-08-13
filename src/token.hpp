@@ -38,17 +38,43 @@ struct Token {
   Token(const char* in) : buffer(in, in + strlen(in)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
   Token(std::vector<char>&& i) : buffer(std::move(i)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
 
-  void set_field(const regex::code& code, const regex::match_data& data) {
-    if (!code) {
+  void set_field(const std::optional<std::tuple<char, size_t>>& field) {
+    if (!field) {
       this->begin = &*buffer.cbegin();
       this->end = &*buffer.cend();
       return;
     }
-    int rc = regex::match(code, buffer.data(), buffer.size(), data, "token field");
-    if (rc > 0) {
-      regex::Match m = regex::get_match(buffer.data(), data, "token field");
-      this->begin = m.begin;
-      this->end = m.end;
+
+    // this state reset isn't needed, but guards against set_field being called multiple times
+    this->begin = 0;
+    this->end = 0;
+
+    std::tuple<char, size_t> field_vals = *field;
+    char field_sep = std::get<0>(field_vals);
+    size_t field_number = std::get<1>(field_vals);
+
+    size_t sep_count = 0;
+    const char* pos = &*buffer.cbegin();
+
+    if (field_number == 0) {
+      this->begin = pos;
+    }
+
+    while (pos != &*buffer.cend()) {
+      if (*pos == field_sep) {
+        ++sep_count;
+        if (sep_count == field_number) {
+          this->begin = pos + 1;
+        } else if (sep_count == field_number + 1) {
+          goto end;
+        }
+      }
+      ++pos;
+    }
+end:
+    this->end = pos;
+    if (!this->begin) {
+      this->begin = this->end;
     }
   }
 
@@ -158,7 +184,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
   const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
   regex::match_data primary_data = args.primary ? regex::create_match_data(args.primary) : NULL;
-  regex::match_data field_data = args.field ? regex::create_match_data(args.field) : NULL;
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
@@ -278,7 +303,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         } else {
           str::append_to_buffer(fragment, begin, end);
           t.buffer = std::move(fragment);
-          t.set_field(args.field, field_data);
           t_is_set = true;
           fragment = std::vector<char>();
           begin = &*t.buffer.cbegin();
@@ -288,6 +312,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
+        t.set_field(args.field);
         if (!output_size_bounded) {
           // typical case
           output.push_back(std::move(t));
@@ -382,9 +407,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               }
               in_op.apply(t.buffer);
             }
-            if (&op == &*args.ordered_ops.rbegin()) {
-              t.set_field(args.field, field_data);
-            }
             t_is_set = true;
             begin = &*t.buffer.cbegin();
             end = &*t.buffer.cend();
@@ -396,7 +418,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       // and a token t is needed
       if (!tokens_not_stored && !t_is_set) {
         str::append_to_buffer(t.buffer, begin, end);
-        t.set_field(args.field, field_data);
         begin = &*t.buffer.cbegin();
         end = &*t.buffer.cend();
       }
