@@ -63,6 +63,18 @@ For filtering by uniqueness, there are two extremes. One is where the entire fil
 ...
 ```
 
+### csv_field
+
+This file has a field where sorting and uniqueness should be applied.
+
+```txt
+garbage,1,garbage
+garbage,2,garbage
+garbage,3,garbage
+garbage,4,garbage
+garbage,5,garbage
+```
+
 ## Results
 
 ### Versions

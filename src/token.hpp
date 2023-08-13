@@ -30,12 +30,28 @@ struct Token {
   // to work with the c libraries (like pcre2), and there wasn't a difference in
   // performance
   std::vector<char> buffer;
+  // point to range in buffer, a special field of interest
+  const char* begin = 0;
+  const char* end = 0;
 
   // for testing
-  Token(const char* in) : buffer(in, in + strlen(in)) {}
-  bool operator==(const Token& other) const { return this->buffer == other.buffer; }
+  Token(const char* in) : buffer(in, in + strlen(in)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
+  Token(std::vector<char>&& i) : buffer(std::move(i)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
 
-  Token(std::vector<char>&& i) : buffer(std::move(i)){};
+  void set_field(const regex::code& code, const regex::match_data& data) {
+    if (!code) {
+      this->begin = &*buffer.cbegin();
+      this->end = &*buffer.cend();
+      return;
+    }
+    int rc = regex::match(code, buffer.data(), buffer.size(), data, "token field");
+    if (rc > 0) {
+      regex::Match m = regex::get_match(buffer.data(), data, "token field");
+      this->begin = m.begin;
+      this->end = m.end;
+    }
+  }
+
   Token() = default;
   Token(const Token&) = default;
   Token(Token&&) = default;
@@ -142,6 +158,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
   const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
   regex::match_data primary_data = args.primary ? regex::create_match_data(args.primary) : NULL;
+  regex::match_data field_data = args.field ? regex::create_match_data(args.field) : NULL;
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
@@ -184,7 +201,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         std::swap(lhs, rhs);
       }
       return std::lexicographical_compare( //
-          lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
+          lhs->begin, lhs->end, rhs->begin, rhs->end);
     };
 
     auto lexicographical_uniqueness_set_comp = [&](indirect lhs, indirect rhs) -> bool { //
@@ -193,12 +210,14 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
       const Token& t = output[val];
-      auto view = std::string_view(t.buffer.data(), t.buffer.size());
+      auto view = std::string_view(t.begin, t.end - t.begin);
       return std::hash<std::string_view>{}(view);
     };
 
-    auto unordered_set_equals = [&](indirect lhs, indirect rhs) -> bool { //
-      return output[lhs] == output[rhs];
+    auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
+      const Token& lhs = output[lhs_arg];
+      const Token& rhs = output[rhs_arg];
+      return std::equal(lhs.begin, lhs.end, rhs.begin, rhs.end);
     };
 
     // uniqueness is applied with an unordered_set if lexicographical comparison
@@ -259,6 +278,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         } else {
           str::append_to_buffer(fragment, begin, end);
           t.buffer = std::move(fragment);
+          t.set_field(args.field, field_data);
           t_is_set = true;
           fragment = std::vector<char>();
           begin = &*t.buffer.cbegin();
@@ -362,6 +382,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               }
               in_op.apply(t.buffer);
             }
+            if (&op == &*args.ordered_ops.rbegin()) {
+              t.set_field(args.field, field_data);
+            }
             t_is_set = true;
             begin = &*t.buffer.cbegin();
             end = &*t.buffer.cend();
@@ -373,6 +396,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       // and a token t is needed
       if (!tokens_not_stored && !t_is_set) {
         str::append_to_buffer(t.buffer, begin, end);
+        t.set_field(args.field, field_data);
         begin = &*t.buffer.cbegin();
         end = &*t.buffer.cend();
       }
