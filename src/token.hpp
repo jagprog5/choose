@@ -5,6 +5,7 @@
 #include <string_view>
 #include <unordered_set>
 #include <utility>
+#include <execution>
 
 #include "args.hpp"
 #include "regex.hpp"
@@ -663,7 +664,7 @@ skip_read: // do another iteration but don't read in any more bytes
     if (!args.out_start && !args.out_end) {
       // no truncation needed. this is the simplest case
       if (args.sort) {
-        std::sort(output.begin(), output.end(), lexicographical_comparison);
+        std::sort(std::execution::par_unseq, output.begin(), output.end(), lexicographical_comparison);
       }
     } else {
       // truncate the ends, leaving only the beginning elements
