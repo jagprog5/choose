@@ -54,7 +54,7 @@ run_get_time() {
 }
 
 echo -e "### Versions\n\`\`\`txt"
-choose --version
+choose --version | head -n 1
 pcre2grep --version
 sed --version | head -n 1
 awk --version | head -n 1

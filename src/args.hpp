@@ -29,9 +29,11 @@ struct Arguments {
   bool use_input_delimiter = false;
   bool end = false;
   bool sort = false; // indicates that any sort is applied
+  bool sort_numeric = false; // false indicates lexicographical. true indicates numeric
   bool sort_reverse = false;
+  bool sort_stable = false;
 
-  bool unique = false; // lexicographical unique
+  bool unique = false;
   bool unique_use_set = false;
   bool flip = false;
   bool flush = false;
@@ -269,7 +271,9 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
-      "                when applying --unique, use a tree instead of a hash table.\n"
+      "                uniqueness is applied via a hash table if lexicographical comp\n"
+      "                is used, or by a tree if numeric or other comp is used instead.\n"
+      "                with this option, only a tree is used\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -282,6 +286,8 @@ void print_help_message() {
       "                the max number of characters that the pattern can look before\n"
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
+      "        -n, --numeric\n"
+      "                apply sorting and uniqueness numerically\n"
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
@@ -302,6 +308,8 @@ void print_help_message() {
       "        --sed\n"
       "                --match, but also writes everything around the tokens, and the\n"
       "                match groups aren't used as individual tokens\n"
+      "        --stable\n"
+      "                implies --sort. a stable sort is used\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -446,10 +454,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
+        {"numeric", no_argument, NULL, 'n'},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sed", no_argument, NULL, 0},
         {"sort", no_argument, NULL, 's'},
+        {"stable", no_argument, NULL, 0},
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
@@ -617,7 +627,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             arg_has_errors = true;
           }
         } else {
-          // long option without argument or optional argument
+          // long option without argument or with optional argument
           if (strcmp("flip", name) == 0) {
             ret.flip = true;
           } else if (strcmp("sort-reverse", name) == 0) {
@@ -647,6 +657,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("sed", name) == 0) {
             ret.match = true;
             ret.sed = true;
+          } else if (strcmp("stable", name) == 0) {
+            ret.sort = true;
+            ret.sort_stable = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
@@ -708,6 +721,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'i':
         uncompiled_output.re_options |= PCRE2_CASELESS;
+        break;
+      case 'n':
+        ret.sort_numeric = true;
         break;
       case 'm':
         ret.multiple_selections = true;
