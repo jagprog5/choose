@@ -29,11 +29,12 @@ struct Arguments {
   bool use_input_delimiter = false;
   bool end = false;
   bool sort = false; // indicates that any sort is applied
-  bool sort_numeric = false; // false indicates lexicographical. true indicates numeric
-  bool sort_reverse = false;
+  bool sort_numeric = false; // requires sort. false indicates lexicographical
+  bool sort_reverse = false; // requires sort
   bool sort_stable = false;
 
-  bool unique = false;
+  bool unique = false; // indicates that any type of uniqueness is applied
+  bool unique_numeric = false; // requires unique. false indicates lexicographical
   bool unique_use_set = false;
   bool flip = false;
   bool flush = false;
@@ -271,9 +272,9 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
-      "                uniqueness is applied via a hash table if lexicographical comp\n"
-      "                is used, or by a tree if numeric or other comp is used instead.\n"
-      "                with this option, only a tree is used\n"
+      "                lexicographical uniqueness is applied via a hash table. numeric\n"
+      "                uniqueness is applied via a tree. with this option, only a tree\n"
+      "                is used\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -287,7 +288,11 @@ void print_help_message() {
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
       "        -n, --numeric\n"
-      "                apply sorting and uniqueness numerically\n"
+      "                if --sort or --unique are specified, it will be done numerically\n"
+      "        --numeric-unique\n"
+      "                apply uniqueness numerically. implies --unique\n"
+      "        --numeric-sort\n"
+      "                apply sorting numerically. implies --sort\n"
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
@@ -455,6 +460,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
         {"numeric", no_argument, NULL, 'n'},
+        {"numeric-sort", no_argument, NULL, 0},
+        {"numeric-unique", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sed", no_argument, NULL, 0},
@@ -651,6 +658,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
             ret.can_drop_warn = false;
+          } else if (strcmp("numeric-sort", name) == 0) {
+            ret.sort = true;
+            ret.sort_numeric = true;
+          } else if (strcmp("numeric-unique", name) == 0) {
+            ret.unique = true;
+            ret.unique_numeric = true;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -723,6 +736,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         uncompiled_output.re_options |= PCRE2_CASELESS;
         break;
       case 'n':
+        ret.unique_numeric = true;
         ret.sort_numeric = true;
         break;
       case 'm':
