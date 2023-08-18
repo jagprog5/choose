@@ -199,13 +199,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    auto sort_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool  {
+    auto sort_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
       if (sort_reversed) {
         std::swap(lhs, rhs);
       }
-      if (unique_numeric) {
+      if (sort_numeric) {
         return numeric_comparison(*lhs, *rhs);
       } else {
         return lexicographical_comparison(*lhs, *rhs);
@@ -213,15 +213,24 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     };
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
-      // unordered set is used for only lexicographical uniqueness
       const Token& t = output[val];
-      auto view = std::string_view(t.buffer.data(), t.buffer.size());
-      return std::hash<std::string_view>{}(view);
+      if (unique_numeric) {
+        return numeric_hash(&*t.buffer.cbegin(), &*t.buffer.cend());
+      } else {
+        auto view = std::string_view(t.buffer.data(), t.buffer.size());
+        return std::hash<std::string_view>{}(view);
+      }
     };
 
-    auto unordered_set_equals = [&](indirect lhs, indirect rhs) -> bool { //
-      // unordered set is used for only lexicographical uniqueness
-      return output[lhs] == output[rhs];
+    auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
+      const Token& lhs = output[lhs_arg];
+      const Token& rhs = output[rhs_arg];
+      if (unique_numeric) {
+        return numeric_equal( //
+            &*lhs.buffer.cbegin(), &*lhs.buffer.cend(), &*rhs.buffer.cbegin(), &*rhs.buffer.cend());
+      } else {
+        return lhs == rhs;
+      }
     };
 
     using uniqueness_set_T = std::set<indirect, decltype(uniqueness_set_comparison)>;
@@ -230,7 +239,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     unique_checker_T unique_checker = [&]() -> unique_checker_T {
       if (unique) {
-        if (unique_use_set || unique_numeric) {
+        if (unique_use_set) {
           return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
         } else {
           auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
@@ -708,9 +717,9 @@ skip_read: // do another iteration but don't read in any more bytes
           }
           if (args.sort) {
             if (args.sort_stable) {
-              stable_partial_sort(output.begin(), middle, output.end(), sort_comparison);
+              stable_partial_sort(std::execution::par_unseq, output.begin(), middle, output.end(), sort_comparison);
             } else {
-              std::partial_sort(output.begin(), middle, output.end(), sort_comparison);
+              std::partial_sort(std::execution::par_unseq, output.begin(), middle, output.end(), sort_comparison);
             }
           }
           output.resize(middle - output.begin());
