@@ -28,12 +28,12 @@ struct Arguments {
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
-  bool sort = false; // indicates that any sort is applied
+  bool sort = false;         // indicates that any sort is applied
   bool sort_numeric = false; // requires sort. false indicates lexicographical
   bool sort_reverse = false; // requires sort
   bool sort_stable = false;
 
-  bool unique = false; // indicates that any type of uniqueness is applied
+  bool unique = false;         // indicates that any type of uniqueness is applied
   bool unique_numeric = false; // requires unique. false indicates lexicographical
   bool unique_use_set = false;
   bool flip = false;
