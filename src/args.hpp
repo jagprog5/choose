@@ -482,7 +482,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimrsuyz0", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimnrsuyz0", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
