@@ -44,7 +44,8 @@ if(BUILD_TESTING)
   
   add_executable(unit_tests src/test.cpp)
   target_include_directories(unit_tests PRIVATE src)
-  target_compile_options(unit_tests PRIVATE -Wall -Wextra -Og -g -fno-rtti)
+  # -O0 gives better coverage info than -Og
+  target_compile_options(unit_tests PRIVATE -Wall -Wextra -O0 -g -fno-rtti)
 
   target_include_directories(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_HEADER_NAME})
   target_link_libraries(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})

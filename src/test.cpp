@@ -137,6 +137,76 @@ BOOST_AUTO_TEST_CASE(wide_utf8) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(numeric_compare_test_suite)
+
+BOOST_AUTO_TEST_CASE(numeric_compare_test) {
+  auto comp_str = [](const std::string& lhs, const std::string& rhs) -> bool { return numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend()); };
+  BOOST_REQUIRE(!comp_str(".", "."));
+  BOOST_REQUIRE(!comp_str(".", ".00000000000"));
+  BOOST_REQUIRE(!comp_str(".00000000001", "."));
+  BOOST_REQUIRE(comp_str(".0", ".000123"));
+  BOOST_REQUIRE(!comp_str("-.0", "-.000123"));
+  BOOST_REQUIRE(comp_str("123.00000000", "123.001"));
+  BOOST_REQUIRE(!comp_str(".1112", ".11111111"));
+  BOOST_REQUIRE(comp_str("12.", "22."));
+  BOOST_REQUIRE(comp_str("12.", "22"));
+  BOOST_REQUIRE(comp_str("12", "22."));
+  BOOST_REQUIRE(comp_str("22", "22.001"));
+
+  BOOST_REQUIRE(!comp_str("", ""));
+  BOOST_REQUIRE(!comp_str("-0.000", "+") && !comp_str("+", "-0.000"));
+  BOOST_REQUIRE(!comp_str("+,,.123", "0.123") && !comp_str("0.123", "+,,.123"));
+  BOOST_REQUIRE(!comp_str("1,,,,23", "123") && !comp_str("123", "1,,,,23"));
+  BOOST_REQUIRE(comp_str("123", "234"));
+  BOOST_REQUIRE(comp_str("012", "123"));
+  BOOST_REQUIRE(!comp_str("123", "012"));
+  BOOST_REQUIRE(comp_str(",,,0,,,1,,,2", "123"));
+  BOOST_REQUIRE(comp_str("102", "103"));
+  BOOST_REQUIRE(comp_str("99", "111"));
+  BOOST_REQUIRE(!comp_str("-99", "-111"));
+
+  BOOST_REQUIRE(!comp_str("+", "-"));
+  BOOST_REQUIRE(comp_str("   -9,,,,9", "    +99"));
+}
+
+BOOST_AUTO_TEST_CASE(numeric_hash_test) {
+  auto h = [](const std::string& s) -> size_t { return numeric_hash(&*s.cbegin(), &*s.cend()); };
+  BOOST_REQUIRE_EQUAL(h("-00,.0000"), h("+0.0"));
+  BOOST_REQUIRE_EQUAL(h("-."), h("00000"));
+  BOOST_REQUIRE_EQUAL(h("123"), h("   +00001,,,2,,,3"));
+  BOOST_REQUIRE_NE(h("+123"), h("-123"));
+  BOOST_REQUIRE_EQUAL(h("123"), h("123."));
+  BOOST_REQUIRE_EQUAL(h("123"), h("123.00000"));
+  BOOST_REQUIRE_NE(h("123"), h("123.000001"));
+  BOOST_REQUIRE_NE(h("123.456"), h("123456"));
+  BOOST_REQUIRE_EQUAL(h("123.456"), h("123.456000000"));
+}
+
+BOOST_AUTO_TEST_CASE(numeric_equal_test) {
+  auto equal_str = [](const std::string& lhs, const std::string& rhs) -> bool { return numeric_equal(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend()); };
+  BOOST_REQUIRE(!equal_str("-1", "0"));
+  BOOST_REQUIRE(!equal_str(".001", ".00"));
+  BOOST_REQUIRE(equal_str(".", ".0000"));
+  BOOST_REQUIRE(!equal_str(".", ".0001"));
+  BOOST_REQUIRE(!equal_str(".00", ".0001"));
+  BOOST_REQUIRE(equal_str("123", "123"));
+  BOOST_REQUIRE(!equal_str("123.001", "123"));
+  BOOST_REQUIRE(!equal_str("123", "123.001"));
+  BOOST_REQUIRE(equal_str("123", "123.000"));
+  BOOST_REQUIRE(equal_str("123.000", "123"));
+  BOOST_REQUIRE(!equal_str("123", "1234"));
+  BOOST_REQUIRE(!equal_str("1234", "123"));
+  BOOST_REQUIRE(!equal_str("123.", "1234"));
+  BOOST_REQUIRE(!equal_str("1234", "123."));
+  BOOST_REQUIRE(!equal_str(".001", ".002"));
+  BOOST_REQUIRE(equal_str(".0000000", "."));
+  BOOST_REQUIRE(equal_str(".0000000", "0.000000"));
+  BOOST_REQUIRE(equal_str("+123.000", "123"));
+  BOOST_REQUIRE(!equal_str("345", "123"));
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(other_string_utils_test_suite)
 
 BOOST_AUTO_TEST_CASE(test_last_character_start) {
@@ -453,6 +523,48 @@ BOOST_AUTO_TEST_CASE(sort) {
 BOOST_AUTO_TEST_CASE(unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique"});
   choose_output correct_output{to_vec("this\nis\na\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_unique) {
+  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric"});
+  choose_output correct_output{to_vec("-0\n1\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
+  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric", "--unique-use-set"});
+  choose_output correct_output{to_vec("-0\n1\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_sort) {
+  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"--sort-numeric", "--stable"});
+  choose_output correct_output{to_vec("-0\n+0\n.0\n1\n+1.0\n0001.0\n17\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_sort_2) {
+  choose_output out = run_choose("3\n-2.1\n-2\n-1\n2\n+1\n3", {"--sort-numeric"});
+  choose_output correct_output{to_vec("-2.1\n-2\n-1\n+1\n2\n3\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_sort_lex_unique) {
+  choose_output out = run_choose("2\n+2\n2.0\n2\n1\n+1\n1.0\n1\n1", {"--sort-numeric", "--stable", "-u"});
+  choose_output correct_output{to_vec("1\n+1\n1.0\n2\n+2\n2.0\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(lex_sort_numeric_unique) {
+  choose_output out = run_choose("10\n2\n1\n+10.0\n+2", {"--sort", "--unique-numeric"});
+  choose_output correct_output{to_vec("1\n10\n2\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(stable_partial_sort) {
+  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"-u", "--sort-numeric", "--stable", "--out=3"});
+  choose_output correct_output{to_vec("-0\n+0\n.0\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
