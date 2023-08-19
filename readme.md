@@ -105,7 +105,7 @@ The former is restricted to working with `lines`, whereas the latter works with 
 
 # Sorting and Uniqueness
 
-choose uses lexicographical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
+choose uses lexicographical comparison or numerical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
@@ -118,7 +118,22 @@ echo -n "this is is test test "\
 is
 test
 this
-</pre>  
+</pre>
+
+And this command sorts based on a specified field:
+
+```bash
+echo "1,gamma,1
+3,alpha,3
+2,beta,2"\
+  | choose -s --field '[^,]*,\K[^,]*'
+```
+
+<pre>
+3,alpha,3
+2,beta,2
+1,gamma,1
+</pre>
 
 Sorting is implemented to effectively leverage truncation. For example:
 

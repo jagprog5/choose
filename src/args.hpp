@@ -74,6 +74,7 @@ struct Arguments {
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
+  regex::code field = 0; // match special field on token, like what section to sort on
 
   // shortcut for if the delimiter is a single byte; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
@@ -120,6 +121,7 @@ struct UncompiledCodes {
   std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
   std::vector<char> primary;
+  const char* field = 0;
 
   std::optional<InLimitOp::T> tail_start;
   std::optional<InLimitOp::T> tail_end;
@@ -163,6 +165,10 @@ struct UncompiledCodes {
         output.sort_reverse ^= true;
         output.flip ^= true;
       }
+    }
+
+    if (this->field) {
+      output.field = regex::compile(this->field, re_options & ~PCRE2_LITERAL, "field");
     }
   }
 };
@@ -299,6 +305,10 @@ void print_help_message() {
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
+      "        --field <expr>\n"
+      "                match pattern for field used in sorting and uniqueness. inherits\n"
+      "                the same match options as the positional argument, except it is\n"
+      "                never literal"
       "        --flip\n"
       "                reverse the token order. this is the last step before being sent\n"
       "                to the output or to the tui\n"
@@ -433,6 +443,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
+        {"field", required_argument, NULL, 0},
         {"remove", required_argument, NULL, 0},
         {"buf-size", required_argument, NULL, 0},
         {"buf-size-frag", required_argument, NULL, 0},
@@ -587,6 +598,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
+          } else if (strcmp("field", name) == 0) {
+            uncompiled_output.field = optarg;
           } else if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
@@ -871,7 +884,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       }
       if (min > ret.buf_size) {
         arg_error_preamble(argc, argv);
-        fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+        fputs("the buffer size is too small and will cause the subject to never match.\n", stderr);
         exit(EXIT_FAILURE);
       }
     }

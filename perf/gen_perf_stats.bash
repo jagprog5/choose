@@ -49,6 +49,13 @@ if [ ! -e "$SCRIPT_DIR/no_duplicates.txt" ]; then
     seq 6388888 > "$SCRIPT_DIR/no_duplicates.txt"
 fi
 
+if [ ! -e "$SCRIPT_DIR/csv_field.txt" ]; then
+    echo "generating csv_field.txt (might take a while...)"
+    (for i in {1..2129629} ; do
+        echo garbage,$i,garbage
+    done) > "$SCRIPT_DIR/csv_field.txt"
+fi
+
 run_get_time() {
     echo -n $(2>&1 sudo "$PERF_TOOL" stat --field-separator " " -- "${@:2}" < "$1" > /dev/null) | cut -d " " -f1 | tr -d '\n'
     echo -n " | "
@@ -162,8 +169,8 @@ run_get_time "$SCRIPT_DIR/no_duplicates.txt" awk '!a[$0]++'
 echo -en "\n\n\
 ### Sorting and Uniqueness $COMP_FLAGS $UNIQUE_FLAGS
 
-| (ms)             | choose | sort -u |
-|------------------|--------|---------|
+| (ms)             | choose | sort |
+|------------------|--------|------|
 | plain_text       | "
 
 run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -su $COMP_FLAGS $UNIQUE_FLAGS
@@ -174,4 +181,15 @@ run_get_time "$SCRIPT_DIR/test_repeated.txt" sort -u $COMP_FLAGS
 echo -en "\n| no_duplicates    | "
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -su $COMP_FLAGS $UNIQUE_FLAGS
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort -u $COMP_FLAGS
+echo ""
+
+echo -en "\n\n\
+### Sorting and Uniqueness based on field $COMP_FLAGS $UNIQUE_FLAGS
+
+| (ms)             | choose | sort |
+|------------------|--------|------|
+| csv_field        | "
+
+run_get_time "$SCRIPT_DIR/csv_field.txt" "$CHOOSE_PATH" -su --field '[^,]*,\K[^,]*' $COMP_FLAGS $UNIQUE_FLAGS
+run_get_time "$SCRIPT_DIR/csv_field.txt" sort -u -t, -k2 $COMP_FLAGS
 echo ""

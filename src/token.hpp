@@ -32,12 +32,28 @@ struct Token {
   // to work with the c libraries (like pcre2), and there wasn't a difference in
   // performance
   std::vector<char> buffer;
+  // point to range in buffer, a special field of interest
+  const char* begin = 0;
+  const char* end = 0;
 
   // for testing
-  Token(const char* in) : buffer(in, in + strlen(in)) {}
-  bool operator==(const Token& other) const { return this->buffer == other.buffer; }
+  Token(const char* in) : buffer(in, in + strlen(in)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
+  Token(std::vector<char>&& i) : buffer(std::move(i)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
 
-  Token(std::vector<char>&& i) : buffer(std::move(i)){};
+  void set_field(const regex::code& code, const regex::match_data& data) {
+    if (!code) {
+      this->begin = &*buffer.cbegin();
+      this->end = &*buffer.cend();
+      return;
+    }
+    int rc = regex::match(code, buffer.data(), buffer.size(), data, "token field");
+    if (rc > 0) {
+      regex::Match m = regex::get_match(buffer.data(), data, "token field");
+      this->begin = m.begin;
+      this->end = m.end;
+    }
+  }
+
   Token() = default;
   Token(const Token&) = default;
   Token(Token&&) = default;
@@ -144,6 +160,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
   const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
   regex::match_data primary_data = args.primary ? regex::create_match_data(args.primary) : NULL;
+  regex::match_data field_data = args.field ? regex::create_match_data(args.field) : NULL;
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
@@ -181,14 +198,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto lexicographical_comparison = [&](const Token& lhs, const Token& rhs) -> bool {
-      return std::lexicographical_compare( //
-          lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
+    auto lexicographical_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
+      return std::lexicographical_compare(lhs.begin, lhs.end, rhs.begin, rhs.end);
     };
 
-    auto numeric_comparison = [&](const Token& lhs, const Token& rhs) -> bool {
-      return numeric_compare( //
-          &*lhs.buffer.cbegin(), &*lhs.buffer.cend(), &*rhs.buffer.cbegin(), &*rhs.buffer.cend());
+    auto numeric_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
+      return numeric_compare(lhs.begin, lhs.end, rhs.begin, rhs.end);
     };
 
     auto uniqueness_set_comparison = [&](indirect lhs, indirect rhs) -> bool {
@@ -215,9 +230,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     auto unordered_set_hash = [&](indirect val) -> size_t {
       const Token& t = output[val];
       if (unique_numeric) {
-        return numeric_hash(&*t.buffer.cbegin(), &*t.buffer.cend());
+        return numeric_hash(t.begin, t.end);
       } else {
-        auto view = std::string_view(t.buffer.data(), t.buffer.size());
+        auto view = std::string_view(t.begin, t.end - t.begin);
         return std::hash<std::string_view>{}(view);
       }
     };
@@ -226,10 +241,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       const Token& lhs = output[lhs_arg];
       const Token& rhs = output[rhs_arg];
       if (unique_numeric) {
-        return numeric_equal( //
-            &*lhs.buffer.cbegin(), &*lhs.buffer.cend(), &*rhs.buffer.cbegin(), &*rhs.buffer.cend());
+        return numeric_equal(lhs.begin, lhs.end, rhs.begin, rhs.end);
       } else {
-        return lhs == rhs;
+        return std::equal(lhs.begin, lhs.end, rhs.begin, rhs.end);
       }
     };
 
@@ -296,6 +310,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
+        t.set_field(args.field, field_data);
         if (!output_size_bounded) {
           // typical case
           output.push_back(std::move(t));

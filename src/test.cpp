@@ -315,7 +315,9 @@ struct choose_output {
     } else {
       const std::vector<choose::Token>& first = std::get<std::vector<choose::Token>>(o);
       const std::vector<choose::Token>& second = std::get<std::vector<choose::Token>>(other.o);
-      return first == second;
+      return std::equal(first.begin(), first.end(), second.begin(), second.end(), [](const choose::Token& lhs, const choose::Token& rhs) -> bool { //
+        return lhs.buffer == rhs.buffer;
+      });
     }
   }
 
@@ -714,6 +716,18 @@ BOOST_AUTO_TEST_CASE(sort_unique_tail_min) {
 BOOST_AUTO_TEST_CASE(unique_with_set) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--unique-use-set", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"this", "is", "a", "test"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_by_field) {
+  choose_output out = run_choose("alpha,tester\nbeta,tester\ngamma,tester,abcde", {"-t", "--unique", "--field", "[^,]*,\\K[^,]*"});
+  choose_output correct_output{std::vector<choose::Token>{"alpha,tester"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_by_field) {
+  choose_output out = run_choose("a,z\nb,y\nc,x", {"-t", "--sort", "--field", "[^,]*,\\K[^,]*"});
+  choose_output correct_output{std::vector<choose::Token>{"c,x", "b,y", "a,z"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
