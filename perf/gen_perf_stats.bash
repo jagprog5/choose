@@ -144,7 +144,7 @@ run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -s --tail 5 $COMP_FL
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort $COMP_FLAGS | tail -n 5
 
 echo -en "\n\n\
-### Uniqueness
+### Uniqueness $UNIQUE_FLAGS
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
@@ -160,7 +160,7 @@ run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -u $UNIQUE_FLAGS
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" awk '!a[$0]++'
 
 echo -en "\n\n\
-### Sorting and Uniqueness $COMP_FLAGS
+### Sorting and Uniqueness $COMP_FLAGS $UNIQUE_FLAGS
 
 | (ms)             | choose | sort -u |
 |------------------|--------|---------|
