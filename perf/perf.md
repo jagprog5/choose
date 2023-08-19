@@ -10,7 +10,7 @@ Results are generated from [this script](./gen_perf_stats.bash).
 
 ### Stream Editing
 
-`sed` reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, `sed` performs extremely poorly on input files that contain many small lines (for the `no_duplicates` case below, `sed` with a newline delimiter (default) was 10278% slower than `choose`). To normalize the performance, the `-z` option was used with `sed` (to change the delimiter to a null char, which never occurs in the input). `choose` doesn't use delimiters in this way, and can't come across this type of pathological case. After this normalization, `sed` is faster than `choose` except in cases where there are few substitutions to apply.
+`sed` reads input until it reaches a newline character, and puts the content thus far in a buffer where it is then manipulated. Because of this, `sed` performs extremely poorly on input files that contain many small lines (for the `no_duplicates` case below, `sed` with a newline delimiter (default) is x50 to x100 slower than `choose`). To normalize the performance, the `-z` option was used with `sed` (to change the delimiter to a null char, which never occurs in the input). `choose` doesn't use delimiters in this way, and can't come across this type of pathological case. After this normalization, `sed` is faster than `choose` except in cases where there are few substitutions to apply.
 
 ### Uniqueness
 
@@ -18,7 +18,9 @@ Results are generated from [this script](./gen_perf_stats.bash).
 
 ### Sorting, and Sorting + Uniqueness
 
-`choose` is faster than `sort` and `sort -u`.
+For lexicographical comparison, `choose` is faster than `sort` and `sort -u`.
+
+`choose` doesn't do numeric comparison very speedily at this point. It's ok but has room for improvement.
 
 ## Input Data
 
@@ -67,74 +69,74 @@ For filtering by uniqueness, there are two extremes. One is where the entire fil
 
 ### Versions
 ```txt
-choose 0.3.0, ncurses 6.2.20200212, pcre2 10.43
-pcre2grep version 10.43-DEV 2023-04-14
-sed (GNU sed) 4.7
-GNU Awk 5.0.1, API: 2.0 (GNU MPFR 4.0.2, GNU MP 6.2.0)
-sort (GNU coreutils) 8.30
+choose 0.3.0, ncurses 6.1.20180127, pcre2 10.42
+pcre2grep version 10.42 2022-12-11
+sed (GNU sed) 4.4
+GNU Awk 4.1.4, API: 1.1 (GNU MPFR 4.0.1, GNU MP 6.1.2)
+sort (GNU coreutils) 8.28
 ```
 ### Specs
 ```txt
 5.15.90.1-microsoft-standard-WSL2
-AMD Ryzen 7 3800X 8-Core Processor
-ram: 16331032 kB
+Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz
+ram: 8116584 kB
 ```
 
 ### Grepping
 
 | (ms)             | choose | pcre2grep  |
 |------------------|--------|------------|
-| plain_text       | 255.38 | 267.21 | 
-| test_repeated    | 1748.80 | 1607.19 | 
-| no_duplicates    | 331.00 | 371.78 | 
+| plain_text       | 255.571900 | 255.602800 | 
+| test_repeated    | 1541.437300 | 1456.649400 | 
+| no_duplicates    | 335.363600 | 328.095000 | 
 
 ### Stream Editing
 
 | (ms)             | choose | sed  |
 |------------------|--------|------|
-| plain_text       | 189.39 | 134.62 | 
-| test_repeated    | 2385.72 | 1149.04 | 
-| no_duplicates    | 5.14 | 44.85 | 
+| plain_text       | 178.085900 | 157.202200 | 
+| test_repeated    | 2519.054900 | 1027.284900 | 
+| no_duplicates    | 8.691000 | 52.048900 | 
 
 (here is a cherry picked great case for choose compared to sed)
 
 | (ms)             | choose | sed (with newline delimiter) |
 |------------------|--------|------|
-| no_duplicates    | 5.18 | 537.59 | 
+| no_duplicates    | 9.701600 | 455.517000 | 
 
 (a special case, where choose cheats by using a literal replacement string)
 
 | (ms)             | choose (delimiter sub) | sed |
 |------------------|------------------------|-----|
-| test_repeated    | 1655.90 | 1158.88 | 
+| test_repeated    | 1489.126500 | 1045.871200 | 
 
-### Sorting
+### Sorting 
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 492.46 | 2155.83 | 
-| test_repeated    | 1915.23 | 2378.51 | 
-| no_duplicates    | 1974.91 | 7401.19 | 
+| plain_text       | 758.170400 | 2032.359300 | 
+| test_repeated    | 1890.213400 | 2023.206800 | 
+| no_duplicates    | 2014.638900 | 5743.573000 | 
 
-(a cherry picked case that leverages truncation)
+(a special case that leverages truncation)
 
 
-| (ms)             | choose --tail 5 | sort \| tail -n 5 |
+| (ms)             | choose -s --tail 5 | sort \| tail -n 5 |
 |------------------|--------|------|
-| no_duplicates    | 426.37 | 7671.96 | 
+| no_duplicates    | 234.092700 | 5297.302100 | 
 
 ### Uniqueness
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
-| plain_text       | 114.84 | 208.41 | 
-| test_repeated    | 568.89 | 1131.56 | 
-| no_duplicates    | 1944.59 | 1681.84 | 
+| plain_text       | 119.411900 | 217.741600 | 
+| test_repeated    | 510.382300 | 1004.464100 | 
+| no_duplicates    | 2435.280500 | 1502.059800 | 
 
-### Sorting and Uniqueness
+### Sorting and Uniqueness 
 
 | (ms)             | choose | sort -u |
 |------------------|--------|---------|
-| plain_text       | 116.08 | 2081.22 | 
-| test_repeated    | 585.39 | 2324.01 | 
-| no_duplicates    | 3405.57 | 8049.54 | 
+| plain_text       | 122.549100 | 2066.645100 | 
+| test_repeated    | 511.756500 | 2001.259400 | 
+| no_duplicates    | 4034.020900 | 5780.361300 | 

@@ -1,11 +1,13 @@
 #pragma once
 #include <algorithm>
+#include <execution>
 #include <optional>
 #include <set>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
 
+#include "algo_utils.hpp"
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
@@ -152,11 +154,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool has_ops = !args.ordered_ops.empty();
   const bool flush = args.flush;
   const bool tail = args.tail;
-  const bool sort_reversed = args.sort_reverse;
 
   const bool unique = args.unique;
   const bool unique_use_set = args.unique_use_set;
+  const bool unique_numeric = args.unique_numeric;
   const bool sort = args.sort;
+  const bool sort_numeric = args.sort_numeric;
+  const bool sort_reversed = args.sort_reverse;
 
   // the elements in output are being inserted with any excess being discarded.
   // this keeps the memory bounded for e.g. long running sort with --out
@@ -177,42 +181,66 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto lexicographical_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
+    auto lexicographical_comparison = [&](const Token& lhs, const Token& rhs) -> bool {
+      return std::lexicographical_compare( //
+          lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
+    };
+
+    auto numeric_comparison = [&](const Token& lhs, const Token& rhs) -> bool {
+      return numeric_compare( //
+          &*lhs.buffer.cbegin(), &*lhs.buffer.cend(), &*rhs.buffer.cbegin(), &*rhs.buffer.cend());
+    };
+
+    auto uniqueness_set_comparison = [&](indirect lhs, indirect rhs) -> bool {
+      if (unique_numeric) {
+        return numeric_comparison(output[lhs], output[rhs]);
+      } else {
+        return lexicographical_comparison(output[lhs], output[rhs]);
+      }
+    };
+
+    auto sort_comparison = [&](const Token& lhs_arg, const Token& rhs_arg) -> bool {
       const Token* lhs = &lhs_arg;
       const Token* rhs = &rhs_arg;
       if (sort_reversed) {
         std::swap(lhs, rhs);
       }
-      return std::lexicographical_compare( //
-          lhs->buffer.cbegin(), lhs->buffer.cend(), rhs->buffer.cbegin(), rhs->buffer.cend());
-    };
-
-    auto lexicographical_uniqueness_set_comp = [&](indirect lhs, indirect rhs) -> bool { //
-      return lexicographical_comparison(output[lhs], output[rhs]);
+      if (sort_numeric) {
+        return numeric_comparison(*lhs, *rhs);
+      } else {
+        return lexicographical_comparison(*lhs, *rhs);
+      }
     };
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
       const Token& t = output[val];
-      auto view = std::string_view(t.buffer.data(), t.buffer.size());
-      return std::hash<std::string_view>{}(view);
+      if (unique_numeric) {
+        return numeric_hash(&*t.buffer.cbegin(), &*t.buffer.cend());
+      } else {
+        auto view = std::string_view(t.buffer.data(), t.buffer.size());
+        return std::hash<std::string_view>{}(view);
+      }
     };
 
-    auto unordered_set_equals = [&](indirect lhs, indirect rhs) -> bool { //
-      return output[lhs] == output[rhs];
+    auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
+      const Token& lhs = output[lhs_arg];
+      const Token& rhs = output[rhs_arg];
+      if (unique_numeric) {
+        return numeric_equal( //
+            &*lhs.buffer.cbegin(), &*lhs.buffer.cend(), &*rhs.buffer.cbegin(), &*rhs.buffer.cend());
+      } else {
+        return lhs == rhs;
+      }
     };
 
-    // uniqueness is applied with an unordered_set if lexicographical comparison
-    // is used. in contrast, the user defined comparison uses a std::set, as it
-    // is easier in the args to specify a comparison with regex compared to a
-    // hash with regex.
-    using uniqueness_set_T = std::set<indirect, decltype(lexicographical_uniqueness_set_comp)>;
+    using uniqueness_set_T = std::set<indirect, decltype(uniqueness_set_comparison)>;
     using unordered_uniqueness_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
     using unique_checker_T = std::variant<std::monostate, uniqueness_set_T, unordered_uniqueness_set_T>;
 
     unique_checker_T unique_checker = [&]() -> unique_checker_T {
       if (unique) {
         if (unique_use_set) {
-          return unique_checker_T(uniqueness_set_T(lexicographical_uniqueness_set_comp));
+          return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
         } else {
           auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
           s.max_load_factor(0.125); // obtained experimentally. see perf.md
@@ -223,7 +251,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     }();
 
-    // returns true if output[elem] is unique
+    // returns true if output[elem] is unique. requires unique == true
     auto uniqueness_check = [&](indirect elem) -> bool { //
       if (unordered_uniqueness_set_T* set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
         return set->insert(elem).second;
@@ -284,8 +312,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (sort) {
             // note that the sorting is reversed if tail is used. so this
             // handles tail and non tail cases. see UncompiledCodes
-            auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, lexicographical_comparison);
-            output.insert(insertion_pos, std::move(t));
+            auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, sort_comparison);
+            output.insert(insertion_pos, std::move(t)); // stable sort applied from insertion position
             if (output.size() > *args.out_end) {
               output.pop_back();
               return false;
@@ -663,7 +691,11 @@ skip_read: // do another iteration but don't read in any more bytes
     if (!args.out_start && !args.out_end) {
       // no truncation needed. this is the simplest case
       if (args.sort) {
-        std::sort(output.begin(), output.end(), lexicographical_comparison);
+        if (args.sort_stable) {
+          std::stable_sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
+        } else {
+          std::sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
+        }
       }
     } else {
       // truncate the ends, leaving only the beginning elements
@@ -684,7 +716,11 @@ skip_read: // do another iteration but don't read in any more bytes
             middle = output.end();
           }
           if (args.sort) {
-            std::partial_sort(output.begin(), middle, output.end(), lexicographical_comparison);
+            if (args.sort_stable) {
+              stable_partial_sort(std::execution::par_unseq, output.begin(), middle, output.end(), sort_comparison);
+            } else {
+              std::partial_sort(std::execution::par_unseq, output.begin(), middle, output.end(), sort_comparison);
+            }
           }
           output.resize(middle - output.begin());
         }

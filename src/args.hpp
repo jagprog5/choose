@@ -28,10 +28,13 @@ struct Arguments {
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
-  bool sort = false; // indicates that any sort is applied
-  bool sort_reverse = false;
+  bool sort = false;         // indicates that any sort is applied
+  bool sort_numeric = false; // requires sort. false indicates lexicographical
+  bool sort_reverse = false; // requires sort
+  bool sort_stable = false;
 
-  bool unique = false; // lexicographical unique
+  bool unique = false;         // indicates that any type of uniqueness is applied
+  bool unique_numeric = false; // requires unique. false indicates lexicographical
   bool unique_use_set = false;
   bool flip = false;
   bool flush = false;
@@ -269,7 +272,7 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --unique-use-set\n"
-      "                when applying --unique, use a tree instead of a hash table.\n"
+      "                apply uniqueness with a tree instead of a hash table\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -282,6 +285,10 @@ void print_help_message() {
       "                the max number of characters that the pattern can look before\n"
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
+      "        -n, --numeric\n"
+      "                if --sort or --unique are specified, it will be done numerically\n"
+      "                numeric strings should follow: \\s*[-+]?[0-9,]*(?:\\.[0-9]*)?\n"
+      "                with whitespace defined by locale\n"
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
@@ -297,11 +304,15 @@ void print_help_message() {
       "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
+      "        --sort-numeric\n"
+      "                apply sorting numerically. implies --sort\n"
       "        --sort-reverse\n"
-      "                apply the sort in reverse order\n"
+      "                apply the sort in reverse order. implies --sort\n"
       "        --sed\n"
       "                --match, but also writes everything around the tokens, and the\n"
       "                match groups aren't used as individual tokens\n"
+      "        --stable\n"
+      "                implies --sort. a stable sort is used\n"
       "        --selection-order\n"
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
@@ -317,6 +328,8 @@ void print_help_message() {
       "                current selection to the output as a batch\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
+      "        --unique-numeric\n"
+      "                apply uniqueness numerically. implies --unique\n"
       "        --use-delimiter\n"
       "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
@@ -446,10 +459,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
+        {"numeric", no_argument, NULL, 'n'},
+        {"sort-numeric", no_argument, NULL, 0},
+        {"unique-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sed", no_argument, NULL, 0},
         {"sort", no_argument, NULL, 's'},
+        {"stable", no_argument, NULL, 0},
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
         {"unique", no_argument, NULL, 'u'},
@@ -465,7 +482,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimrsuyz0", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimnrsuyz0", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
@@ -617,7 +634,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             arg_has_errors = true;
           }
         } else {
-          // long option without argument or optional argument
+          // long option without argument or with optional argument
           if (strcmp("flip", name) == 0) {
             ret.flip = true;
           } else if (strcmp("sort-reverse", name) == 0) {
@@ -641,12 +658,21 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
             ret.can_drop_warn = false;
+          } else if (strcmp("sort-numeric", name) == 0) {
+            ret.sort = true;
+            ret.sort_numeric = true;
+          } else if (strcmp("unique-numeric", name) == 0) {
+            ret.unique = true;
+            ret.unique_numeric = true;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
           } else if (strcmp("sed", name) == 0) {
             ret.match = true;
             ret.sed = true;
+          } else if (strcmp("stable", name) == 0) {
+            ret.sort = true;
+            ret.sort_stable = true;
           } else if (strcmp("selection-order", name) == 0) {
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
@@ -708,6 +734,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'i':
         uncompiled_output.re_options |= PCRE2_CASELESS;
+        break;
+      case 'n':
+        ret.unique_numeric = true;
+        ret.sort_numeric = true;
         break;
       case 'm':
         ret.multiple_selections = true;

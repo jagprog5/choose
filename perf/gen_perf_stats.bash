@@ -5,6 +5,11 @@
 set -e
 sudo echo -n '' # do nothing. perf requires sudo. doing the prompt at the beginning
 
+# e.g. -n makes the benchmarks apply sorting and uniqueness numerically
+COMP_FLAGS=
+# e.g. --unique-use-set
+UNIQUE_FLAGS=
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # point to different perf paths for issues like this: https://github.com/microsoft/WSL/issues/9917
@@ -36,16 +41,12 @@ fi
 
 if [ ! -e "$SCRIPT_DIR/test_repeated.txt" ]; then
     echo "generating test_repeated.txt"
-    (for i in {1..10000000} ; do
-        echo test
-    done) > "$SCRIPT_DIR/test_repeated.txt"
+    yes "test" | head -n 10000000 > "$SCRIPT_DIR/test_repeated.txt"
 fi
 
 if [ ! -e "$SCRIPT_DIR/no_duplicates.txt" ]; then
     echo "generating no_duplicates.txt"
-    (for i in {1..6388888} ; do
-        echo $i
-    done) > "$SCRIPT_DIR/no_duplicates.txt"
+    seq 6388888 > "$SCRIPT_DIR/no_duplicates.txt"
 fi
 
 run_get_time() {
@@ -118,59 +119,59 @@ run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" test -o banana -d
 run_get_time "$SCRIPT_DIR/test_repeated.txt" sed -z "s/test/banana/g"
 
 echo -en "\n\n\
-### Sorting
+### Sorting $COMP_FLAGS
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
 | plain_text       | "
 
-run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -s
-run_get_time "$SCRIPT_DIR/plain_text.txt" sort
+run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -s $COMP_FLAGS 
+run_get_time "$SCRIPT_DIR/plain_text.txt" sort $COMP_FLAGS
 echo -en "\n| test_repeated    | "
-run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" -s
-run_get_time "$SCRIPT_DIR/test_repeated.txt" sort
+run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" -s $COMP_FLAGS
+run_get_time "$SCRIPT_DIR/test_repeated.txt" sort $COMP_FLAGS
 echo -en "\n| no_duplicates    | "
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -s
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -s $COMP_FLAGS
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort $COMP_FLAGS
 
-echo -en "\n\n(a cherry picked case that leverages truncation)\n\n\
+echo -en "\n\n(a special case that leverages truncation)\n\n\
 
-| (ms)             | choose --tail 5 | sort \| tail -n 5 |
+| (ms)             | choose -s --tail 5 | sort \| tail -n 5 |
 |------------------|--------|------|
 | no_duplicates    | "
 
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" --tail 5
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort | tail -n 5
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -s --tail 5 $COMP_FLAGS
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort $COMP_FLAGS | tail -n 5
 
 echo -en "\n\n\
-### Uniqueness
+### Uniqueness $UNIQUE_FLAGS
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
 | plain_text       | "
 
-run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -u
+run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -u $UNIQUE_FLAGS
 run_get_time "$SCRIPT_DIR/plain_text.txt" awk '!a[$0]++'
 echo -en "\n| test_repeated    | "
-run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" -u
+run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" -u $UNIQUE_FLAGS
 run_get_time "$SCRIPT_DIR/test_repeated.txt" awk '!a[$0]++'
 echo -en "\n| no_duplicates    | "
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -u
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -u $UNIQUE_FLAGS
 run_get_time "$SCRIPT_DIR/no_duplicates.txt" awk '!a[$0]++'
 
 echo -en "\n\n\
-### Sorting and Uniqueness
+### Sorting and Uniqueness $COMP_FLAGS $UNIQUE_FLAGS
 
 | (ms)             | choose | sort -u |
 |------------------|--------|---------|
 | plain_text       | "
 
-run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -su
-run_get_time "$SCRIPT_DIR/plain_text.txt" sort -u
+run_get_time "$SCRIPT_DIR/plain_text.txt" "$CHOOSE_PATH" -su $COMP_FLAGS $UNIQUE_FLAGS
+run_get_time "$SCRIPT_DIR/plain_text.txt" sort -u $COMP_FLAGS
 echo -en "\n| test_repeated    | "
-run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" -su
-run_get_time "$SCRIPT_DIR/test_repeated.txt" sort -u
+run_get_time "$SCRIPT_DIR/test_repeated.txt" "$CHOOSE_PATH" -su $COMP_FLAGS $UNIQUE_FLAGS
+run_get_time "$SCRIPT_DIR/test_repeated.txt" sort -u $COMP_FLAGS
 echo -en "\n| no_duplicates    | "
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -su
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort -u
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -su $COMP_FLAGS $UNIQUE_FLAGS
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort -u $COMP_FLAGS
 echo ""
