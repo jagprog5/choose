@@ -278,7 +278,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         } else {
           str::append_to_buffer(fragment, begin, end);
           t.buffer = std::move(fragment);
-          t.set_field(args.field, field_data);
           t_is_set = true;
           fragment = std::vector<char>();
           begin = &*t.buffer.cbegin();
@@ -288,6 +287,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
+        t.set_field(args.field, field_data);
         if (!output_size_bounded) {
           // typical case
           output.push_back(std::move(t));
@@ -382,9 +382,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
               }
               in_op.apply(t.buffer);
             }
-            if (&op == &*args.ordered_ops.rbegin()) {
-              t.set_field(args.field, field_data);
-            }
             t_is_set = true;
             begin = &*t.buffer.cbegin();
             end = &*t.buffer.cend();
@@ -396,7 +393,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       // and a token t is needed
       if (!tokens_not_stored && !t_is_set) {
         str::append_to_buffer(t.buffer, begin, end);
-        t.set_field(args.field, field_data);
         begin = &*t.buffer.cbegin();
         end = &*t.buffer.cend();
       }
