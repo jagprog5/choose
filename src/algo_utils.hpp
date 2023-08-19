@@ -42,6 +42,9 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
+// these numeric related string functions are ok but can be improved.
+// TODO
+
 #define likely(x) __builtin_expect(!!(x), 1)
 
 namespace {
@@ -180,14 +183,7 @@ char get_next(const char*& pos, const char* end) {
 } // namespace
 
 // compare two numbers, like          -123,456,789.99912134000
-// the numbers have these format properties:
-//  - any number of leading whitespace is allowed
-//  - a leading positive or negative sign is allowed following the whitespace
-//  - leading zeros are allowed but must follow the sign
-//  - thousand separators can be used anywhere after the leading sign and before the decimal
-//  - trailing zeros are allowed at the end of the fractional part
-//  - the fractional length can be zero. like 123.
-//  - the non fractional length can be zero. like +.,,,123
+// this is a numeric string: \s*[-+]?[0-9,]*(?:\.[0-9]*)?
 bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
   trim_leading_spaces(lhs_begin, lhs_end);
   trim_leading_spaces(rhs_begin, rhs_end);
