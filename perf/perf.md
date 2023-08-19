@@ -1,6 +1,6 @@
 # Benchmarks Comparing choose to Other Tools
 
-Results are generated from [this script](./gen_perf_stats.bash).
+"Results" section is generated from [this script](./gen_perf_stats.bash).
 
 ## Summary
 
@@ -18,7 +18,7 @@ Results are generated from [this script](./gen_perf_stats.bash).
 
 ### Sorting, and Sorting + Uniqueness
 
-For lexicographical comparison, `choose` is faster than `sort` and `sort -u`.
+For lexicographical comparison, most of the time `choose` is faster than `sort` and `sort -u`.
 
 `choose` doesn't do numeric comparison very speedily at this point. It's ok but has room for improvement.
 
@@ -67,7 +67,7 @@ For filtering by uniqueness, there are two extremes. One is where the entire fil
 
 ### csv_field
 
-This file has a field where sorting and uniqueness should be applied.
+This file has a field where sorting and uniqueness should be applied. Note that even though the field is numeric, both sort and choose are using a lexicographical comparison in the benchmark. 
 
 ```txt
 garbage,1,garbage
@@ -98,57 +98,64 @@ ram: 8116584 kB
 
 | (ms)             | choose | pcre2grep  |
 |------------------|--------|------------|
-| plain_text       | 255.571900 | 255.602800 | 
-| test_repeated    | 1541.437300 | 1456.649400 | 
-| no_duplicates    | 335.363600 | 328.095000 | 
+| plain_text       | 258.897200 | 265.892700 | 
+| test_repeated    | 1529.802700 | 1482.345200 | 
+| no_duplicates    | 328.903000 | 330.548900 | 
 
 ### Stream Editing
 
 | (ms)             | choose | sed  |
 |------------------|--------|------|
-| plain_text       | 178.085900 | 157.202200 | 
-| test_repeated    | 2519.054900 | 1027.284900 | 
-| no_duplicates    | 8.691000 | 52.048900 | 
+| plain_text       | 176.831800 | 214.069400 | 
+| test_repeated    | 2534.028300 | 1032.267900 | 
+| no_duplicates    | 8.632200 | 52.020400 | 
 
 (here is a cherry picked great case for choose compared to sed)
 
 | (ms)             | choose | sed (with newline delimiter) |
 |------------------|--------|------|
-| no_duplicates    | 9.701600 | 455.517000 | 
+| no_duplicates    | 10.246200 | 456.193200 | 
 
 (a special case, where choose cheats by using a literal replacement string)
 
 | (ms)             | choose (delimiter sub) | sed |
 |------------------|------------------------|-----|
-| test_repeated    | 1489.126500 | 1045.871200 | 
+| test_repeated    | 1448.012400 | 1043.297400 | 
 
 ### Sorting 
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 758.170400 | 2032.359300 | 
-| test_repeated    | 1890.213400 | 2023.206800 | 
-| no_duplicates    | 2014.638900 | 5743.573000 | 
+| plain_text       | 757.884800 | 1966.817600 | 
+| test_repeated    | 2105.637600 | 2052.248300 | 
+| no_duplicates    | 2198.931600 | 5843.326100 | 
 
 (a special case that leverages truncation)
 
 
 | (ms)             | choose -s --tail 5 | sort \| tail -n 5 |
 |------------------|--------|------|
-| no_duplicates    | 234.092700 | 5297.302100 | 
+| no_duplicates    | 244.461000 | 5221.271300 | 
 
-### Uniqueness
+### Uniqueness 
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
-| plain_text       | 119.411900 | 217.741600 | 
-| test_repeated    | 510.382300 | 1004.464100 | 
-| no_duplicates    | 2435.280500 | 1502.059800 | 
+| plain_text       | 123.980200 | 221.344200 | 
+| test_repeated    | 540.381100 | 995.740400 | 
+| no_duplicates    | 2499.557400 | 1543.825300 | 
 
-### Sorting and Uniqueness 
+### Sorting and Uniqueness  
+
+| (ms)             | choose | sort |
+|------------------|--------|------|
+| plain_text       | 120.672800 | 2054.020300 | 
+| test_repeated    | 546.397400 | 1973.324700 | 
+| no_duplicates    | 4395.422500 | 5829.518700 | 
+
+
+### Sorting and Uniqueness based on field  
 
 | (ms)             | choose | sort -u |
 |------------------|--------|---------|
-| plain_text       | 122.549100 | 2066.645100 | 
-| test_repeated    | 511.756500 | 2001.259400 | 
-| no_duplicates    | 4034.020900 | 5780.361300 | 
+| csv_field        | 1808.892400 | 2114.263400 | 
