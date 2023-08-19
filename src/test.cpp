@@ -172,6 +172,7 @@ BOOST_AUTO_TEST_CASE(numeric_compare_test) {
 BOOST_AUTO_TEST_CASE(numeric_hash_test) {
   auto h = [](const std::string& s) -> size_t { return numeric_hash(&*s.cbegin(), &*s.cend()); };
   BOOST_REQUIRE_EQUAL(h("-00,.0000"), h("+0.0"));
+  BOOST_REQUIRE_EQUAL(h("-."), h("00000"));
   BOOST_REQUIRE_EQUAL(h("123"), h("   +00001,,,2,,,3"));
   BOOST_REQUIRE_NE(h("+123"), h("-123"));
   BOOST_REQUIRE_EQUAL(h("123"), h("123."));

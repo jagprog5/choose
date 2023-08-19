@@ -26,9 +26,12 @@ struct match_data_destroyer {
 using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
-// guard against what is detected as an error in PCRE2 but I don't agree with
-// https://github.com/PCRE2Project/pcre2/issues/270
 void apply_null_guard(const char*& pattern, PCRE2_SIZE size) {
+  if (PCRE2_MAJOR > 10 || (PCRE2_MAJOR == 10 && PCRE2_MINOR > 42)) {
+    return; // I requested a change; new version fixes this
+  }
+  // https://github.com/PCRE2Project/pcre2/issues/270
+  // https://github.com/PCRE2Project/pcre2/commit/044408710f86dc3d05ff3050373d477b6782164e
   if (pattern == NULL && size == 0) {
     pattern = (const char*)1;
   }

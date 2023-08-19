@@ -42,6 +42,8 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
+#define likely(x) __builtin_expect(!!(x), 1)
+
 namespace {
 
 // a numeric string's fraction part is the section that comes after the decimal.
@@ -162,8 +164,7 @@ bool non_zero(const char* begin, const char* end) {
 
 // if the return value is a thousands sep, then end of the string was reached
 // else, this is the character that is returned from this part of the string at
-// the current position. pos is set to the position of the returned character. it
-// must be incremented by the callee to get the next character for the next call
+// the current position
 char get_next(const char*& pos, const char* end) {
   while (pos < end) {
     char ch = *pos++;
@@ -228,62 +229,60 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
     // for either side, a character, the decimal point, or end of string can be
     // reached. handle each case appropriately
 
-    if (lhs_ch == ',' && rhs_ch == ',') {
-      // both end of string
-      return lead_dif < 0;
-    }
-
-    if (lhs_ch == '.' && rhs_ch == '.') {
-      // both reached decimal point
-      if (lead_dif == 0) {
-        // non fraction section is identical
-        return fraction_compare(lhs_begin, lhs_end, rhs_begin, rhs_end);
-      } else {
-        return lead_dif < 0;
-      }
-    }
-
-    if (lhs_ch == '.' && rhs_ch == ',') {
-      // lhs reached decimal point and rhs reached end of string
-      if (lead_dif == 0) {
-        // non fraction section is identical
-        return false;
-      } else {
-        return lead_dif < 0;
-      }
-    }
-
-    if (lhs_ch == ',' && rhs_ch == '.') {
-      // rhs reached decimal place and lhs reached end of string
-      if (lead_dif == 0) {
-        // check if rhs fraction is zero
-        while (rhs_begin < rhs_end) {
-          if (*rhs_begin++ != '0') {
-            return true;
-          }
+    if (likely(lhs_ch != ',' && lhs_ch != '.')) {
+      if (likely(rhs_ch != ',' && rhs_ch != '.')) {
+        // neither lhs or rhs have reached end of string or decimal
+        // this is the most likely branch
+        // precondition lhs and rhs have char to compare
+        if (lead_dif == 0) {
+          // the digits so far have been identical
+          lead_dif = lhs_ch - rhs_ch;
         }
-        return false;
       } else {
-        return lead_dif < 0;
+        // rhs reached decimal or end and lhs still has non fractional digits
+        return false;
       }
-    }
-
-    if (lhs_ch == '.' || lhs_ch == ',') {
-      // lhs reached decimal or end and rhs still has non fractional digits
-      return true;
-    }
-
-    if (rhs_ch == '.' || rhs_ch == ',') {
-      // rhs reached decimal or end and lhs still has non fractional digits
-      return false;
-    }
-
-    // precondition lhs and rhs have char to compare
-    if (lead_dif == 0 && lhs_ch != rhs_ch) {
-      lead_dif = lhs_ch - rhs_ch;
-      if (lead_dif != 0) {
-        // consider going to second loop. the exact same as this one, but
-        // without this lead_dif setter logic
+    } else if (lhs_ch == ',') {
+      if (rhs_ch == ',') {
+        // both end of string at same time
+        return lead_dif < 0;
+      } else if (rhs_ch == '.') {
+        // rhs reached decimal place and lhs reached end of string
+        if (lead_dif == 0) {
+          // check if rhs fraction is zero
+          while (rhs_begin < rhs_end) {
+            if (*rhs_begin++ != '0') {
+              return true;
+            }
+          }
+          return false;
+        } else {
+          return lead_dif < 0;
+        }
+      } else {
+        // lhs reached end of string and rhs still has non fractional digits
+        return true;
+      }
+    } else { // '.'
+      if (rhs_ch == '.') {
+        // both reached decimal at same time
+        if (lead_dif == 0) {
+          // non fraction section is identical
+          return fraction_compare(lhs_begin, lhs_end, rhs_begin, rhs_end);
+        } else {
+          return lead_dif < 0;
+        }
+      } else if (rhs_ch == ',') {
+        // lhs reached decimal point and rhs reached end of string
+        if (lead_dif == 0) {
+          // non fraction section is identical
+          return false;
+        } else {
+          return lead_dif < 0;
+        }
+      } else {
+        // lhs reached decimal and rhs still has non fractional digits
+        return true;
       }
     }
   }
@@ -313,49 +312,55 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
     char lhs_ch = get_next(lhs_begin, lhs_end);
     char rhs_ch = get_next(rhs_begin, rhs_end);
 
-    if (lhs_ch == ',' && rhs_ch == ',') {
-      // both end of string
-      return true;
-    }
+    // for either side, a character, the decimal point, or end of string can be
+    // reached. handle each case appropriately
 
-    if (lhs_ch == '.' && rhs_ch == '.') {
-      // both reach decimal at same time
-      return fraction_equal(lhs_begin, lhs_end, rhs_begin, rhs_end);
-    }
-
-    if (lhs_ch == '.' && rhs_ch == ',') {
-      // lhs reached decimal point and rhs reached end of string
-      // check if lhs fraction is zero
-      while (lhs_begin < lhs_end) {
-        if (*lhs_begin++ != '0') {
-          return false; // not equal
+    if (likely(lhs_ch != ',' && lhs_ch != '.')) {
+      if (likely(rhs_ch != ',' && rhs_ch != '.')) {
+        // neither lhs or rhs have reached end of string or decimal
+        // this is the most likely branch
+        // precondition lhs and rhs have char to compare
+        if (lhs_ch != rhs_ch) {
+          return false;
         }
+      } else {
+        // rhs reached decimal or end and lhs still has non fractional digits
+        return false;
       }
-      return true;
-    }
-
-    // above with lhs and rhs flipped
-    if (rhs_ch == '.' && lhs_ch == ',') {
-      while (rhs_begin < rhs_end) {
-        if (*rhs_begin++ != '0') {
-          return false; // not equal
+    } else if (lhs_ch == ',') {
+      if (rhs_ch != ',' && rhs_ch != '.') {
+        // lhs reached end of string and rhs still has non fractional digits
+        return false;
+      } else if (rhs_ch == ',') {
+        // both end of string
+        return true;
+      } else { // '.'
+        // rhs reached decimal point and lhs reached end of string
+        // check if rhs fraction is zero
+        while (rhs_begin < rhs_end) {
+          if (*rhs_begin++ != '0') {
+            return false; // not equal
+          }
         }
+        return true;
       }
-      return true;
-    }
-
-    if (lhs_ch == '.' || lhs_ch == ',') {
-      // lhs reached decimal or end and rhs still has non fractional digits
-      return false;
-    }
-
-    if (rhs_ch == '.' || rhs_ch == ',') {
-      // rhs reached decimal or end and lhs still has non fractional digits
-      return false;
-    }
-
-    if (lhs_ch != rhs_ch) {
-      return false;
+    } else { // '.'
+      if (rhs_ch != ',' && rhs_ch != '.') {
+        // lhs reached decimal rhs still has non fractional digits
+        return false;
+      } else if (rhs_ch == ',') {
+        // lhs reached decimal point and rhs reached end of string
+        // check if lhs fraction is zero
+        while (lhs_begin < lhs_end) {
+          if (*lhs_begin++ != '0') {
+            return false; // not equal
+          }
+        }
+        return true;
+      } else { // '.'
+        // both reach decimal at same time
+        return fraction_equal(lhs_begin, lhs_end, rhs_begin, rhs_end);
+      }
     }
   }
 }
@@ -365,10 +370,8 @@ size_t numeric_hash(const char* begin, const char* end) {
   // https://www.boost.org/doc/libs/1_35_0/doc/html/boost/hash_range_id420926.html
   // initial seed of 0 is reasonable
   size_t ret = 0;
-  bool is_non_zero = false; // disambiguate since ret could return to 0
 
   auto apply = [&](char ch) {
-    is_non_zero = true;
     // https://github.com/HowardHinnant/hash_append/issues/7#issuecomment-371758166
     // extend boost implementation from just 32 bit to 64 bit as well
     // this probably isn't a good idea though, since better hashes exist
@@ -426,7 +429,14 @@ size_t numeric_hash(const char* begin, const char* end) {
     ++begin;
   }
 
-  if (is_negative && is_non_zero) {
+  if (is_negative && ret) {
+    // ret != 0 provides the weak guarantee that the overall string is non-zero. this
+    // won't happen always since the hash so far could happen to be zero for other
+    // strings.
+
+    // if there was a leading sign and the string is non-zero then apply the negative
+    // sign. if the negative sign isn't applied (because ret == 0 yet string non-zero),
+    // that's ok. slight increase in collision rate.
     apply('-');
   }
   return ret;
