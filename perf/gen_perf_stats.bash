@@ -45,12 +45,12 @@ if [ ! -e "$SCRIPT_DIR/test_repeated.txt" ]; then
 fi
 
 if [ ! -e "$SCRIPT_DIR/no_duplicates.txt" ]; then
-    echo "generating no_duplicates.txt (might take a while...)"
+    echo "generating no_duplicates.txt"
     seq 6388888 > "$SCRIPT_DIR/no_duplicates.txt"
 fi
 
 if [ ! -e "$SCRIPT_DIR/csv_field.txt" ]; then
-    echo "generating csv_field.txt"
+    echo "generating csv_field.txt (might take a while...)"
     (for i in {1..2129629} ; do
         echo garbage,$i,garbage
     done) > "$SCRIPT_DIR/csv_field.txt"

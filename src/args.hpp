@@ -598,7 +598,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           // long option with argument
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
-          } else if (strcmp("field", name) == 0)  {
+          } else if (strcmp("field", name) == 0) {
             uncompiled_output.field = optarg;
           } else if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
@@ -884,7 +884,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       }
       if (min > ret.buf_size) {
         arg_error_preamble(argc, argv);
-        fputs("the retain limit is too small and will cause the subject to never match.\n", stderr);
+        fputs("the buffer size is too small and will cause the subject to never match.\n", stderr);
         exit(EXIT_FAILURE);
       }
     }
