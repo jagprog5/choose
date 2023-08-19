@@ -287,12 +287,8 @@ void print_help_message() {
       "                pattern but may not be accurate for nested lookbehinds\n"
       "        -n, --numeric\n"
       "                if --sort or --unique are specified, it will be done numerically\n"
-      "                numeric strings must follow: \\s*[-+]?[0-9,]*(?:\\.[0-9]*)?\n"
+      "                numeric strings should follow: \\s*[-+]?[0-9,]*(?:\\.[0-9]*)?\n"
       "                with whitespace defined by locale\n"
-      "        --numeric-unique\n"
-      "                apply uniqueness numerically. implies --unique\n"
-      "        --numeric-sort\n"
-      "                apply sorting numerically. implies --sort\n"
       "        --no-warn\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
@@ -308,8 +304,10 @@ void print_help_message() {
       "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
+      "        --sort-numeric\n"
+      "                apply sorting numerically. implies --sort\n"
       "        --sort-reverse\n"
-      "                apply the sort in reverse order\n"
+      "                apply the sort in reverse order. implies --sort\n"
       "        --sed\n"
       "                --match, but also writes everything around the tokens, and the\n"
       "                match groups aren't used as individual tokens\n"
@@ -330,6 +328,8 @@ void print_help_message() {
       "                current selection to the output as a batch\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences\n"
+      "        --unique-numeric\n"
+      "                apply uniqueness numerically. implies --unique\n"
       "        --use-delimiter\n"
       "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
@@ -460,8 +460,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
         {"numeric", no_argument, NULL, 'n'},
-        {"numeric-sort", no_argument, NULL, 0},
-        {"numeric-unique", no_argument, NULL, 0},
+        {"sort-numeric", no_argument, NULL, 0},
+        {"unique-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sed", no_argument, NULL, 0},
@@ -658,10 +658,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.match = true;
           } else if (strcmp("no-warn", name) == 0) {
             ret.can_drop_warn = false;
-          } else if (strcmp("numeric-sort", name) == 0) {
+          } else if (strcmp("sort-numeric", name) == 0) {
             ret.sort = true;
             ret.sort_numeric = true;
-          } else if (strcmp("numeric-unique", name) == 0) {
+          } else if (strcmp("unique-numeric", name) == 0) {
             ret.unique = true;
             ret.unique_numeric = true;
           } else if (strcmp("multiline", name) == 0) {

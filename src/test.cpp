@@ -525,25 +525,43 @@ BOOST_AUTO_TEST_CASE(unique) {
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique) {
-  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--numeric-unique"});
+  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric"});
   choose_output correct_output{to_vec("-0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
-  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--numeric-unique", "--unique-use-set"});
+  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric", "--unique-use-set"});
   choose_output correct_output{to_vec("-0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(numeric_sort) {
-  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"--numeric-sort", "--stable"});
+  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"--sort-numeric", "--stable"});
   choose_output correct_output{to_vec("-0\n+0\n.0\n1\n+1.0\n0001.0\n17\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(numeric_sort_2) {
+  choose_output out = run_choose("3\n-2.1\n-2\n-1\n2\n+1\n3", {"--sort-numeric"});
+  choose_output correct_output{to_vec("-2.1\n-2\n-1\n+1\n2\n3\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_sort_lex_unique) {
+  choose_output out = run_choose("2\n+2\n2.0\n2\n1\n+1\n1.0\n1\n1", {"--sort-numeric", "--stable", "-u"});
+  choose_output correct_output{to_vec("1\n+1\n1.0\n2\n+2\n2.0\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(lex_sort_numeric_unique) {
+  choose_output out = run_choose("10\n2\n1\n+10.0\n+2", {"--sort", "--unique-numeric"});
+  choose_output correct_output{to_vec("1\n10\n2\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(stable_partial_sort) {
-  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"-u", "--numeric-sort", "--stable", "--out=3"});
+  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"-u", "--sort-numeric", "--stable", "--out=3"});
   choose_output correct_output{to_vec("-0\n+0\n.0\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
