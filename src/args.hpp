@@ -74,7 +74,9 @@ struct Arguments {
   const char* prompt = 0; // points inside one of the argv elements
   // primary is either the input delimiter if match = false, or the match target otherwise
   regex::code primary = 0;
+#ifndef CHOOSE_DISABLE_FIELD
   regex::code field = 0; // match special field on token, like what section to sort on
+#endif
 
   // shortcut for if the delimiter is a single byte; doesn't set/use primary.
   // doesn't have to go through pcre2 when finding the token separation
@@ -121,7 +123,9 @@ struct UncompiledCodes {
   std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
   std::vector<char> primary;
+#ifndef CHOOSE_DISABLE_FIELD
   const char* field = 0;
+#endif
 
   std::optional<InLimitOp::T> tail_start;
   std::optional<InLimitOp::T> tail_end;
@@ -167,9 +171,11 @@ struct UncompiledCodes {
       }
     }
 
+#ifndef CHOOSE_DISABLE_FIELD
     if (this->field) {
       output.field = regex::compile(this->field, re_options & ~PCRE2_LITERAL, "field");
     }
+#endif
   }
 };
 
@@ -219,7 +225,7 @@ void print_help_message() {
       "                as the positional argument\n"
       "        --index [b[efore]|a[fter]|<default: b>]\n"
       "                on each token, concatenate the ascii representation of it's\n"
-      "                arrival order."
+      "                arrival order.\n"
       "        --head [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                stop reading the input once n tokens have reached this point\n"
       "        --replace <replacement>\n"
@@ -275,10 +281,18 @@ void print_help_message() {
       "        --flush\n"
       "                makes the input unbuffered, and the output is flushed after each\n"
       "                token is written. this is useful for long running inputs with -u\n"
+      "        --field <expr>\n"
+      "                match pattern for field used in sorting and uniqueness. inherits\n"
+      "                the same match options as the positional argument, except it is\n"
+      "                never literal\n"
+#ifdef CHOOSE_DISABLE_FIELD
+      "                WARNING --field is disabled\n"
+#endif
+      "        --flip\n"
+      "                reverse the token order. this is the last step before being sent\n"
+      "                to the output or to the tui\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
-      "        --unique-use-set\n"
-      "                apply uniqueness with a tree instead of a hash table\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -305,13 +319,6 @@ void print_help_message() {
       "                use PCRE2 regex for the positional argument.\n"
       "        --read <# bytes, default: <buf-size>>\n"
       "                the number of bytes read from stdin per iteration\n"
-      "        --field <expr>\n"
-      "                match pattern for field used in sorting and uniqueness. inherits\n"
-      "                the same match options as the positional argument, except it is\n"
-      "                never literal"
-      "        --flip\n"
-      "                reverse the token order. this is the last step before being sent\n"
-      "                to the output or to the tui\n"
       "        -s, --sort\n"
       "                sort each token lexicographically\n"
       "        --sort-numeric\n"
@@ -340,6 +347,8 @@ void print_help_message() {
       "                remove duplicate input tokens. leaves first occurrences\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies --unique\n"
+      "        --unique-use-set\n"
+      "                apply uniqueness with a tree instead of a hash table\n"
       "        --use-delimiter\n"
       "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
@@ -487,13 +496,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"utf-allow-invalid", no_argument, NULL, 0},
         {"batch-print0", no_argument, NULL, 'y'},
         {"print0", no_argument, NULL, 'z'},
-        {"null", no_argument, NULL, '0'},
-        {"read0", no_argument, NULL, '0'},
         {"0-auto-completion-strings", no_argument, NULL, 0},
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimnrsuyz0", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimnrsuyz", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
@@ -599,7 +606,13 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           if (strcmp("rm", name) == 0 || strcmp("remove", name) == 0) {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
           } else if (strcmp("field", name) == 0) {
+#ifdef CHOOSE_DISABLE_FIELD
+            arg_error_preamble(argc, argv);
+            fputs("--field is disabled\n", stderr);
+            arg_has_errors = true;
+#else
             uncompiled_output.field = optarg;
+#endif
           } else if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
           } else if (strcmp("buf-size-frag", name) == 0) {
@@ -775,10 +788,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'z':
         ret.out_delimiter = {'\0'};
-        break;
-      case '0':
-        uncompiled_output.primary = {'\0'};
-        uncompiled_output.primary_set = true;
         break;
       case 'o': {
         // NOLINTNEXTLINE optarg guaranteed non-null since ':' follows 'o' in opt string

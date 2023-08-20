@@ -26,32 +26,29 @@ extern std::optional<size_t> output_size_bound_testing;
 
 namespace choose {
 
-// Token is a thin wrapper around vector<char>. provides type clarity
 struct Token {
-  // one might question, why a char vector? why not a std::string? it's easier
-  // to work with the c libraries (like pcre2), and there wasn't a difference in
-  // performance
   std::vector<char> buffer;
-  // point to range in buffer, a special field of interest
-  const char* begin = 0;
-  const char* end = 0;
 
-  // for testing
-  Token(const char* in) : buffer(in, in + strlen(in)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
-  Token(std::vector<char>&& i) : buffer(std::move(i)), begin(&*buffer.cbegin()), end(&*buffer.cend()) {}
+  // ctor for testing
+  Token(const char* in)
+      : buffer(in, in + strlen(in))
+#ifndef CHOOSE_DISABLE_FIELD
+        ,
+        field_begin(&*buffer.cbegin()),
+        field_end(&*buffer.cend())
+#endif
+  {
+  }
 
-  void set_field(const regex::code& code, const regex::match_data& data) {
-    if (!code) {
-      this->begin = &*buffer.cbegin();
-      this->end = &*buffer.cend();
-      return;
-    }
-    int rc = regex::match(code, buffer.data(), buffer.size(), data, "token field");
-    if (rc > 0) {
-      regex::Match m = regex::get_match(buffer.data(), data, "token field");
-      this->begin = m.begin;
-      this->end = m.end;
-    }
+  // ctor for testing
+  Token(std::vector<char>&& i)
+      : buffer(std::move(i))
+#ifndef CHOOSE_DISABLE_FIELD
+        ,
+        field_begin(&*buffer.cbegin()),
+        field_end(&*buffer.cend())
+#endif
+  {
   }
 
   Token() = default;
@@ -60,6 +57,45 @@ struct Token {
   Token& operator=(const Token&) & = default;
   Token& operator=(Token&&) & = default;
   ~Token() = default;
+
+  const char* cbegin() const {
+#ifndef CHOOSE_DISABLE_FIELD
+    return this->field_begin;
+#else
+    return &*this->buffer.cbegin();
+#endif
+  }
+
+  const char* cend() const {
+#ifndef CHOOSE_DISABLE_FIELD
+    return this->field_end;
+#else
+    return &*this->buffer.cend();
+#endif
+  }
+
+#ifndef CHOOSE_DISABLE_FIELD
+  void set_field(const regex::code& code, const regex::match_data& data) {
+    if (!code) {
+      this->field_begin = &*buffer.cbegin();
+      this->field_end = &*buffer.cend();
+      return;
+    }
+    int rc = regex::match(code, buffer.data(), buffer.size(), data, "token field");
+    if (rc > 0) {
+      regex::Match m = regex::get_match(buffer.data(), data, "token field");
+      this->field_begin = m.begin;
+      this->field_end = m.end;
+    } else {
+      // already initialized field_begin and field_end to nulls (no match = empty string)
+    }
+  }
+
+ private:
+  // point to range in buffer, a special field of interest
+  const char* field_begin = 0;
+  const char* field_end = 0;
+#endif
 };
 
 // writes an output delimiter between each token
@@ -160,7 +196,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
   const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
   regex::match_data primary_data = args.primary ? regex::create_match_data(args.primary) : NULL;
+#ifndef CHOOSE_DISABLE_FIELD
   regex::match_data field_data = args.field ? regex::create_match_data(args.field) : NULL;
+#endif
 
   // single_byte_delimiter implies not match. stating below so the compiler can hopefully leverage it
   const bool is_match = !single_byte_delimiter && args.match;
@@ -199,11 +237,11 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   {
     auto lexicographical_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
-      return std::lexicographical_compare(lhs.begin, lhs.end, rhs.begin, rhs.end);
+      return std::lexicographical_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
     };
 
     auto numeric_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
-      return numeric_compare(lhs.begin, lhs.end, rhs.begin, rhs.end);
+      return numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
     };
 
     auto uniqueness_set_comparison = [&](indirect lhs, indirect rhs) -> bool {
@@ -230,9 +268,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     auto unordered_set_hash = [&](indirect val) -> size_t {
       const Token& t = output[val];
       if (unique_numeric) {
-        return numeric_hash(t.begin, t.end);
+        return numeric_hash(t.cbegin(), t.cend());
       } else {
-        auto view = std::string_view(t.begin, t.end - t.begin);
+        auto view = std::string_view(t.cbegin(), t.cend() - t.cbegin());
         return std::hash<std::string_view>{}(view);
       }
     };
@@ -241,9 +279,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       const Token& lhs = output[lhs_arg];
       const Token& rhs = output[rhs_arg];
       if (unique_numeric) {
-        return numeric_equal(lhs.begin, lhs.end, rhs.begin, rhs.end);
+        return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
       } else {
-        return std::equal(lhs.begin, lhs.end, rhs.begin, rhs.end);
+        return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
       }
     };
 
@@ -310,7 +348,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
       // moves from t. returns true if the output's size increased
       auto check_unique_then_append = [&]() -> bool {
+#ifndef CHOOSE_DISABLE_FIELD
         t.set_field(args.field, field_data);
+#endif
         if (!output_size_bounded) {
           // typical case
           output.push_back(std::move(t));
