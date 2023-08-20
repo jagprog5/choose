@@ -719,6 +719,7 @@ BOOST_AUTO_TEST_CASE(unique_with_set) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+#ifndef CHOOSE_DISABLE_FIELD
 BOOST_AUTO_TEST_CASE(unique_by_field) {
   choose_output out = run_choose("alpha,tester\nbeta,tester\ngamma,tester,abcde", {"-t", "--unique", "--field", "[^,]*,\\K[^,]*"});
   choose_output correct_output{std::vector<choose::Token>{"alpha,tester"}};
@@ -730,6 +731,7 @@ BOOST_AUTO_TEST_CASE(sort_by_field) {
   choose_output correct_output{std::vector<choose::Token>{"c,x", "b,y", "a,z"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
+#endif
 
 // ========================
 
@@ -1224,7 +1226,7 @@ BOOST_AUTO_TEST_CASE(null_output_delimiters) {
 }
 
 BOOST_AUTO_TEST_CASE(null_input_delimiter) {
-  choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-0", "-t"});
+  choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-r", "\\x00", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

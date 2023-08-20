@@ -7,6 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(NO_SCROLL_BORDER "Disable the scroll border" OFF)
+option(DISABLE_FIELD "Disable --field and slightly increases the speed of sorting and uniqueness" OFF)
 option(BUILD_TESTING "Build tests" OFF)
 option(CODE_COVERAGE "Create coverage stats. Requires BUILD_TESTING. Invoke with make cov-show" OFF)
 project(choose)
@@ -34,6 +35,12 @@ if (NO_SCROLL_BORDER)
   )
 endif()
 
+if (DISABLE_FIELD)
+  target_compile_definitions(choose PRIVATE
+    CHOOSE_DISABLE_FIELD
+  )
+endif()
+
 install(TARGETS choose DESTINATION ~/.choose)
 
 if(BUILD_TESTING)
@@ -56,6 +63,12 @@ if(BUILD_TESTING)
 
   target_include_directories(unit_tests PRIVATE ${PCRE_INCLUDEDIR})
   target_link_libraries(unit_tests PRIVATE ${PCRE_LIBRARIES})
+
+  if (DISABLE_FIELD)
+    target_compile_definitions(unit_tests PRIVATE
+      CHOOSE_DISABLE_FIELD
+    )
+  endif()
 
   enable_testing()
   add_test(COMMAND ./unit_tests)

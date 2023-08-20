@@ -18,9 +18,11 @@
 
 ### Sorting, and Sorting + Uniqueness
 
-For lexicographical comparison, most of the time `choose` is faster than `sort` and `sort -u`.
+* For lexicographical comparison:
+    * With `DISABLE_FIELD` enabled, `choose` is faster than `sort` and `sort -u` in all observed cases
+    * With `DISABLE_FIELD` disabled (default), `choose` is faster than `sort -u` and only most of the time is faster than `sort`
 
-`choose` doesn't do numeric comparison very speedily at this point. It's ok but has room for improvement.
+* For numeric comparison, `choose` perform ok but isn't up to par. There's room for improvement.
 
 ## Input Data
 
