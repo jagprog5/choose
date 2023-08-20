@@ -217,10 +217,11 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
 
   // first non-zero diff between non-fractional digits
   int lead_dif = 0;
+  char lhs_ch, rhs_ch;
 
   while (1) {
-    char lhs_ch = get_next(lhs_begin, lhs_end);
-    char rhs_ch = get_next(rhs_begin, rhs_end);
+    lhs_ch = get_next(lhs_begin, lhs_end);
+    rhs_ch = get_next(rhs_begin, rhs_end);
 
     // for either side, a character, the decimal point, or end of string can be
     // reached. handle each case appropriately
@@ -232,7 +233,7 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
         // precondition lhs and rhs have char to compare
         lead_dif = lhs_ch - rhs_ch;
         if (likely(lead_dif != 0)) {
-          break;
+          goto next_loop;
         }
       } else {
         // rhs reached decimal or end and lhs still has non fractional digits
@@ -286,8 +287,10 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
   // copy paste of loop from above, except without lead_dif setter logic
 
   while (1) {
-    char lhs_ch = get_next(lhs_begin, lhs_end);
-    char rhs_ch = get_next(rhs_begin, rhs_end);
+    lhs_ch = get_next(lhs_begin, lhs_end);
+    rhs_ch = get_next(rhs_begin, rhs_end);
+
+    next_loop:
 
     // for either side, a character, the decimal point, or end of string can be
     // reached. handle each case appropriately
