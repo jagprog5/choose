@@ -135,19 +135,16 @@ struct IndexOp {
   void apply(std::vector<char>& v) {
     size_t extension = IndexOp::space_required(index);
     extension += 1; // +1 for space
-    v.resize(v.size() + extension);
-
     if (this->align == IndexOp::BEFORE) {
-      // move the entire buffer forward
-      char* to_ptr = &*v.rbegin();
-      const char* from_ptr = &*v.rbegin() - extension;
-      while (from_ptr >= &*v.begin()) {
-        *to_ptr-- = *from_ptr--;
-      }
-      sprintf(&*v.begin(), "%zu", this->index);
-      // overwrite the null written by s11printf
-      *(v.begin() + (ptrdiff_t)(extension - 1)) = ' ';
+      char temp[extension];
+      // populate temp
+      sprintf(temp, "%zu", this->index);
+      // overwrite the null written by sprintf
+      *(temp + (ptrdiff_t)(extension - 1)) = ' ';
+
+      v.insert(v.cbegin(), temp, temp + extension);
     } else {
+      v.resize(v.size() + extension);
       char* ptr = &*v.end() - extension;
       *ptr++ = ' ';
       size_t without_last = this->index / 10;
