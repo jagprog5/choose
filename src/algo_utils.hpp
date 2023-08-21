@@ -169,7 +169,7 @@ char get_next(const char*& pos, const char* end) {
 } // namespace
 
 // compare two numbers, like          -123,456,789.99912134000
-// numeric strings match this: ^[\x20\x9]*[-+]?[0-9,]*(?:\.[0-9]*)?$
+// numeric strings match this: ^[ \t]*[-+]?[0-9,]*(?:\.[0-9]*)?$
 bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
   trim_leading_spaces(lhs_begin, lhs_end);
   trim_leading_spaces(rhs_begin, rhs_end);
@@ -389,7 +389,7 @@ size_t numeric_hash(const char* begin, const char* end) {
   // begin points to the decimal point
   auto do_fractional_hash = [&](const char*& begin, const char*& end) {
     const char*& pos = end; // alias
-    --pos; // point to last character, and iter backwards
+    --pos;                  // point to last character, and iter backwards
 
     // pos is lower bounded by decimal point
     while (unlikely(*pos == '0')) {

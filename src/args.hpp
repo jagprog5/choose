@@ -308,7 +308,7 @@ void print_help_message() {
       "                pattern but may not be accurate for nested lookbehinds\n"
       "        -n, --numeric\n"
       "                if --sort or --unique are specified, it will be done numerically\n"
-      "                numeric strings are: ^[\\x20\\x9]*[-+]?[0-9,]*(?:\\.[0-9]*)?$\n"
+      "                numeric strings are: ^[ \\t]*[-+]?[0-9,]*(?:\\.[0-9]*)?$\n"
       "        --no-warn\n"
       "        --null, --read0\n"
       "                delimit the input on null chars\n"
