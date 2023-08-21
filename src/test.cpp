@@ -1226,7 +1226,7 @@ BOOST_AUTO_TEST_CASE(null_output_delimiters) {
 }
 
 BOOST_AUTO_TEST_CASE(null_input_delimiter) {
-  choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"-r", "\\x00", "-t"});
+  choose_output out = run_choose(std::vector<char>{'a', '\0', 'b', '\0', 'c'}, {"--read0", "-t"});
   choose_output correct_output{std::vector<choose::Token>{"a", "b", "c"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

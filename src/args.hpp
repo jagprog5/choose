@@ -251,6 +251,7 @@ void print_help_message() {
       "                WARNING PCRE2 version old: replacement is never literal\n"
 #endif
       "options:\n"
+      "        --auto-completion-strings\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
       "                a batch is a group of tokens. typically the output consists\n"
       "                of a single batch. if --tui and --tenacious are specified\n"
@@ -309,6 +310,8 @@ void print_help_message() {
       "                if --sort or --unique are specified, it will be done numerically\n"
       "                numeric strings are: ^[\\x20\\x9]*[-+]?[0-9,]*(?:\\.[0-9]*)?$\n"
       "        --no-warn\n"
+      "        --null, --read0\n"
+      "                delimit the input on null chars\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
       "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
@@ -358,9 +361,6 @@ void print_help_message() {
       "                use null as the batch delimiter\n"
       "        -z, --print0\n"
       "                use null as the output delimiter\n"
-      "        -0, --null, --read0\n"
-      "                delimit the input on null chars\n"
-      "        --0-auto-completion-strings\n"
       "        --\n"
       "                stop option parsing\n"
       "examples:\n"
@@ -466,19 +466,21 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"tail", optional_argument, NULL, 0},
         {"take", optional_argument, NULL, 0},
         // options
-        {"tui", no_argument, NULL, 't'},
+        {"auto-completion-strings", no_argument, NULL, 0},
         {"delimit-same", no_argument, NULL, 'd'},
         {"delimit-not-at-end", no_argument, NULL, 0},
         {"delimit-on-empty", no_argument, NULL, 0},
         {"end", no_argument, NULL, 'e'},
         {"flip", no_argument, NULL, 0},
-        {"sort-reverse", no_argument, NULL, 0},
         {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
         {"numeric", no_argument, NULL, 'n'},
+        {"null", no_argument, NULL, 0},
+        {"read0", no_argument, NULL, 0},
+        {"sort-reverse", no_argument, NULL, 0},
         {"sort-numeric", no_argument, NULL, 0},
         {"unique-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
@@ -488,6 +490,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"stable", no_argument, NULL, 0},
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
+        {"tui", no_argument, NULL, 't'},
         {"unique", no_argument, NULL, 'u'},
         {"unique-use-set", no_argument, NULL, 0},
         {"use-delimiter", no_argument, NULL, 0},
@@ -495,7 +498,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"utf-allow-invalid", no_argument, NULL, 0},
         {"batch-print0", no_argument, NULL, 'y'},
         {"print0", no_argument, NULL, 'z'},
-        {"0-auto-completion-strings", no_argument, NULL, 0},
         {NULL, 0, NULL, 0}
 
     };
@@ -681,6 +683,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             tail_handler(false);
           } else if (strcmp("match", name) == 0) {
             ret.match = true;
+          } else if (strcmp("null", name) == 0 || strcmp("read0", name) == 0) {
+            uncompiled_output.primary = {'\0'};
+            uncompiled_output.primary_set = true;
           } else if (strcmp("no-warn", name) == 0) {
             ret.can_drop_warn = false;
           } else if (strcmp("sort-numeric", name) == 0) {
@@ -712,7 +717,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.re_options |= PCRE2_UTF;
           } else if (strcmp("utf-allow-invalid", name) == 0) {
             uncompiled_output.re_options |= PCRE2_MATCH_INVALID_UTF;
-          } else if (strcmp("0-auto-completion-strings", name) == 0) {
+          } else if (strcmp("auto-completion-strings", name) == 0) {
             const option* pos = long_options;
             while (pos->name) {
               fputs("--", stdout);
