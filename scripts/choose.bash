@@ -5,7 +5,7 @@ PATH="$PATH:$HOME/.choose"
 __choose_script_completion() {
     local curr_arg
     curr_arg=${COMP_WORDS[COMP_CWORD]}
-    completions=$(choose --0-auto-completion-strings)
+    completions=$(choose --auto-completion-strings)
     COMPREPLY=($(compgen -W "${completions[*]}" -- "$curr_arg"))
 }
 
