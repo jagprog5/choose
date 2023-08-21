@@ -202,49 +202,47 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
     char lhs_ch = get_next(lhs_begin, lhs_end);
     char rhs_ch = get_next(rhs_begin, rhs_end);
 
-    if (likely(lhs_ch != rhs_ch)) {
-      if (unlikely(rhs_ch == ',')) {
-        // rhs reached end of string, lhs hasn't
+    if (likely(lhs_ch != ',' && lhs_ch != '.')) {
+      if (likely(rhs_ch != ',' && rhs_ch != '.')) {
+        // neither lhs or rhs have reached end of string or decimal
+        // this is the most likely branch
+        // precondition lhs and rhs have char to compare
+        if (lhs_ch > rhs_ch) {
+          goto left_loop;
+        } else if (lhs_ch < rhs_ch) {
+          goto right_loop;
+        }
+      } else {
+        // rhs reached decimal or end and lhs still has non fractional digits
         return false;
       }
-
-      if (unlikely(rhs_ch == '.')) {
-        if (unlikely(lhs_ch == ',')) {
-          // check if rhs decimal is entirely zero
-          while (likely(rhs_begin < rhs_end)) {
-            if (unlikely(*rhs_begin++ != '0')) {
-              return true;
-            }
+    } else if (lhs_ch == ',') {
+      if (rhs_ch == ',') {
+        // both end of string at same time
+        return false;
+      } else if (rhs_ch == '.') {
+        // rhs reached decimal place and lhs reached end of string
+        // check if rhs fraction is zero
+        while (likely(rhs_begin < rhs_end)) {
+          if (likely(*rhs_begin++ != '0')) {
+            return true;
           }
-          return false;
-        } else {
-          return false;
         }
-      }
-
-      if (unlikely(lhs_ch == ',' || lhs_ch == '.')) {
-        // lhs reached end of non-fractional and rhs hasn't
+        return false;
+      } else {
+        // lhs reached end of string and rhs still has non fractional digits
         return true;
       }
-
-      // go to appropriate loop now that it's know which side has a greater
-      // leading non-fractional digit
-      if (lhs_ch > rhs_ch) {
-        goto left_loop;
-      } else {
-        goto right_loop;
-      }
-    } else {
-      // precondition lhs_ch == rhs_ch
-      if (unlikely(rhs_ch == ',')) {
-        // both reached end of string
-        return false;
-      } else if (unlikely(rhs_ch == '.')) {
-        // both reached decimal place at same time
+    } else { // '.'
+      if (rhs_ch == '.') {
+        // both reached decimal at same time
         return fraction_compare(lhs_begin, lhs_end, rhs_begin, rhs_end);
+      } else if (rhs_ch == ',') {
+        // lhs reached decimal point and rhs reached end of string
+        return false;
       } else {
-        // both reached same digit or same character not in numeric format
-        continue;
+        // lhs reached decimal and rhs still has non fractional digits
+        return true;
       }
     }
   }
@@ -304,42 +302,54 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
     char lhs_ch = get_next(lhs_begin, lhs_end);
     char rhs_ch = get_next(rhs_begin, rhs_end);
 
-    if (likely(lhs_ch != rhs_ch)) {
-      if (unlikely(rhs_ch == ',' && lhs_ch == '.')) {
-        // rhs reached end of string, lhs reached decimal
-        // check if lhs decimal is entirely zero
-        while (likely(lhs_begin < lhs_end)) {
-          if (unlikely(*lhs_begin++ != '0')) {
-            return false;
-          }
-        }
-        return true;
-      }
+    // for either side, a character, the decimal point, or end of string can be
+    // reached. handle each case appropriately
 
-      if (unlikely(rhs_ch == '.' && lhs_ch == ',')) {
-        // rhs reached decimal and lhs reached end of string
-        // check if rhs decimal is entirely zero
+    if (likely(lhs_ch != ',' && lhs_ch != '.')) {
+      if (likely(rhs_ch != ',' && rhs_ch != '.')) {
+        // neither lhs or rhs have reached end of string or decimal
+        // this is the most likely branch
+        // precondition lhs and rhs have char to compare
+        if (likely(lhs_ch != rhs_ch)) {
+          return false;
+        }
+      } else {
+        // rhs reached decimal or end and lhs still has non fractional digits
+        return false;
+      }
+    } else if (lhs_ch == ',') {
+      if (rhs_ch != ',' && rhs_ch != '.') {
+        // lhs reached end of string and rhs still has non fractional digits
+        return false;
+      } else if (rhs_ch == ',') {
+        // both end of string
+        return true;
+      } else { // '.'
+        // rhs reached decimal point and lhs reached end of string
+        // check if rhs fraction is zero
         while (likely(rhs_begin < rhs_end)) {
-          if (unlikely(*rhs_begin++ != '0')) {
-            return false;
+          if (likely(*rhs_begin++ != '0')) {
+            return false; // not equal
           }
         }
         return true;
       }
-      
-      // all other cases for chars not equal
-      return false;
-    } else {
-      // precondition lhs_ch == rhs_ch
-      if (unlikely(lhs_ch == ',')) {
-        // both reached end of string at same time
+    } else { // '.'
+      if (rhs_ch != ',' && rhs_ch != '.') {
+        // lhs reached decimal rhs still has non fractional digits
+        return false;
+      } else if (rhs_ch == ',') {
+        // lhs reached decimal point and rhs reached end of string
+        // check if lhs fraction is zero
+        while (likely(lhs_begin < lhs_end)) {
+          if (likely(*lhs_begin++ != '0')) {
+            return false; // not equal
+          }
+        }
         return true;
-      } else if (unlikely(lhs_ch == '.')) {
-        // both reached decimal place at same time
+      } else { // '.'
+        // both reach decimal at same time
         return fraction_equal(lhs_begin, lhs_end, rhs_begin, rhs_end);
-      } else {
-        // both reached same digit or same character not in numeric format
-        continue;
       }
     }
   }
