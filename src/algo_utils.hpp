@@ -362,7 +362,8 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
 size_t numeric_hash(const char* begin, const char* end) {
   // https://www.boost.org/doc/libs/1_35_0/doc/html/boost/hash_range_id420926.html
   // initial seed of 0 is reasonable
-  size_t ret = 0;
+  static constexpr size_t INITIAL_SEED = 0;
+  size_t ret = INITIAL_SEED;
 
   auto apply = [&](char ch) {
     // https://github.com/HowardHinnant/hash_append/issues/7#issuecomment-371758166
@@ -420,8 +421,8 @@ size_t numeric_hash(const char* begin, const char* end) {
     ++begin;
   }
 
-  if (is_negative && ret) {
-    // ret != 0 provides the weak guarantee that the overall string is non-zero. this
+  if (is_negative && ret != INITIAL_SEED) {
+    // ret != INITIAL_SEED provides the weak guarantee that the overall string is non-zero. this
     // won't happen always since the hash so far could happen to be zero for other
     // strings.
 
