@@ -151,7 +151,7 @@ bool non_zero(const char* begin, const char* end) {
 }
 
 // similar bit pattern to decimal point, for convenience below
-static constexpr char STR_END = '.' | 0b10000000;
+static constexpr char STR_END = '.' | (char)0b10000000;
 static constexpr char END_MASK = 0b01111111;
 
 // returns the first non thousands sep char at or after pos, and increments pos appropriately.
