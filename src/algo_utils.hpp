@@ -197,7 +197,7 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
     std::swap(lhs_begin, rhs_begin);
     std::swap(lhs_end, rhs_end);
   }
-
+  
   trim_leading_zeros(lhs_begin, lhs_end);
   trim_leading_zeros(rhs_begin, rhs_end);
 
@@ -210,10 +210,26 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
         // neither lhs or rhs have reached end of string or decimal
         // this is the most likely branch
         // precondition lhs and rhs have char to compare
-        if (lhs_ch > rhs_ch) {
-          goto left_loop;
-        } else if (lhs_ch < rhs_ch) {
-          goto right_loop;
+
+        if (likely(lhs_ch != rhs_ch)) {
+          bool left_leaning = lhs_ch > rhs_ch;
+          while (1) {
+            lhs_ch = get_next(lhs_begin, lhs_end);
+            rhs_ch = get_next(rhs_begin, rhs_end);
+            if (unlikely((rhs_ch & END_MASK) == '.')) {
+              // even if lhs also runs out of characters at the same time,
+              // lhs is still greater
+              if (left_leaning) {
+                return false;
+              } else {
+                return (lhs_ch & END_MASK) == '.';
+              }
+            }
+
+            if (unlikely((lhs_ch & END_MASK) == '.')) {
+              return true;
+            }
+          }
         }
       } else {
         // rhs reached decimal or end and lhs still has non fractional digits
@@ -237,46 +253,16 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
         return true;
       }
     } else { // '.'
-      if (rhs_ch == '.') {
-        // both reached decimal at same time
-        return fraction_compare(lhs_begin, lhs_end, rhs_begin, rhs_end);
-      } else if (rhs_ch == STR_END) {
+      if (rhs_ch == STR_END) {
         // lhs reached decimal point and rhs reached end of string
         return false;
-      } else {
+      } else if (rhs_ch != '.') {
         // lhs reached decimal and rhs still has non fractional digits
         return true;
+      } else {
+        // both reached decimal at same time
+        return fraction_compare(lhs_begin, lhs_end, rhs_begin, rhs_end);
       }
-    }
-  }
-
-left_loop:
-  while (1) {
-    char lhs_ch = get_next(lhs_begin, lhs_end);
-    char rhs_ch = get_next(rhs_begin, rhs_end);
-    if (unlikely((rhs_ch & END_MASK) == '.')) {
-      // even if lhs also runs out of characters at the same time,
-      // lhs is still greater
-      return false;
-    }
-
-    if (unlikely((lhs_ch & END_MASK) == '.')) {
-      return true;
-    }
-  }
-
-right_loop:
-  while (1) {
-    char lhs_ch = get_next(lhs_begin, lhs_end);
-    char rhs_ch = get_next(rhs_begin, rhs_end);
-    if (unlikely((lhs_ch & END_MASK) == '.')) {
-      // even if rhs also runs out of characters at the same time,
-      // rhs is still greater
-      return true;
-    }
-
-    if (unlikely((rhs_ch & END_MASK) == '.')) {
-      return false;
     }
   }
 }
