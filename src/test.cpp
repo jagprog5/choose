@@ -187,6 +187,7 @@ BOOST_AUTO_TEST_CASE(numeric_equal_test) {
   BOOST_REQUIRE(!equal_str("-1", "0"));
   BOOST_REQUIRE(!equal_str(".001", ".00"));
   BOOST_REQUIRE(equal_str(".", ".0000"));
+  BOOST_REQUIRE(equal_str(".", ""));
   BOOST_REQUIRE(!equal_str(".", ".0001"));
   BOOST_REQUIRE(!equal_str(".00", ".0001"));
   BOOST_REQUIRE(equal_str("123", "123"));

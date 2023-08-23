@@ -114,28 +114,62 @@ bool fraction_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_
   }
 }
 
-void trim_leading_spaces(const char*& pos, const char* end) {
-  while (likely(pos < end) && (*pos == ' ' || *pos == '\t')) {
+// similar bit pattern to decimal point, for convenience
+static constexpr char STR_END = '.' | (char)0b10000000;
+static constexpr char END_MASK = 0b01111111;
+
+// increments pos until it doesn't point to a space or it points at the end.
+// returns the character pos points to on return, or STR_END if it's at the end.
+char trim_leading_spaces(const char*& pos, const char* end) {
+  while (likely(pos < end)) {
+    char ch = *pos;
+    if (ch != ' ' && ch != '\t') {
+      return ch;
+    }
     ++pos;
   }
+  return STR_END;
 }
 
-// returns true if negative
-bool trim_leading_sign(const char*& pos, const char* end) {
-  if (likely(pos < end)) {
-    if (*pos == '+') {
-      ++pos;
-    } else if (*pos == '-') {
-      ++pos;
-      return true;
+// pos_ch is the character pointed to by pos.
+// if pos points to a sign, increment pos and updates pos_ch appropriately.
+// return true if a sign was present and it was negative
+bool trim_leading_sign(char& pos_ch, const char*& pos, const char* end) {
+  auto do_increment = [&]() {
+    ++pos;
+    if (likely(pos < end)) {
+      pos_ch = *pos;
+    } else {
+      pos_ch = STR_END;
     }
+  };
+
+  if (pos_ch == '-') {
+    do_increment();
+    return true;
+  }
+
+  if (pos_ch == '+') {
+    do_increment();
   }
   return false;
 }
 
-void trim_leading_zeros(const char*& pos, const char* end) {
-  while (likely(pos < end) && (*pos == '0' || *pos == ',')) {
+// pos_ch is the character pointed to by pos
+// increments pos until it doesn't point at a '0' (ignoring thousands seps),
+// and updates pos_ch appropriately,
+void trim_leading_zeros(char& pos_ch, const char*& pos, const char* end) {
+  while (1) {
+    if (pos_ch != '0' && pos_ch != ',') {
+      return;
+    }
     ++pos;
+    if (likely(pos < end)) {
+      pos_ch = *pos;
+    } else {
+      pos_ch = STR_END;
+      return;
+    }
   }
 }
 
@@ -149,10 +183,6 @@ bool non_zero(const char* begin, const char* end) {
   }
   return false;
 }
-
-// similar bit pattern to decimal point, for convenience below
-static constexpr char STR_END = '.' | (char)0b10000000;
-static constexpr char END_MASK = 0b01111111;
 
 // returns the first non thousands sep char at or after pos, and increments pos appropriately.
 // if the end of string is reached, then STR_END is returned instead
@@ -171,10 +201,10 @@ char get_next(const char*& pos, const char* end) {
 // compare two numbers, like          -123,456,789.99912134000
 // numeric strings match this: ^[ \t]*[-+]?[0-9,]*(?:\.[0-9]*)?$
 bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  trim_leading_spaces(lhs_begin, lhs_end);
-  trim_leading_spaces(rhs_begin, rhs_end);
-  bool lhs_negative = trim_leading_sign(lhs_begin, lhs_end);
-  bool rhs_negative = trim_leading_sign(rhs_begin, rhs_end);
+  char lhs_ch = trim_leading_spaces(lhs_begin, lhs_end);
+  char rhs_ch = trim_leading_spaces(rhs_begin, rhs_end);
+  bool lhs_negative = trim_leading_sign(lhs_ch, lhs_begin, lhs_end);
+  bool rhs_negative = trim_leading_sign(rhs_ch, rhs_begin, rhs_end);
 
   if (!lhs_negative && rhs_negative) {
     return false;
@@ -194,17 +224,15 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
   // precondition lhs_negative == rhs_negative
   bool both_negative = lhs_negative;
   if (both_negative) {
+    std::swap(lhs_ch, rhs_ch);
     std::swap(lhs_begin, rhs_begin);
     std::swap(lhs_end, rhs_end);
   }
-  
-  trim_leading_zeros(lhs_begin, lhs_end);
-  trim_leading_zeros(rhs_begin, rhs_end);
+
+  trim_leading_zeros(lhs_ch, lhs_begin, lhs_end);
+  trim_leading_zeros(rhs_ch, rhs_begin, rhs_end);
 
   while (1) {
-    char lhs_ch = get_next(lhs_begin, lhs_end);
-    char rhs_ch = get_next(rhs_begin, rhs_end);
-
     if (likely((lhs_ch & END_MASK) != '.')) {
       if (likely((rhs_ch & END_MASK) != '.')) {
         // neither lhs or rhs have reached end of string or decimal
@@ -264,14 +292,17 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
         return fraction_compare(lhs_begin, lhs_end, rhs_begin, rhs_end);
       }
     }
+
+    lhs_ch = get_next(lhs_begin, lhs_end);
+    rhs_ch = get_next(rhs_begin, rhs_end);
   }
 }
 
 bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  trim_leading_spaces(lhs_begin, lhs_end);
-  trim_leading_spaces(rhs_begin, rhs_end);
-  bool lhs_negative = trim_leading_sign(lhs_begin, lhs_end);
-  bool rhs_negative = trim_leading_sign(rhs_begin, rhs_end);
+  char lhs_ch = trim_leading_spaces(lhs_begin, lhs_end);
+  char rhs_ch = trim_leading_spaces(rhs_begin, rhs_end);
+  bool lhs_negative = trim_leading_sign(lhs_ch, lhs_begin, lhs_end);
+  bool rhs_negative = trim_leading_sign(rhs_ch, rhs_begin, rhs_end);
 
   if (lhs_negative != rhs_negative) {
     bool lhs_non_zero = non_zero(lhs_begin, lhs_end);
@@ -284,13 +315,10 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
     }
   }
 
-  trim_leading_zeros(lhs_begin, lhs_end);
-  trim_leading_zeros(rhs_begin, rhs_end);
+  trim_leading_zeros(lhs_ch, lhs_begin, lhs_end);
+  trim_leading_zeros(rhs_ch, rhs_begin, rhs_end);
 
   while (1) {
-    char lhs_ch = get_next(lhs_begin, lhs_end);
-    char rhs_ch = get_next(rhs_begin, rhs_end);
-
     // for either side, a character, the decimal point, or end of string can be
     // reached. handle each case appropriately
 
@@ -341,6 +369,8 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
         return fraction_equal(lhs_begin, lhs_end, rhs_begin, rhs_end);
       }
     }
+    lhs_ch = get_next(lhs_begin, lhs_end);
+    rhs_ch = get_next(rhs_begin, rhs_end);
   }
 }
 
@@ -364,13 +394,20 @@ size_t numeric_hash(const char* begin, const char* end) {
   };
 
   // trim leading spaces
-  trim_leading_spaces(begin, end);
+  char ch = trim_leading_spaces(begin, end);
 
   // negative sign is added to hash later if overall string is non-zero
-  bool is_negative = trim_leading_sign(begin, end);
+  bool is_negative = trim_leading_sign(ch, begin, end);
 
   // trim leading zeros
-  trim_leading_zeros(begin, end);
+  trim_leading_zeros(ch, begin, end);
+
+  if (unlikely(ch == STR_END)) {
+    return ret;
+  }
+
+  // precondition begin < end
+  // precondition ch == *begin
 
   // begin points to the decimal point
   auto do_fractional_hash = [&](const char*& begin, const char*& end) {
@@ -391,20 +428,22 @@ size_t numeric_hash(const char* begin, const char* end) {
     }
   };
 
-  while (begin < end) {
-    char ch = *begin;
-    if (ch == ',') {
-      // ignore thousands sep
-      ++begin;
-      continue;
-    } else if (ch == '.') {
+  while (1) {
+    if (ch == '.') {
       // begin points on the decimal.
       // decimal is applied from within do_fractional_hash
       do_fractional_hash(begin, end);
       break;
     }
-    apply(ch);
+
+    if (ch != ',') { // ignore thousands sep
+      apply(ch);
+    }
     ++begin;
+    if (begin >= end) {
+      break;
+    }
+    ch = *begin;
   }
 
   if (is_negative && ret != INITIAL_SEED) {
