@@ -270,6 +270,7 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
       } else if (rhs_ch == '.') {
         // rhs reached decimal place and lhs reached end of string
         // check if rhs fraction is zero
+        ++rhs_begin; // point after decimal
         while (likely(rhs_begin < rhs_end)) {
           if (likely(*rhs_begin++ != '0')) {
             return true;
@@ -344,6 +345,7 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
       } else { // '.'
         // rhs reached decimal point and lhs reached end of string
         // check if rhs fraction is zero
+        ++rhs_begin; // point after decimal
         while (likely(rhs_begin < rhs_end)) {
           if (likely(*rhs_begin++ != '0')) {
             return false; // not equal
@@ -358,6 +360,7 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
       } else if (rhs_ch == STR_END) {
         // lhs reached decimal point and rhs reached end of string
         // check if lhs fraction is zero
+        ++lhs_begin; // point after decimal
         while (likely(lhs_begin < lhs_end)) {
           if (likely(*lhs_begin++ != '0')) {
             return false; // not equal
