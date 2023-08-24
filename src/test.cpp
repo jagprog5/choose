@@ -524,7 +524,7 @@ BOOST_AUTO_TEST_CASE(sort) {
 }
 
 BOOST_AUTO_TEST_CASE(unique) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique"});
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--load-factor=1"});
   choose_output correct_output{to_vec("this\nis\na\ntest\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -732,6 +732,12 @@ BOOST_AUTO_TEST_CASE(unique_by_field) {
 BOOST_AUTO_TEST_CASE(sort_by_field) {
   choose_output out = run_choose("a,z\nb,y\nc,x", {"-t", "--sort", "--field", "[^,]*,\\K[^,]*"});
   choose_output correct_output{std::vector<choose::Token>{"c,x", "b,y", "a,z"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(field_with_no_matches) {
+  choose_output out = run_choose("abc 1245\nzzz 123\nno match!", {"-t", "-s", "--field", "\\d+"});
+  choose_output correct_output{std::vector<choose::Token>{"no match!", "zzz 123", "abc 1245"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 #endif

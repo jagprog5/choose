@@ -295,7 +295,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
         } else {
           auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
-          s.max_load_factor(0.125); // obtained experimentally. see perf.md
+          s.max_load_factor(args.unique_load_factor);
           return unique_checker_T(std::move(s));
         }
       } else {

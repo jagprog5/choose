@@ -18,6 +18,7 @@ namespace choose {
 #define choose_str(a) #a
 
 #define BUF_SIZE_DEFAULT 32768
+#define UNIQUE_LOAD_FACTOR_DEFAULT 0.125
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
@@ -36,6 +37,10 @@ struct Arguments {
   bool unique = false;         // indicates that any type of uniqueness is applied
   bool unique_numeric = false; // requires unique. false indicates lexicographical
   bool unique_use_set = false;
+  // if unordered_map is used, this is the max load factor
+  // this default value seems to work well
+  float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
+
   bool flip = false;
   bool flush = false;
   bool multiple_selections = false;
@@ -294,6 +299,8 @@ void print_help_message() {
       "                to the output or to the tui\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
+      "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
+      "                if a hash table is used for uniqueness, set the max load factor\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -458,6 +465,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
+        {"load-factor", required_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
         {"head", optional_argument, NULL, 0},
@@ -648,6 +656,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             } else {
               ++optind;
               uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
+            }
+          } else if (strcmp("load-factor", name) == 0) {
+            char* end_ptr; // NOLINT
+            ret.unique_load_factor = strtof(optarg, &end_ptr);
+            if (optarg == end_ptr || *end_ptr != '\0' || ret.unique_load_factor <= 0) {
+              on_num_err();
             }
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
