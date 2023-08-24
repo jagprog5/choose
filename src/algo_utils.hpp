@@ -118,7 +118,7 @@ bool fraction_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_
 static constexpr char STR_END = '.' | (char)0b10000000;
 static constexpr char END_MASK = 0b01111111;
 
-// increments pos until it doesn't point to a space or it points at the end.
+// increments pos while it doesn't point to a space or it points at the end.
 // returns the character pos points to on return, or STR_END if it's at the end.
 char trim_leading_spaces(const char*& pos, const char* end) {
   while (likely(pos < end)) {
@@ -156,7 +156,7 @@ bool trim_leading_sign(char& pos_ch, const char*& pos, const char* end) {
 }
 
 // pos_ch is the character pointed to by pos
-// increments pos until it doesn't point at a '0' (ignoring thousands seps),
+// increments pos while it doesn't point at a '0' (ignoring thousands seps),
 // and updates pos_ch appropriately,
 void trim_leading_zeros(char& pos_ch, const char*& pos, const char* end) {
   while (1) {
@@ -231,6 +231,8 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
 
   trim_leading_zeros(lhs_ch, lhs_begin, lhs_end);
   trim_leading_zeros(rhs_ch, rhs_begin, rhs_end);
+  ++lhs_begin;
+  ++rhs_begin;
 
   while (1) {
     if (likely((lhs_ch & END_MASK) != '.')) {
@@ -270,7 +272,6 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
       } else if (rhs_ch == '.') {
         // rhs reached decimal place and lhs reached end of string
         // check if rhs fraction is zero
-        ++rhs_begin; // point after decimal
         while (likely(rhs_begin < rhs_end)) {
           if (likely(*rhs_begin++ != '0')) {
             return true;
@@ -318,6 +319,8 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
 
   trim_leading_zeros(lhs_ch, lhs_begin, lhs_end);
   trim_leading_zeros(rhs_ch, rhs_begin, rhs_end);
+  ++lhs_begin;
+  ++rhs_begin;
 
   while (1) {
     // for either side, a character, the decimal point, or end of string can be
@@ -345,7 +348,6 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
       } else { // '.'
         // rhs reached decimal point and lhs reached end of string
         // check if rhs fraction is zero
-        ++rhs_begin; // point after decimal
         while (likely(rhs_begin < rhs_end)) {
           if (likely(*rhs_begin++ != '0')) {
             return false; // not equal
@@ -360,7 +362,6 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
       } else if (rhs_ch == STR_END) {
         // lhs reached decimal point and rhs reached end of string
         // check if lhs fraction is zero
-        ++lhs_begin; // point after decimal
         while (likely(lhs_begin < lhs_end)) {
           if (likely(*lhs_begin++ != '0')) {
             return false; // not equal
@@ -463,3 +464,79 @@ size_t numeric_hash(const char* begin, const char* end) {
 }
 
 } // namespace choose
+
+/*
+// a fuzzy checker for the numeric functions
+#include <stdlib.h>
+#include <time.h>
+#include <cassert>
+
+int main() {
+  srand(42);
+
+  auto get_rand_vec = []() {
+    std::vector<char> random_chars;
+    random_chars.resize(rand() % 8);
+    // bool has_decimal = false;
+    for (int i = 0; i < random_chars.size(); ++i) {
+      char ch;
+      do {
+        ch = rand();
+      } while (ch == choose::STR_END);
+      random_chars[i] = ch;
+    }
+    return random_chars;
+  };
+
+  int length = rand() % 8;
+
+  for (int i = 0; i < 100000000; ++i) {
+    if (i % 100000 == 0) {
+      printf("%d\n", i);
+    }
+    auto lhs = get_rand_vec();
+    auto rhs = get_rand_vec();
+
+    auto on_failure = [&](const char* msg) {
+      puts(msg);
+      for (char ch : lhs) {
+        putchar(ch);
+        putchar('|');
+      }
+      putchar('\n');
+      for (char ch : rhs) {
+        putchar(ch);
+        putchar('|');
+      }
+      putchar('\n');
+      assert(false);
+    };
+
+    bool lhs_lt_rhs = choose::numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+    bool rhs_lt_lhs = choose::numeric_compare(&*rhs.cbegin(), &*rhs.cend(), &*lhs.cbegin(), &*lhs.cend());
+    if (lhs_lt_rhs && rhs_lt_lhs) {
+      on_failure("comparison ill formed");
+    }
+    bool equal = choose::numeric_equal(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+    if (equal != (!lhs_lt_rhs && !rhs_lt_lhs)) {
+      on_failure("equality and comparison disagree");
+    }
+
+    auto lhs_hash = choose::numeric_hash(&*lhs.cbegin(), &*lhs.cend());
+    auto rhs_hash = choose::numeric_hash(&*rhs.cbegin(), &*rhs.cend());
+
+    if (equal != (lhs_hash == rhs_hash)) {
+      on_failure("hash equaity and equality disagree");
+    }
+
+    auto middle = get_rand_vec();
+    bool lhs_lt_middle = choose::numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*middle.cbegin(), &*middle.cend());
+    bool middle_lt_rhs = choose::numeric_compare(&*middle.cbegin(), &*middle.cend(), &*rhs.cbegin(), &*rhs.cend());
+    if (lhs_lt_middle && middle_lt_rhs) {
+      if (!lhs_lt_rhs) {
+        on_failure("transitive fail");
+      }
+    }
+  }
+}
+*/

@@ -141,6 +141,8 @@ BOOST_AUTO_TEST_SUITE(numeric_compare_test_suite)
 
 BOOST_AUTO_TEST_CASE(numeric_compare_test) {
   auto comp_str = [](const std::string& lhs, const std::string& rhs) -> bool { return numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend()); };
+  BOOST_REQUIRE(!comp_str("2", "1"));
+  BOOST_REQUIRE(comp_str("1", "2"));
   BOOST_REQUIRE(!comp_str(".", "."));
   BOOST_REQUIRE(!comp_str(".", ".00000000000"));
   BOOST_REQUIRE(!comp_str(".00000000001", "."));
@@ -528,7 +530,7 @@ BOOST_AUTO_TEST_CASE(unique) {
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique) {
-  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric"});
+  choose_output out = run_choose("-0\n+0\n.0\n.\n\n1\n+1.0\n0001.0", {"--unique-numeric"});
   choose_output correct_output{to_vec("-0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
