@@ -101,7 +101,7 @@ Compared to this:
 cat some_content | choose -f "test" --head 5
 ```
 
-The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are arbitrary and can contain newline characters, whereas lines can't.
+The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are contiguous ranges and can contain newline characters, whereas lines can't.
 
 # Sorting and Uniqueness
 
@@ -141,7 +141,33 @@ Sorting is implemented to effectively leverage truncation. For example:
 echo very_long_input | choose --sort --out=5
 ```
 
-That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this and will be slower.
+This is an _extremely_ useful feature. That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this and will be slower.
+
+## Compared to sort -u
+
+gnu sort implements uniqueness in the following way:
+
+1. Read the input and sort it.
+2. Remove consecutive duplicate entries from the sorted elements, like the `uniq` command.
+
+choose instead applies uniqueness upfront:
+
+1. For every element in the input, check if it's been seen before.
+2. If it hasn't yet been seen, add it to the output.
+3. Sort the output.
+
+A bonus of this implementation is that uniqueness and sorting can use different comparison types. For example, choose can apply uniqueness numerically, but sorting lexicographically. Wheras sort needs to use the same comparison for both.
+
+A drawback is that it can use more memory, since a separate data structure is maintained to determine if new elements are unique. But, there's a degree of control since uniqueness related args are provided, and since piping like so is still an option: `choose -s | uniq`
+
+## Flushing
+
+```bash
+(echo "4" ; sleep 1 ; echo "3" ; sleep 1 ; echo "3" ; sleep 1 ; echo "5" )\
+  | choose -u --flush
+```
+
+Suppose there is a long running input. choose can apply uniqueness and provide the output at the same time it arrives.
 
 # Matching
 
