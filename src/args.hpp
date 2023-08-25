@@ -20,6 +20,12 @@ namespace choose {
 #define BUF_SIZE_DEFAULT 32768
 #define UNIQUE_LOAD_FACTOR_DEFAULT 0.125
 
+enum Comparison {
+  lexicographical,
+  numeric,
+  general_numeric,
+};
+
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
   // indicates that the tokens are displayed in the tui
@@ -29,14 +35,14 @@ struct Arguments {
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
-  bool sort = false;         // indicates that any sort is applied
-  bool sort_numeric = false; // requires sort. false indicates lexicographical
+  bool sort = false; // indicates that any sort is applied
+  Comparison sort_type = lexicographical;
   bool sort_reverse = false; // requires sort
-  bool sort_stable = false;
+  bool sort_stable = false;  // requires sort
 
-  bool unique = false;         // indicates that any type of uniqueness is applied
-  bool unique_numeric = false; // requires unique. false indicates lexicographical
-  bool unique_use_set = false;
+  bool unique = false; // indicates that any unique is applied
+  Comparison unique_type = lexicographical;
+  bool unique_use_set = false; // requires unique
   // if unordered_map is used, this is the max load factor
   // this default value seems to work well
   float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
@@ -711,12 +717,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.can_drop_warn = false;
           } else if (strcmp("sort-numeric", name) == 0) {
             ret.sort = true;
-            ret.sort_numeric = true;
+            ret.sort_type = numeric;
           } else if (strcmp("uniq", name) == 0) {
             ret.unique_consecutive = true;
           } else if (strcmp("unique-numeric", name) == 0) {
             ret.unique = true;
-            ret.unique_numeric = true;
+            ret.unique_type = numeric;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -789,8 +795,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         uncompiled_output.re_options |= PCRE2_CASELESS;
         break;
       case 'n':
-        ret.unique_numeric = true;
-        ret.sort_numeric = true;
+        ret.sort_type = numeric;
+        ret.unique_type = numeric;
         break;
       case 'm':
         ret.multiple_selections = true;

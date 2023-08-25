@@ -212,9 +212,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   const bool unique = args.unique;
   const bool unique_use_set = args.unique_use_set;
-  const bool unique_numeric = args.unique_numeric;
+  const Comparison unique_type = args.unique_type;
   const bool sort = args.sort;
-  const bool sort_numeric = args.sort_numeric;
+  const Comparison sort_type = args.sort_type;
   const bool sort_reversed = args.sort_reverse;
 
   // the elements in output are being inserted with any excess being discarded.
@@ -246,10 +246,13 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
     };
 
     auto uniqueness_set_comparison = [&](indirect lhs, indirect rhs) -> bool {
-      if (unique_numeric) {
-        return numeric_comparison(output[lhs], output[rhs]);
-      } else {
-        return lexicographical_comparison(output[lhs], output[rhs]);
+      switch (unique_type) {
+        default:
+          return lexicographical_comparison(output[lhs], output[rhs]);
+          break;
+        case numeric:
+          return numeric_comparison(output[lhs], output[rhs]);
+          break;
       }
     };
 
@@ -259,30 +262,50 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       if (sort_reversed) {
         std::swap(lhs, rhs);
       }
-      if (sort_numeric) {
-        return numeric_comparison(*lhs, *rhs);
-      } else {
-        return lexicographical_comparison(*lhs, *rhs);
+      switch (sort_type) {
+        default:
+          return lexicographical_comparison(*lhs, *rhs);
+          break;
+        case numeric:
+          return numeric_comparison(*lhs, *rhs);
+          break;
       }
     };
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
       const Token& t = output[val];
-      if (unique_numeric) {
-        return numeric_hash(t.cbegin(), t.cend());
-      } else {
-        auto view = std::string_view(t.cbegin(), t.cend() - t.cbegin());
-        return std::hash<std::string_view>{}(view);
+      switch (unique_type) {
+        default: {
+          auto view = std::string_view(t.cbegin(), t.cend() - t.cbegin());
+          return std::hash<std::string_view>{}(view);
+        } break;
+        case numeric:
+          return numeric_hash(t.cbegin(), t.cend());
+          break;
       }
     };
 
     auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
       const Token& lhs = output[lhs_arg];
       const Token& rhs = output[rhs_arg];
-      if (unique_numeric) {
-        return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-      } else {
-        return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+      switch (unique_type) {
+        default:
+          return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case numeric:
+          return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+      }
+    };
+
+    auto consecutive_equality_predicate = [&](const Token& lhs, const Token& rhs) -> bool { //
+      switch (sort_type) {
+        default:
+          return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case numeric:
+          return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
       }
     };
 
@@ -753,14 +776,6 @@ skip_read: // do another iteration but don't read in any more bytes
           std::sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
         }
         if (args.unique_consecutive) {
-          auto pred = [&](const Token& lhs, const Token& rhs) -> bool { //
-            if (sort_numeric) {
-              return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-            } else {
-              return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-            }
-          };
-
           if (!args.tui && !args.flip) {
             // don't bother moving memory around. just write to the output.
             // !args.flip since that step can't be skipped (below)
@@ -776,17 +791,17 @@ skip_read: // do another iteration but don't read in any more bytes
 
               auto cursor = last_written;
               while (++cursor != output.cend()) {
-                if (!pred(*cursor, *last_written)) {
+                if (!consecutive_equality_predicate(*cursor, *last_written)) {
                   last_written = cursor;
                   direct_output.write_output(*last_written);
                 }
               }
             }
-          skip:
+skip:
             direct_output.finish_output();
             throw termination_request();
           } else {
-            auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), pred);
+            auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), consecutive_equality_predicate);
             output.resize(new_end - output.begin());
           }
         }
