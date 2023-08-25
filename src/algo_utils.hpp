@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <execution>
 #include <vector>
 
@@ -42,6 +43,54 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
+namespace {
+// attempt to get a floating point type that is the same size as size_t. defaults to float
+using floating_hash_t = std::conditional<sizeof(size_t)==sizeof(long double), long double, //
+  std::conditional<sizeof(size_t)==sizeof(double), double, float>::type>::type;
+}
+
+bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
+  float lhs, rhs;
+  std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
+  std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
+
+  // require entire string to be converted for parse success.
+  if (rhs_ret.ptr != rhs_end) {
+    return false; // rhs parse failure. even if lhs also had parse failure, false returned here
+  }
+
+  if (lhs_ret.ptr != lhs_end) {
+    return true; // lhs parse failure and rhs parse success
+  }
+
+  return lhs < rhs;
+}
+
+bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
+  float lhs, rhs;
+  std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
+  std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
+
+  bool lhs_err = lhs_ret.ptr != lhs_end;
+  bool rhs_err = rhs_ret.ptr != rhs_end;
+  if (lhs_err || rhs_err) {
+    return lhs_err && rhs_err;
+  }
+
+  return lhs == rhs;
+}
+
+size_t general_numeric_hash(const char* begin, const char* end) {
+  floating_hash_t val;
+  std::from_chars_result ret = std::from_chars(begin, end, val, std::chars_format::general);
+
+  if (ret.ptr != end) {
+    return 0; // parse failure gives 0 hash
+  }
+
+  return (size_t)val; // identity
+};
+
 // locale is not used for numeric functions. keeping consistent with
 // std::from_chars for general numeric
 
@@ -49,11 +98,11 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
 // pointed out by GNU sort, it avoids overflow issues and is faster since nearly
 // always the entire string doesn't have to be read. additionally, GNU sort's
 // implementation is based on c strings, versus here ranges were used. so this
-// didn't exist yet. 
+// didn't exist yet.
 
 // leveraged under the following assumptions:
 //   - end of string has not been reached
-//   - character frequency. e.g. a obtaining any non-zero digit is less likely than zero digit (1/9 vs 8/9)
+//   - character frequency. e.g. obtaining any non-zero digit is more likely than zero digit (8/9 vs 1/9)
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
@@ -345,7 +394,7 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
       if ((rhs_ch & END_MASK) != '.') {
         // lhs reached end of string and rhs still has non fractional digits
         return false;
-      } else if (rhs_ch == ',') {
+      } else if (rhs_ch == STR_END) {
         // both end of string
         return true;
       } else { // '.'
@@ -529,7 +578,8 @@ int main() {
     auto rhs_hash = choose::numeric_hash(&*rhs.cbegin(), &*rhs.cend());
 
     if (equal != (lhs_hash == rhs_hash)) {
-      on_failure("hash equaity and equality disagree");
+      // will eventually happen due to hash collisions
+      on_failure("hash equality and equality disagree");
     }
 
     auto middle = get_rand_vec();

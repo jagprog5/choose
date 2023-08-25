@@ -530,7 +530,7 @@ BOOST_AUTO_TEST_CASE(unique) {
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique) {
-  choose_output out = run_choose("-0\n0\n.0\n.\n\n1\n1.0\n0001.0", {"--unique-numeric"});
+  choose_output out = run_choose("-0\n0\n0\n.0\n.\n\n1\n1.0\n0001.0", {"--unique-numeric"});
   choose_output correct_output{to_vec("-0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
@@ -541,9 +541,21 @@ BOOST_AUTO_TEST_CASE(general_numeric_unique) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(general_numeric_unique_with_parse_failure) {
+  choose_output out = run_choose("1\n10\nfirst\nsecond\n15 line not completely numeric\n1.0\n1e0\n1e1", {"--unique-general-numeric"});
+  choose_output correct_output{to_vec("1\n10\nfirst\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
   choose_output out = run_choose("-0\n0\n.0\n1\n1.0\n0001.0", {"--unique-numeric", "--unique-use-set"});
   choose_output correct_output{to_vec("-0\n1\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(general_numeric_unique_use_set) {
+  choose_output out = run_choose("1\n10\n1e1\n1e0", {"--unique-general-numeric", "--unique-use-set"});
+  choose_output correct_output{to_vec("1\n10\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -562,6 +574,12 @@ BOOST_AUTO_TEST_CASE(general_numeric_sort) {
 BOOST_AUTO_TEST_CASE(numeric_sort_2) {
   choose_output out = run_choose("3\n-2.1\n-2\n-1\n2\n1\n3", {"--sort-numeric"});
   choose_output correct_output{to_vec("-2.1\n-2\n-1\n1\n2\n3\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(general_numeric_sort_with_parse_failure) {
+  choose_output out = run_choose("4\n1\nfirst\nsecond\n3", {"--sort-general-numeric", "--stable"});
+  choose_output correct_output{to_vec("first\nsecond\n1\n3\n4\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 

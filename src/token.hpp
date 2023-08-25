@@ -6,7 +6,6 @@
 #include <string_view>
 #include <unordered_set>
 #include <utility>
-#include <charconv>
 
 #include "algo_utils.hpp"
 #include "args.hpp"
@@ -207,47 +206,9 @@ bool numeric_comparison(const Token& lhs, const Token& rhs) { //
   return numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
 }
 
-bool general_numeric_comparison(const Token& lhs_arg, const Token& rhs_arg) { //
-  float lhs, rhs;
-  std::from_chars_result lhs_ret = std::from_chars(&*lhs_arg.cbegin(), &*lhs_arg.cend(), lhs, std::chars_format::general);
-  std::from_chars_result rhs_ret = std::from_chars(&*rhs_arg.cbegin(), &*rhs_arg.cend(), rhs, std::chars_format::general);
-
-  // require entire string to be converted for parse success.
-  if (rhs_ret.ptr != &*rhs_arg.cend()) {
-    return false; // rhs parse failure. even if lhs also had parse failure, false returned here
-  }
-
-  if (lhs_ret.ptr != &*lhs_arg.cend()) {
-    return true; // lhs parse failure and rhs parse success
-  }
-
-  return lhs < rhs;
+bool general_numeric_comparison(const Token& lhs, const Token& rhs) { //
+  return general_numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
 }
-
-bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  float lhs, rhs;
-  std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
-  std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
-
-  bool lhs_err = lhs_ret.ptr != lhs_end;
-  bool rhs_err = rhs_ret.ptr != rhs_end;
-  if (lhs_err || rhs_err) {
-    return lhs_err && rhs_err;
-  }
-
-  return lhs == rhs;
-}
-
-size_t general_numeric_hash(const char* begin, const char* end) {
-  float val;
-  std::from_chars_result ret = std::from_chars(begin, end, val, std::chars_format::general);
-
-  if (ret.ptr != end) {
-    return 0; // parse failure gives 0 hash
-  }
-
-  return (size_t)val; // identity
-};
 
 } // namespace
 
