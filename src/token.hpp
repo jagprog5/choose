@@ -136,8 +136,8 @@ struct TokenOutputStream {
 
   template <typename T = decltype(TokenOutputStream::default_write)>
   void write_output_no_truncate(const char* begin, //
-                    const char* end,
-                    T handler = TokenOutputStream::default_write) {
+                                const char* end,
+                                T handler = TokenOutputStream::default_write) {
     if (delimit_required_ && !args.sed) {
       str::write_f(args.output, args.out_delimiter);
     }

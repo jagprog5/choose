@@ -45,9 +45,10 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
 
 namespace {
 // attempt to get a floating point type that is the same size as size_t. defaults to float
-using floating_hash_t = std::conditional<sizeof(size_t)==sizeof(long double), long double, //
-  std::conditional<sizeof(size_t)==sizeof(double), double, float>::type>::type;
-}
+using floating_hash_t = std::conditional<sizeof(size_t) == sizeof(long double),
+                                         long double, //
+                                         std::conditional<sizeof(size_t) == sizeof(double), double, float>::type>::type;
+} // namespace
 
 bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
   float lhs, rhs;

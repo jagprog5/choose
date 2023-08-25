@@ -682,7 +682,7 @@ BOOST_AUTO_TEST_CASE(sort_uniq_empty) {
 
 BOOST_AUTO_TEST_CASE(sort_uniq_tui) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test" , "this"}};
+  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
