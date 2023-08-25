@@ -6,6 +6,7 @@
 #include <string_view>
 #include <unordered_set>
 #include <utility>
+#include <charconv>
 
 #include "algo_utils.hpp"
 #include "args.hpp"
@@ -134,6 +135,19 @@ struct TokenOutputStream {
     str::write_f(args.output, begin, end);
   }
 
+  template <typename T = decltype(TokenOutputStream::default_write)>
+  void write_output_no_truncate(const char* begin, //
+                    const char* end,
+                    T handler = TokenOutputStream::default_write) {
+    if (delimit_required_ && !args.sed) {
+      str::write_f(args.output, args.out_delimiter);
+    }
+    delimit_required_ = true;
+    has_written = true;
+    handler(args.output, begin, end);
+    ++out_count;
+  }
+
   // write a part or whole of a token to the output.
   // if it is a part, then it must be the last part.
   // pass a handler void(FILE* out, const char* begin, const char* end).
@@ -143,14 +157,14 @@ struct TokenOutputStream {
                     const char* end,
                     T handler = TokenOutputStream::default_write) {
     if (!begin_discard()) {
-      if (delimit_required_ && !args.sed) {
-        str::write_f(args.output, args.out_delimiter);
-      }
-      delimit_required_ = true;
-      has_written = true;
-      handler(args.output, begin, end);
+      write_output_no_truncate(begin, end, handler);
+    } else {
+      ++out_count;
     }
-    ++out_count;
+  }
+
+  void write_output_no_truncate(const Token& t) { //
+    write_output_no_truncate(&*t.buffer.cbegin(), &*t.buffer.cend());
   }
 
   void write_output(const Token& t) { //
@@ -182,6 +196,58 @@ const char* id(bool is_match) {
 }
 
 using indirect = std::vector<Token>::size_type; // an index into output
+
+// various comparison related functions
+
+bool lexicographical_comparison(const Token& lhs, const Token& rhs) { //
+  return std::lexicographical_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+}
+
+bool numeric_comparison(const Token& lhs, const Token& rhs) { //
+  return numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+}
+
+bool general_numeric_comparison(const Token& lhs_arg, const Token& rhs_arg) { //
+  float lhs, rhs;
+  std::from_chars_result lhs_ret = std::from_chars(&*lhs_arg.cbegin(), &*lhs_arg.cend(), lhs, std::chars_format::general);
+  std::from_chars_result rhs_ret = std::from_chars(&*rhs_arg.cbegin(), &*rhs_arg.cend(), rhs, std::chars_format::general);
+
+  // require entire string to be converted for parse success.
+  if (rhs_ret.ptr != &*rhs_arg.cend()) {
+    return false; // rhs parse failure. even if lhs also had parse failure, false returned here
+  }
+
+  if (lhs_ret.ptr != &*lhs_arg.cend()) {
+    return true; // lhs parse failure and rhs parse success
+  }
+
+  return lhs < rhs;
+}
+
+bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
+  float lhs, rhs;
+  std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
+  std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
+
+  bool lhs_err = lhs_ret.ptr != lhs_end;
+  bool rhs_err = rhs_ret.ptr != rhs_end;
+  if (lhs_err || rhs_err) {
+    return lhs_err && rhs_err;
+  }
+
+  return lhs == rhs;
+}
+
+size_t general_numeric_hash(const char* begin, const char* end) {
+  float val;
+  std::from_chars_result ret = std::from_chars(begin, end, val, std::chars_format::general);
+
+  if (ret.ptr != end) {
+    return 0; // parse failure gives 0 hash
+  }
+
+  return (size_t)val; // identity
+};
 
 } // namespace
 
@@ -218,8 +284,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool sort_reversed = args.sort_reverse;
 
   // the elements in output are being inserted with any excess being discarded.
-  // this is incompatible with uniqueness since the data structures point within
-  // output, and if things are moving around then the iterators are invalidated
+  // this branch is incompatible with uniqueness since the data structures point
+  // within output, and if things are moving around then the iterators elements
+  // are also moved.
   const bool output_is_shifting = args.out_end.has_value() && !unique;
 
   char subject[args.buf_size]; // match buffer
@@ -237,14 +304,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto lexicographical_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
-      return std::lexicographical_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-    };
-
-    auto numeric_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
-      return numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-    };
-
     auto uniqueness_set_comparison = [&](indirect lhs, indirect rhs) -> bool {
       switch (unique_type) {
         default:
@@ -252,6 +311,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           break;
         case numeric:
           return numeric_comparison(output[lhs], output[rhs]);
+          break;
+        case general_numeric:
+          return general_numeric_comparison(output[lhs], output[rhs]);
           break;
       }
     };
@@ -269,6 +331,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         case numeric:
           return numeric_comparison(*lhs, *rhs);
           break;
+        case general_numeric:
+          return general_numeric_comparison(*lhs, *rhs);
+          break;
       }
     };
 
@@ -281,6 +346,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         } break;
         case numeric:
           return numeric_hash(t.cbegin(), t.cend());
+          break;
+        case general_numeric:
+          return general_numeric_hash(t.cbegin(), t.cend());
           break;
       }
     };
@@ -295,6 +363,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         case numeric:
           return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
           break;
+        case general_numeric:
+          return general_numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
       }
     };
 
@@ -305,6 +376,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           break;
         case numeric:
           return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case general_numeric:
+          return general_numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
           break;
       }
     };
@@ -861,11 +935,9 @@ skip:
 skip_all:
 
   if (!args.tui) {
-    // don't apply truncation again (in direct_output logic below), since it was already done above
-    args.out_start = std::nullopt;
-    args.out_end = std::nullopt;
     for (const Token& t : output) {
-      direct_output.write_output(t);
+      // don't apply truncation again since it was already done above
+      direct_output.write_output_no_truncate(t);
     }
     direct_output.finish_output();
     throw termination_request();

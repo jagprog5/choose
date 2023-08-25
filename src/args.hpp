@@ -304,6 +304,9 @@ void print_help_message() {
       "        --flip\n"
       "                reverse the token order. this is the last step before being sent\n"
       "                to the output or to the tui\n"
+      "        -g, --general-numeric\n"
+      "                if --sort or --unique are specified, it will be done general\n"
+      "                numerically\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
@@ -322,7 +325,7 @@ void print_help_message() {
       "                pattern but may not be accurate for nested lookbehinds\n"
       "        -n, --numeric\n"
       "                if --sort or --unique are specified, it will be done numerically\n"
-      "                numeric strings are: ^[ \\t]*[-+]?[0-9,]*(?:\\.[0-9]*)?$\n"
+      "                numeric strings are: ^[ \\t]*-?[0-9,]*(?:\\.[0-9]*)?$\n"
       "        --no-warn\n"
       "        --null, --read0\n"
       "                delimit the input on null chars\n"
@@ -339,6 +342,8 @@ void print_help_message() {
       "                sort each token lexicographically\n"
       "        --sort-numeric\n"
       "                apply sorting numerically. implies --sort\n"
+      "        --sort-general-numeric\n"
+      "                apply sorting general numerically. implies --sort\n"
       "        --sort-reverse\n"
       "                apply the sort in reverse order. implies --sort\n"
       "        --sed\n"
@@ -368,6 +373,8 @@ void print_help_message() {
       "                truncation --out/--tail (use normal -u in these cases instead)\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies --unique\n"
+      "        --unique-general-numeric\n"
+      "                apply uniqueness general numerically. implies --unique\n"
       "        --unique-use-set\n"
       "                apply uniqueness with a tree instead of a hash table\n"
       "        --use-delimiter\n"
@@ -498,12 +505,15 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
         {"numeric", no_argument, NULL, 'n'},
+        {"general-numeric", no_argument, NULL, 'g'},
         {"null", no_argument, NULL, 0},
         {"read0", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
         {"sort-numeric", no_argument, NULL, 0},
+        {"sort-general-numeric", no_argument, NULL, 0},
         {"uniq", no_argument, NULL, 0},
         {"unique-numeric", no_argument, NULL, 0},
+        {"unique-general-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sed", no_argument, NULL, 0},
@@ -522,7 +532,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimnrsuyz", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdegimnrsuyz", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
@@ -718,11 +728,17 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("sort-numeric", name) == 0) {
             ret.sort = true;
             ret.sort_type = numeric;
+          } else if (strcmp("sort-general-numeric", name) == 0) {
+            ret.sort = true;
+            ret.sort_type = general_numeric;
           } else if (strcmp("uniq", name) == 0) {
             ret.unique_consecutive = true;
           } else if (strcmp("unique-numeric", name) == 0) {
             ret.unique = true;
             ret.unique_type = numeric;
+          } else if (strcmp("unique-general-numeric", name) == 0) {
+            ret.unique = true;
+            ret.unique_type = general_numeric;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -790,6 +806,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'e':
         ret.end = true;
+        break;
+      case 'g':
+        ret.sort_type = general_numeric;
+        ret.unique_type = general_numeric;
         break;
       case 'i':
         uncompiled_output.re_options |= PCRE2_CASELESS;

@@ -42,7 +42,14 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
-// TODO locale is not use for numeric functions
+// locale is not used for numeric functions. keeping consistent with
+// std::from_chars for general numeric
+
+// it was necessary to create numeric comparison functions for a few reasons: as
+// pointed out by GNU sort, it avoids overflow issues and is faster since nearly
+// always the entire string doesn't have to be read. additionally, GNU sort's
+// implementation is based on c strings, versus here ranges were used. so this
+// didn't exist yet. 
 
 // leveraged under the following assumptions:
 //   - end of string has not been reached
@@ -134,26 +141,20 @@ char trim_leading_spaces(const char*& pos, const char* end) {
 }
 
 // pos_ch is the character pointed to by pos.
-// if pos points to a sign, increment pos and updates pos_ch appropriately.
-// return true if a sign was present and it was negative
+// if pos points to a negative sign, increment pos and updates pos_ch appropriately.
+// positive sign is not allowed, to keep consistency with std::from_chars.
+// return true if negative sign is present
 bool trim_leading_sign(char& pos_ch, const char*& pos, const char* end) {
-  auto do_increment = [&]() {
+  if (pos_ch == '-') {
     ++pos;
     if (likely(pos < end)) {
       pos_ch = *pos;
     } else {
       pos_ch = STR_END;
     }
-  };
-
-  if (pos_ch == '-') {
-    do_increment();
     return true;
   }
 
-  if (pos_ch == '+') {
-    do_increment();
-  }
   return false;
 }
 
@@ -201,7 +202,7 @@ char get_next(const char*& pos, const char* end) {
 } // namespace
 
 // compare two numbers, like          -123,456,789.99912134000
-// numeric strings match this: ^[ \t]*[-+]?[0-9,]*(?:\.[0-9]*)?$
+// numeric strings match this: ^[ \t]*-?[0-9,]*(?:\.[0-9]*)?$
 bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
   char lhs_ch = trim_leading_spaces(lhs_begin, lhs_end);
   char rhs_ch = trim_leading_spaces(rhs_begin, rhs_end);

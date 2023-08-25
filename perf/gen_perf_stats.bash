@@ -5,7 +5,7 @@
 set -e
 sudo echo -n '' # do nothing. perf requires sudo. doing the prompt at the beginning
 
-# e.g. -n makes the benchmarks apply sorting and uniqueness numerically
+# e.g. -n makes the benchmarks apply sorting and uniqueness numerically (but not for just uniqueness since awk doesn't support this)
 COMP_FLAGS=
 
 # e.g. --unique-use-set or --load-factor
