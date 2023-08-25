@@ -623,6 +623,24 @@ BOOST_AUTO_TEST_CASE(sort_uniq) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(sort_uniq_numeric) {
+  choose_output out = run_choose("3\n2\n1\n+3.0\n+2.0\n+1.0", {"-n", "--sort", "--stable", "--uniq"});
+  choose_output correct_output{to_vec("1\n2\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_empty) {
+  choose_output out = run_choose("", {"--sort", "--uniq"});
+  choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_tui) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test" , "this"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(sort_out) {
   OutputSizeBoundFixture f(5);
   choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--out=5"});

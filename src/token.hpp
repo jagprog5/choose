@@ -761,8 +761,34 @@ skip_read: // do another iteration but don't read in any more bytes
             }
           };
 
-          auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), pred);
-          output.resize(new_end - output.begin());
+          if (!args.tui && !args.flip) {
+            // don't bother moving memory around. just write to the output.
+            // !args.flip since that step can't be skipped (below)
+
+            if (output.empty()) {
+              goto skip;
+            }
+
+            {
+              // unconditionally write the first element
+              auto last_written = output.cbegin();
+              direct_output.write_output(*last_written);
+
+              auto cursor = last_written;
+              while (++cursor != output.cend()) {
+                if (!pred(*cursor, *last_written)) {
+                  last_written = cursor;
+                  direct_output.write_output(*last_written);
+                }
+              }
+            }
+          skip:
+            direct_output.finish_output();
+            throw termination_request();
+          } else {
+            auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), pred);
+            output.resize(new_end - output.begin());
+          }
         }
       }
     } else {
