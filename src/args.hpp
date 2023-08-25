@@ -40,6 +40,7 @@ struct Arguments {
   // if unordered_map is used, this is the max load factor
   // this default value seems to work well
   float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
+  bool unique_consecutive = false; // after sorting uniqueness
 
   bool flip = false;
   bool flush = false;
@@ -353,7 +354,12 @@ void print_help_message() {
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
       "        -u, --unique\n"
-      "                remove duplicate input tokens. leaves first occurrences\n"
+      "                remove duplicate input tokens. leaves first occurrences. applied\n"
+      "                before sorting\n"
+      "        --uniq\n"
+      "                unrelated to any other uniqueness options. after sorting, remove\n"
+      "                consecutive duplicate elements. requires --sort. ignored by\n"
+      "                truncation --out/--tail (use normal -u in these cases instead)\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies --unique\n"
       "        --unique-use-set\n"
@@ -490,6 +496,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"read0", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
         {"sort-numeric", no_argument, NULL, 0},
+        {"uniq", no_argument, NULL, 0},
         {"unique-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
@@ -705,6 +712,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("sort-numeric", name) == 0) {
             ret.sort = true;
             ret.sort_numeric = true;
+          } else if (strcmp("uniq", name) == 0) {
+            ret.unique_consecutive = true;
           } else if (strcmp("unique-numeric", name) == 0) {
             ret.unique = true;
             ret.unique_numeric = true;

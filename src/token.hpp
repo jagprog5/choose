@@ -218,8 +218,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool sort_reversed = args.sort_reverse;
 
   // the elements in output are being inserted with any excess being discarded.
-  // this keeps the memory bounded for e.g. long running sort with --out
-  const bool output_size_bounded = args.out_end.has_value() && !unique;
+  // this is incompatible with uniqueness since the data structures point within
+  // output, and if things are moving around then the iterators are invalidated
+  const bool output_is_shifting = args.out_end.has_value() && !unique;
 
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
@@ -351,7 +352,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 #ifndef CHOOSE_DISABLE_FIELD
         t.set_field(args.field, field_data);
 #endif
-        if (!output_size_bounded) {
+        if (!output_is_shifting) {
           // typical case
           output.push_back(std::move(t));
           if (unique) {
@@ -481,7 +482,7 @@ after_direct_apply:
       } else {
         check_unique_then_append(); // result ignored
         // handle the case mentioned in check_unique_then_append
-        if (output_size_bounded && !sort && !tail) {
+        if (output_is_shifting && !sort && !tail) {
           if (output.size() == *args.out_end) {
             return true;
           }
@@ -751,10 +752,22 @@ skip_read: // do another iteration but don't read in any more bytes
         } else {
           std::sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
         }
+        if (args.unique_consecutive) {
+          auto pred = [&](const Token& lhs, const Token& rhs) -> bool { //
+            if (sort_numeric) {
+              return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+            } else {
+              return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+            }
+          };
+
+          auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), pred);
+          output.resize(new_end - output.begin());
+        }
       }
     } else {
       // truncate the ends, leaving only the beginning elements
-      if (output_size_bounded) {
+      if (output_is_shifting) {
         // sort and end truncation has already been applied
       } else {
         // truncate the end

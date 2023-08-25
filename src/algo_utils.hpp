@@ -42,6 +42,8 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
+// TODO locale is not use for numeric functions
+
 // leveraged under the following assumptions:
 //   - end of string has not been reached
 //   - character frequency. e.g. a obtaining any non-zero digit is less likely than zero digit (1/9 vs 8/9)

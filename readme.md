@@ -156,9 +156,9 @@ choose instead applies uniqueness upfront:
 2. If it hasn't yet been seen, add it to the output.
 3. Sort the output.
 
-A bonus of this implementation is that uniqueness and sorting can use different comparison types. For example, choose can apply uniqueness numerically, but sorting lexicographically. Wheras sort needs to use the same comparison for both.
+A bonus of this implementation is that uniqueness and sorting can use different comparison types. For example, choose can apply uniqueness numerically, but sorting lexicographically. Whereas sort needs to use the same comparison for both.
 
-A drawback is that it can use more memory, since a separate data structure is maintained to determine if new elements are unique. But, there's a degree of control since uniqueness related args are provided, and since piping like so is still an option: `choose -s | uniq`
+A drawback is that it can use more memory, since a separate data structure is maintained to determine if new elements are unique. But, there's a degree of control since uniqueness related args are provided. choose can also revert back to the way sort does things by doing `choose -s --uniq`.
 
 ## Flushing
 
