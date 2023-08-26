@@ -736,12 +736,14 @@ BOOST_AUTO_TEST_CASE(sort_flip_tail) {
 }
 
 BOOST_AUTO_TEST_CASE(unique_out) {
+  OutputSizeBoundFixture f(2);
   choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--out=1,2"});
   choose_output correct_output{to_vec("b\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(unique_tail) {
+  // output vector size is NOT bounded in these cases. unique elements must be kept track of
   choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--tail=2"});
   choose_output correct_output{to_vec("b\nc\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -762,12 +764,14 @@ BOOST_AUTO_TEST_CASE(out_tail) {
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_out) {
+  OutputSizeBoundFixture f(5);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=2"});
   choose_output correct_output{to_vec("a\nis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_out_min) {
+  OutputSizeBoundFixture f(5);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=1,2"});
   choose_output correct_output{to_vec("is\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
