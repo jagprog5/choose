@@ -331,7 +331,7 @@ void print_help_message() {
       "                delimit the input on null chars\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
-      "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                truncate the output\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"

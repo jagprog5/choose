@@ -247,7 +247,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   // the elements in output are being inserted with any excess being discarded.
   // this branch is incompatible with uniqueness since the data structures point
   // within output, and if things are moving around then the iterators elements
-  // are also moved.
+  // are also moved. this makes sense anyway, since if uniqueness is specified,
+  // then choose needs to keep track of what has been seen before (can't be
+  // bounded). this var also could be named "output_size_is_bounded"
   const bool output_is_shifting = args.out_end.has_value() && !unique;
 
   char subject[args.buf_size]; // match buffer
@@ -448,7 +450,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 #ifdef OUTPUT_SIZE_BOUND_TESTING
         if (output_size_bound_testing && output.size() > *output_size_bound_testing) {
           throw std::runtime_error("max output size exceeded!\n");
-          return false;
         }
 #endif
         return true;
@@ -815,11 +816,7 @@ skip_read: // do another iteration but don't read in any more bytes
             // don't bother moving memory around. just write to the output.
             // !args.flip since that step can't be skipped (below)
 
-            if (output.empty()) {
-              goto skip;
-            }
-
-            {
+            if (!output.empty()) {
               // unconditionally write the first element
               auto last_written = output.cbegin();
               direct_output.write_output(*last_written);
@@ -832,7 +829,6 @@ skip_read: // do another iteration but don't read in any more bytes
                 }
               }
             }
-skip:
             direct_output.finish_output();
             throw termination_request();
           } else {
