@@ -427,21 +427,28 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           // precondition here is that unique is false. but everything else should be handled
           if (sort) {
             // note that the sorting is reversed if tail is used. so this
-            // handles tail and non tail cases. see UncompiledCodes
+            // handles tail and non tail cases. see UncompiledCodes.
+            // always a stable sort, given insertion position
             auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, sort_comparison);
-            output.insert(insertion_pos, std::move(t)); // stable sort applied from insertion position
-            if (output.size() > *args.out_end) {
-              output.pop_back();
+            if (likely(output.size() == *args.out_end)) {
+              // a faster branch that avoids any vector realloc logic.
+              // it's basically a fixed length buffer at this point
+              while (insertion_pos < output.end()) {
+                std::swap(*insertion_pos++, t);
+              }
               return false;
+            } else {
+              output.insert(insertion_pos, std::move(t));
             }
           } else {
-            output.push_back(std::move(t));
-            if (tail) {
-              if (output.size() > *args.out_end) {
-                output.erase(output.begin());
-                return false;
+            if (tail && likely(output.size() == *args.out_end)) {
+              // same reasoning as above. fixed length buffer being moved around
+              auto it = output.rbegin();
+              while (it != output.rend()) {
+                std::swap(*it++, t);
               }
             } else {
+              output.push_back(std::move(t));
               // for non tail case caller looks at size of output to determine
               // if finished
             }
