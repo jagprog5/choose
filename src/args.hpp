@@ -63,6 +63,7 @@ struct Arguments {
   std::optional<InLimitOp::T> out_start;
   // truncate end of result, exclusive
   std::optional<InLimitOp::T> out_end;
+  bool truncate_no_bound = false;
 
   // modifier on out_start and out_end. truncation is from the end not the beginning
   bool tail = false;
@@ -364,6 +365,13 @@ void print_help_message() {
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
+      "        --truncate-no-bound\n"
+      "                if truncation is specified (--out/--tail) and uniqueness is not\n"
+      "                specified, then choose only retains the relevant n values in\n"
+      "                memory. This is only faster for small values of n, as elements\n"
+      "                are shifted within this storage space. If n is large, this\n"
+      "                option should be used to disable this optimization, leading to\n"
+      "                faster speed but more space used\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences. applied\n"
       "                before sorting\n"
@@ -521,6 +529,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"stable", no_argument, NULL, 0},
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
+        {"truncate-no-bound", no_argument, NULL, 0},
         {"tui", no_argument, NULL, 't'},
         {"unique", no_argument, NULL, 'u'},
         {"unique-use-set", no_argument, NULL, 0},
@@ -752,6 +761,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
+          } else if (strcmp("truncate-no-bound", name) == 0) {
+            ret.truncate_no_bound = true;
           } else if (strcmp("index", name) == 0) {
             index_handler(false);
           } else if (strcmp("unique-use-set", name) == 0) {

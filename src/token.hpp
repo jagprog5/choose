@@ -250,7 +250,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   // are also moved. this makes sense anyway, since if uniqueness is specified,
   // then choose needs to keep track of what has been seen before (can't be
   // bounded). this var also could be named "output_size_is_bounded"
-  const bool output_is_shifting = args.out_end.has_value() && !unique;
+  const bool output_is_shifting = args.out_end.has_value() && !unique && !args.truncate_no_bound;
 
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer

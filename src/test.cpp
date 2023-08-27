@@ -692,6 +692,31 @@ BOOST_AUTO_TEST_CASE(sort_uniq_flip) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(truncate_no_bound_sort) {
+  // difficult to see different from this option, other than from the benchmarks
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("a\nis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_tail) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--tail=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("a\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_sort_tail) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--tail=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("test\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_out) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("this\nis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(sort_out) {
   OutputSizeBoundFixture f(5);
   choose_output out = run_choose("i\nh\ng\nf\ne\nd\nc\nb\na\n", {"--sort", "--out=5"});
