@@ -147,12 +147,12 @@ run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort $COMP_FLAGS
 
 echo -en "\n\n(a special case that leverages truncation)\n\
 
-| (ms)             | choose -s --tail 5 | sort \| tail -n 5 |
+| (ms)             | choose -s --out 5 | sort \| head -n 5 |
 |------------------|--------|------|
 | no_duplicates    | "
 
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -s --tail 5 $COMP_FLAGS
-run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort $COMP_FLAGS | tail -n 5
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" "$CHOOSE_PATH" -s --out 5 $COMP_FLAGS
+run_get_time "$SCRIPT_DIR/no_duplicates.txt" sort $COMP_FLAGS | head -n 5
 
 echo -en "\n\n\
 ### Uniqueness $UNIQUE_FLAGS
@@ -194,6 +194,6 @@ echo -en "\n\n\
 |------------------|--------|------|
 | csv_field        | "
 
-run_get_time "$SCRIPT_DIR/csv_field.txt" "$CHOOSE_PATH" -s --field '[^,]*,\K[^,]*' $COMP_FLAGS $UNIQUE_FLAGS $SORT_UNIQUE_FLAGS
+run_get_time "$SCRIPT_DIR/csv_field.txt" "$CHOOSE_PATH" -s --field '^[^,]*+.\K[^,]*+' $COMP_FLAGS $UNIQUE_FLAGS $SORT_UNIQUE_FLAGS
 run_get_time "$SCRIPT_DIR/csv_field.txt" sort -u -t, -k2 $COMP_FLAGS
 echo ""

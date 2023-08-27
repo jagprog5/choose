@@ -1,6 +1,6 @@
 # Benchmarks Comparing choose to Other Tools
 
-"Results" section is generated from [this script](./gen_perf_stats.bash). The script provides options regarding sorting and uniqueness. The defaults were used but different options lead to different results. The matrix of possibilities would be very large, so only the defaults are shown below.
+"Results" section is generated from [this script](./gen_perf_stats.bash). It reports the task-clock for each command (which can differ from elapsed time). The script provides options regarding sorting and uniqueness. The defaults were used but different options lead to different results. The matrix of possibilities would be very large, so only the defaults are shown below.
 
 Also note the compile time option called `DISABLE_FIELD`. It disables the `--field` arg, and removes some information associated with each token. This provides a small boost to sorting and uniqueness since there's a smaller memory footprint. This option is not disabled by default, and inline with above, the benchmarks are run on the default options.
 
@@ -20,7 +20,9 @@ Also note the compile time option called `DISABLE_FIELD`. It disables the `--fie
 
 ### Sorting, and Sorting + Uniqueness
 
-todo rerun benchmarks
+Keep in mind the aformentioned disclaimer regarding real time vs task time. sort leverages threading, so it's real time is faster than its task time.
+
+TODO rerun benchmarks
 
 ## Input Data
 

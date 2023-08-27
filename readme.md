@@ -105,7 +105,7 @@ The former is restricted to working with `lines`, whereas the latter works with 
 
 # Sorting and Uniqueness
 
-choose uses lexicographical comparison or numerical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
+choose uses lexicographical, numerical, or general numeric comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
@@ -126,7 +126,7 @@ And this command sorts based on a specified field:
 echo "1,gamma,1
 3,alpha,3
 2,beta,2"\
-  | choose -s --field '[^,]*,\K[^,]*'
+  | choose -s --field '^[^,]*+.\K[^,]*+'
 ```
 
 <pre>
@@ -138,10 +138,10 @@ echo "1,gamma,1
 Sorting is implemented to effectively leverage truncation. For example:
 
 ```bash
-echo very_long_input | choose --sort --out=5
+cat very_large_file | choose --sort --out=5
 ```
 
-This is an _extremely_ useful feature. That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this and will be slower.
+That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately, no matter the size of the input. The equivalent: `sort | head -n5` does not do this and will be slower.
 
 ## Compared to sort -u
 
