@@ -20,9 +20,7 @@ Also note the compile time option called `DISABLE_FIELD`. It disables the `--fie
 
 ### Sorting, and Sorting + Uniqueness
 
-Keep in mind the aformentioned disclaimer regarding real time vs task time. sort leverages threading, so it's real time is faster than its task time.
-
-TODO rerun benchmarks
+In most cases, `choose` is faster than `sort` and `sort -u` at sorting and sorting + uniqueness, respectively.
 
 ## Input Data
 

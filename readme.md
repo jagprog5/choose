@@ -4,7 +4,8 @@
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-choose is a tool for creating selection dialogs and doing fancy transformations with regular expressions.
+choose is a tool for performing transformations with regular expressions. It also applies sorting and uniqueness, and creates selection dialogs.
+
 ## Install
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
@@ -205,7 +206,7 @@ echo "this is a test" | choose -r "\w+" -o banana -d
 
 ## Compared to sed
 
-choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which allows only [basic expressions](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires [different logic](https://www.pcre.org/current/doc/html/pcre2partial.html#SEC4) for management of the match buffer, since lookbehind bytes must be properly retained as tokens are created. Meaning sed can't handle expressions like this:
+choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which allows only [sed regex](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires [different logic](https://www.pcre.org/current/doc/html/pcre2partial.html#SEC4) for management of the match buffer, since lookbehind bytes must be properly retained as tokens are created. Meaning sed can't match expressions like this:
 
 ```bash
 echo "banana test test" | choose -r --sed '(?<!banana )test' --replace hello
