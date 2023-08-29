@@ -168,20 +168,25 @@ BOOST_AUTO_TEST_CASE(numeric_compare_test) {
   BOOST_REQUIRE(!comp_str("-99", "-111"));
 
   BOOST_REQUIRE(!comp_str("", "-"));
-  BOOST_REQUIRE(comp_str("   -9,,,,9", "    99"));
+  BOOST_REQUIRE(comp_str("-9,,,,9", "99"));
+
+  BOOST_REQUIRE(!comp_str("1\xAE", "1"));
+  BOOST_REQUIRE(!comp_str("1", "1\xAE"));
 }
 
 BOOST_AUTO_TEST_CASE(numeric_hash_test) {
   auto h = [](const std::string& s) -> size_t { return numeric_hash(&*s.cbegin(), &*s.cend()); };
   BOOST_REQUIRE_EQUAL(h("-00,.0000"), h("0.0"));
   BOOST_REQUIRE_EQUAL(h("-."), h("00000"));
-  BOOST_REQUIRE_EQUAL(h("123"), h("   00001,,,2,,,3"));
+  BOOST_REQUIRE_EQUAL(h("123"), h("00001,,,2,,,3"));
   BOOST_REQUIRE_NE(h("+123"), h("-123"));
   BOOST_REQUIRE_EQUAL(h("123"), h("123."));
   BOOST_REQUIRE_EQUAL(h("123"), h("123.00000"));
   BOOST_REQUIRE_NE(h("123"), h("123.000001"));
   BOOST_REQUIRE_NE(h("123.456"), h("123456"));
   BOOST_REQUIRE_EQUAL(h("123.456"), h("123.456000000"));
+
+  BOOST_REQUIRE_EQUAL(h("1"), h("1\xAE"));
 }
 
 BOOST_AUTO_TEST_CASE(numeric_equal_test) {
@@ -206,6 +211,8 @@ BOOST_AUTO_TEST_CASE(numeric_equal_test) {
   BOOST_REQUIRE(equal_str(".0000000", "0.000000"));
   BOOST_REQUIRE(equal_str("123.000", "123"));
   BOOST_REQUIRE(!equal_str("345", "123"));
+
+  BOOST_REQUIRE(equal_str("1", "1\xAE"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -542,8 +549,8 @@ BOOST_AUTO_TEST_CASE(general_numeric_unique) {
 }
 
 BOOST_AUTO_TEST_CASE(general_numeric_unique_with_parse_failure) {
-  choose_output out = run_choose("1\n10\nfirst\nsecond\n15 line not completely numeric\n1.0\n1e0\n1e1", {"--unique-general-numeric"});
-  choose_output correct_output{to_vec("1\n10\nfirst\n")};
+  choose_output out = run_choose("1\n10\n\n \n+\n", {"--unique-general-numeric"});
+  choose_output correct_output{to_vec("1\n10\n\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -605,7 +612,7 @@ BOOST_AUTO_TEST_CASE(lex_sort_numeric_unique) {
 }
 
 BOOST_AUTO_TEST_CASE(stable_partial_sort) {
-  choose_output out = run_choose("17\n-0\n.0\n1\n+1.0\n0001.0", {"-u", "--sort-numeric", "--stable", "--out=3"});
+  choose_output out = run_choose("17\n-0\n.0\n1\n1.0\n0001.0", {"-u", "--sort-numeric", "--stable", "--out=3"});
   choose_output correct_output{to_vec("-0\n.0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }

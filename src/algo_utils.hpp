@@ -55,12 +55,12 @@ bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const c
   std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
   std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
 
-  // require entire string to be converted for parse success.
-  if (rhs_ret.ptr != rhs_end) {
+  // entire string conversion not required for parse success.
+  if (rhs_ret.ec != std::errc()) {
     return false; // rhs parse failure. even if lhs also had parse failure, false returned here
   }
 
-  if (lhs_ret.ptr != lhs_end) {
+  if (lhs_ret.ec != std::errc()) {
     return true; // lhs parse failure and rhs parse success
   }
 
@@ -72,8 +72,8 @@ bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const cha
   std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
   std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
 
-  bool lhs_err = lhs_ret.ptr != lhs_end;
-  bool rhs_err = rhs_ret.ptr != rhs_end;
+  bool lhs_err = lhs_ret.ec != std::errc();
+  bool rhs_err = rhs_ret.ec != std::errc();
   if (lhs_err || rhs_err) {
     return lhs_err && rhs_err;
   }
@@ -85,7 +85,7 @@ size_t general_numeric_hash(const char* begin, const char* end) {
   floating_hash_t val;
   std::from_chars_result ret = std::from_chars(begin, end, val, std::chars_format::general);
 
-  if (ret.ptr != end) {
+  if (ret.ec != std::errc()) {
     return 0; // parse failure gives 0 hash
   }
 
@@ -177,35 +177,28 @@ bool fraction_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_
 static constexpr char STR_END = '.' | (char)0b10000000;
 static constexpr char END_MASK = 0b01111111;
 
-// increments pos while it doesn't point to a space or it points at the end.
-// returns the character pos points to on return, or STR_END if it's at the end.
-char trim_leading_spaces(const char*& pos, const char* end) {
-  while (likely(pos < end)) {
-    char ch = *pos;
-    if (ch != ' ' && ch != '\t') {
-      return ch;
+// is_negative is set to true or false, depending on if the string begins with a negative sign
+// pos points to the first position that is not the negative sign, or to the end.
+// pos_ch is the value at pos, or STR_END if at the end
+void trim_leading_sign(bool& is_negative, char& pos_ch, const char*& pos, const char* end) {
+  if (likely(pos < end)) {
+    if (*pos == '-') {
+      is_negative = true;
+      ++pos;
+      if (likely(pos < end)) {
+        pos_ch = *pos;
+      } else {
+        pos_ch = STR_END;
+      }
+      return;
     }
-    ++pos;
-  }
-  return STR_END;
-}
 
-// pos_ch is the character pointed to by pos.
-// if pos points to a negative sign, increment pos and updates pos_ch appropriately.
-// positive sign is not allowed, to keep consistency with std::from_chars.
-// return true if negative sign is present
-bool trim_leading_sign(char& pos_ch, const char*& pos, const char* end) {
-  if (pos_ch == '-') {
-    ++pos;
-    if (likely(pos < end)) {
-      pos_ch = *pos;
-    } else {
-      pos_ch = STR_END;
-    }
-    return true;
+    is_negative = false;
+    pos_ch = *pos;
+  } else {
+    is_negative = false;
+    pos_ch = STR_END;
   }
-
-  return false;
 }
 
 // pos_ch is the character pointed to by pos
@@ -231,7 +224,7 @@ bool non_zero(const char* begin, const char* end) {
   while (likely(begin < end)) {
     char ch = *begin++;
     if (likely(ch != '0' && ch != ',' && ch != '.')) {
-      return true;
+      return ch != STR_END;
     }
   }
   return false;
@@ -251,13 +244,13 @@ char get_next(const char*& pos, const char* end) {
 
 } // namespace
 
-// compare two numbers, like          -123,456,789.99912134000
-// numeric strings match this: ^[ \t]*-?[0-9,]*(?:\.[0-9]*)?$
+// compare two numbers, like -123,456,789.99912134000
+// numeric strings match this: ^-?[0-9,]*(?:\.[0-9]*)?$
 bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  char lhs_ch = trim_leading_spaces(lhs_begin, lhs_end);
-  char rhs_ch = trim_leading_spaces(rhs_begin, rhs_end);
-  bool lhs_negative = trim_leading_sign(lhs_ch, lhs_begin, lhs_end);
-  bool rhs_negative = trim_leading_sign(rhs_ch, rhs_begin, rhs_end);
+  char lhs_ch, rhs_ch;
+  bool lhs_negative, rhs_negative;
+  trim_leading_sign(lhs_negative, lhs_ch, lhs_begin, lhs_end);
+  trim_leading_sign(rhs_negative, rhs_ch, rhs_begin, rhs_end);
 
   if (!lhs_negative && rhs_negative) {
     return false;
@@ -284,7 +277,7 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
 
   trim_leading_zeros(lhs_ch, lhs_begin, lhs_end);
   trim_leading_zeros(rhs_ch, rhs_begin, rhs_end);
-  ++lhs_begin;
+  ++lhs_begin; // possibly points one after end (when lhs_ch == STR_END), but that's ok
   ++rhs_begin;
 
   while (1) {
@@ -354,10 +347,10 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
 }
 
 bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  char lhs_ch = trim_leading_spaces(lhs_begin, lhs_end);
-  char rhs_ch = trim_leading_spaces(rhs_begin, rhs_end);
-  bool lhs_negative = trim_leading_sign(lhs_ch, lhs_begin, lhs_end);
-  bool rhs_negative = trim_leading_sign(rhs_ch, rhs_begin, rhs_end);
+  char lhs_ch, rhs_ch;
+  bool lhs_negative, rhs_negative;
+  trim_leading_sign(lhs_negative, lhs_ch, lhs_begin, lhs_end);
+  trim_leading_sign(rhs_negative, rhs_ch, rhs_begin, rhs_end);
 
   if (lhs_negative != rhs_negative) {
     bool lhs_non_zero = non_zero(lhs_begin, lhs_end);
@@ -450,21 +443,10 @@ size_t numeric_hash(const char* begin, const char* end) {
     }
   };
 
-  // trim leading spaces
-  char ch = trim_leading_spaces(begin, end);
-
-  // negative sign is added to hash later if overall string is non-zero
-  bool is_negative = trim_leading_sign(ch, begin, end);
-
-  // trim leading zeros
+  char ch;
+  bool is_negative;
+  trim_leading_sign(is_negative, ch, begin, end);
   trim_leading_zeros(ch, begin, end);
-
-  if (unlikely(ch == STR_END)) {
-    return ret;
-  }
-
-  // precondition begin < end
-  // precondition ch == *begin
 
   // begin points to the decimal point
   auto do_fractional_hash = [&](const char*& begin, const char*& end) {
@@ -486,21 +468,24 @@ size_t numeric_hash(const char* begin, const char* end) {
   };
 
   while (1) {
-    if (ch == '.') {
+    if (likely((ch & END_MASK) != '.')) {
+      // ch isn't end of string or decimal
+      if (ch != ',') { // ignore thousands sep
+        apply(ch);
+      }
+      ++begin;
+      if (begin >= end) {
+        break;
+      }
+      ch = *begin;
+    } else if (ch == '.') {
       // begin points on the decimal.
       // decimal is applied from within do_fractional_hash
       do_fractional_hash(begin, end);
       break;
+    } else { // STR_END
+      break; // for consistency with other functions, must break here
     }
-
-    if (ch != ',') { // ignore thousands sep
-      apply(ch);
-    }
-    ++begin;
-    if (begin >= end) {
-      break;
-    }
-    ch = *begin;
   }
 
   if (is_negative && ret != INITIAL_SEED) {
@@ -525,18 +510,14 @@ size_t numeric_hash(const char* begin, const char* end) {
 #include <cassert>
 
 int main() {
-  srand(42);
+  srand(10);
 
   auto get_rand_vec = []() {
     std::vector<char> random_chars;
     random_chars.resize(rand() % 8);
     // bool has_decimal = false;
     for (int i = 0; i < random_chars.size(); ++i) {
-      char ch;
-      do {
-        ch = rand();
-      } while (ch == choose::STR_END);
-      random_chars[i] = ch;
+      random_chars[i] = rand();
     }
     return random_chars;
   };
@@ -553,12 +534,12 @@ int main() {
     auto on_failure = [&](const char* msg) {
       puts(msg);
       for (char ch : lhs) {
-        putchar(ch);
+        printf("%u", (unsigned char)ch);
         putchar('|');
       }
       putchar('\n');
       for (char ch : rhs) {
-        putchar(ch);
+        printf("%u", (unsigned char)ch);
         putchar('|');
       }
       putchar('\n');
@@ -578,7 +559,9 @@ int main() {
     auto lhs_hash = choose::numeric_hash(&*lhs.cbegin(), &*lhs.cend());
     auto rhs_hash = choose::numeric_hash(&*rhs.cbegin(), &*rhs.cend());
 
-    if (equal != (lhs_hash == rhs_hash)) {
+    bool hash_equal = lhs_hash == rhs_hash;
+    if (equal != hash_equal) {
+      printf("equal %d, hash equal %d\n", equal, hash_equal);
       // will eventually happen due to hash collisions
       on_failure("hash equality and equality disagree");
     }

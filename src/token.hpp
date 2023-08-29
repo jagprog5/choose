@@ -246,7 +246,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   // the elements in output are being inserted with any excess being discarded.
   // this branch is incompatible with uniqueness since the data structures point
-  // within output, and if things are moving around then the iterators elements
+  // within output, and if things are moving around then the iterators' elements
   // are also moved. this makes sense anyway, since if uniqueness is specified,
   // then choose needs to keep track of what has been seen before (can't be
   // bounded). this var also could be named "output_size_is_bounded"
