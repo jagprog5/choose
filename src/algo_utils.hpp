@@ -52,6 +52,9 @@ using floating_hash_t = std::conditional<sizeof(size_t) == sizeof(long double),
 
 bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
   float lhs, rhs;
+  // if from_chars isn't found, get a newer compiler. e.g.
+  //    apt-get install g++-11
+  //    cd build && cmake .. -DCMAKE_C_COMPILER=gcc-11 -DCMAKE_CXX_COMPILER=g++-11
   std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
   std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
 

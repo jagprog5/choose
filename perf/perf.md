@@ -99,64 +99,63 @@ ram: 8116584 kB
 
 | (ms)             | choose | pcre2grep  |
 |------------------|--------|------------|
-| plain_text       | 258.897200 | 265.892700 | 
-| test_repeated    | 1529.802700 | 1482.345200 | 
-| no_duplicates    | 328.903000 | 330.548900 | 
+| plain_text       | 238.334100 | 246.104400 | 
+| test_repeated    | 1536.390100 | 1446.540000 | 
+| no_duplicates    | 321.083200 | 313.054700 | 
 
 ### Stream Editing
 
 | (ms)             | choose | sed  |
 |------------------|--------|------|
-| plain_text       | 176.831800 | 214.069400 | 
-| test_repeated    | 2534.028300 | 1032.267900 | 
-| no_duplicates    | 8.632200 | 52.020400 | 
+| plain_text       | 173.019600 | 156.455300 | 
+| test_repeated    | 2563.258500 | 1024.358400 | 
+| no_duplicates    | 8.424300 | 46.834200 | 
 
 (here is a cherry picked great case for choose compared to sed)
 
 | (ms)             | choose | sed (with newline delimiter) |
 |------------------|--------|------|
-| no_duplicates    | 10.246200 | 456.193200 | 
+| no_duplicates    | 8.245600 | 437.878300 | 
 
 (a special case, where choose cheats by using a literal replacement string)
 
 | (ms)             | choose (delimiter sub) | sed |
 |------------------|------------------------|-----|
-| test_repeated    | 1448.012400 | 1043.297400 | 
+| test_repeated    | 1457.271000 | 1010.783600 | 
 
 ### Sorting 
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 757.884800 | 1966.817600 | 
-| test_repeated    | 2105.637600 | 2052.248300 | 
-| no_duplicates    | 2198.931600 | 5843.326100 | 
+| plain_text       | 694.556000 | 1905.257700 | 
+| test_repeated    | 2226.087400 | 1987.113500 | 
+| no_duplicates    | 2120.992700 | 5092.179100 | 
 
 (a special case that leverages truncation)
 
-
-| (ms)             | choose -s --tail 5 | sort \| tail -n 5 |
+| (ms)             | choose -s --out 5 | sort \| head -n 5 |
 |------------------|--------|------|
-| no_duplicates    | 244.461000 | 5221.271300 | 
+| no_duplicates    | 251.069600 | 5063.083100 | 
 
 ### Uniqueness 
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
-| plain_text       | 123.980200 | 221.344200 | 
-| test_repeated    | 540.381100 | 995.740400 | 
-| no_duplicates    | 2499.557400 | 1543.825300 | 
+| plain_text       | 114.649800 | 208.971700 | 
+| test_repeated    | 578.412600 | 972.325200 | 
+| no_duplicates    | 2480.435700 | 1477.912300 | 
 
-### Sorting and Uniqueness  
-
-| (ms)             | choose | sort |
-|------------------|--------|------|
-| plain_text       | 120.672800 | 2054.020300 | 
-| test_repeated    | 546.397400 | 1973.324700 | 
-| no_duplicates    | 4395.422500 | 5829.518700 | 
-
-
-### Sorting and Uniqueness based on field  
+### Sorting and Uniqueness   -u
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| csv_field        | 1808.892400 | 2114.263400 | 
+| plain_text       | 106.970100 | 1906.801600 | 
+| test_repeated    | 574.516000 | 1961.279100 | 
+| no_duplicates    | 4165.485200 | 5670.807600 | 
+
+
+### Sorting and Uniqueness based on field   -u
+
+| (ms)             | choose | sort |
+|------------------|--------|------|
+| csv_field        | 1779.289000 | 1987.503500 | 
