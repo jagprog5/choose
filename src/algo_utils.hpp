@@ -43,13 +43,6 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
-namespace {
-// attempt to get a floating point type that is the same size as size_t. defaults to float
-using floating_hash_t = std::conditional<sizeof(size_t) == sizeof(long double),
-                                         long double, //
-                                         std::conditional<sizeof(size_t) == sizeof(double), double, float>::type>::type;
-} // namespace
-
 bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
   float lhs, rhs;
   // if from_chars isn't found, get a newer compiler. e.g.
@@ -85,13 +78,12 @@ bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const cha
 }
 
 size_t general_numeric_hash(const char* begin, const char* end) {
-  floating_hash_t val;
+  float val;
   std::from_chars_result ret = std::from_chars(begin, end, val, std::chars_format::general);
 
   if (ret.ec != std::errc()) {
     return 0; // parse failure gives 0 hash
   }
-
   return (size_t)val; // identity
 };
 
