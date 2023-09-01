@@ -134,6 +134,19 @@ struct TokenOutputStream {
     str::write_f(args.output, begin, end);
   }
 
+  template <typename T = decltype(TokenOutputStream::default_write)>
+  void write_output_no_truncate(const char* begin, //
+                                const char* end,
+                                T handler = TokenOutputStream::default_write) {
+    if (delimit_required_ && !args.sed) {
+      str::write_f(args.output, args.out_delimiter);
+    }
+    delimit_required_ = true;
+    has_written = true;
+    handler(args.output, begin, end);
+    ++out_count;
+  }
+
   // write a part or whole of a token to the output.
   // if it is a part, then it must be the last part.
   // pass a handler void(FILE* out, const char* begin, const char* end).
@@ -143,14 +156,14 @@ struct TokenOutputStream {
                     const char* end,
                     T handler = TokenOutputStream::default_write) {
     if (!begin_discard()) {
-      if (delimit_required_ && !args.sed) {
-        str::write_f(args.output, args.out_delimiter);
-      }
-      delimit_required_ = true;
-      has_written = true;
-      handler(args.output, begin, end);
+      write_output_no_truncate(begin, end, handler);
+    } else {
+      ++out_count;
     }
-    ++out_count;
+  }
+
+  void write_output_no_truncate(const Token& t) { //
+    write_output_no_truncate(&*t.buffer.cbegin(), &*t.buffer.cend());
   }
 
   void write_output(const Token& t) { //
@@ -183,6 +196,20 @@ const char* id(bool is_match) {
 
 using indirect = std::vector<Token>::size_type; // an index into output
 
+// various comparison related functions
+
+bool lexicographical_comparison(const Token& lhs, const Token& rhs) { //
+  return std::lexicographical_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+}
+
+bool numeric_comparison(const Token& lhs, const Token& rhs) { //
+  return numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+}
+
+bool general_numeric_comparison(const Token& lhs, const Token& rhs) { //
+  return general_numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+}
+
 } // namespace
 
 // reads from args.input
@@ -212,14 +239,18 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
   const bool unique = args.unique;
   const bool unique_use_set = args.unique_use_set;
-  const bool unique_numeric = args.unique_numeric;
+  const Comparison unique_type = args.unique_type;
   const bool sort = args.sort;
-  const bool sort_numeric = args.sort_numeric;
+  const Comparison sort_type = args.sort_type;
   const bool sort_reversed = args.sort_reverse;
 
   // the elements in output are being inserted with any excess being discarded.
-  // this keeps the memory bounded for e.g. long running sort with --out
-  const bool output_size_bounded = args.out_end.has_value() && !unique;
+  // this branch is incompatible with uniqueness since the data structures point
+  // within output, and if things are moving around then the iterators' elements
+  // are also moved. this makes sense anyway, since if uniqueness is specified,
+  // then choose needs to keep track of what has been seen before (can't be
+  // bounded). this var also could be named "output_size_is_bounded"
+  const bool output_is_shifting = args.out_end.has_value() && !unique && !args.truncate_no_bound;
 
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
@@ -236,19 +267,17 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   }
 
   {
-    auto lexicographical_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
-      return std::lexicographical_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-    };
-
-    auto numeric_comparison = [&](const Token& lhs, const Token& rhs) -> bool { //
-      return numeric_compare(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-    };
-
     auto uniqueness_set_comparison = [&](indirect lhs, indirect rhs) -> bool {
-      if (unique_numeric) {
-        return numeric_comparison(output[lhs], output[rhs]);
-      } else {
-        return lexicographical_comparison(output[lhs], output[rhs]);
+      switch (unique_type) {
+        default:
+          return lexicographical_comparison(output[lhs], output[rhs]);
+          break;
+        case numeric:
+          return numeric_comparison(output[lhs], output[rhs]);
+          break;
+        case general_numeric:
+          return general_numeric_comparison(output[lhs], output[rhs]);
+          break;
       }
     };
 
@@ -258,30 +287,62 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       if (sort_reversed) {
         std::swap(lhs, rhs);
       }
-      if (sort_numeric) {
-        return numeric_comparison(*lhs, *rhs);
-      } else {
-        return lexicographical_comparison(*lhs, *rhs);
+      switch (sort_type) {
+        default:
+          return lexicographical_comparison(*lhs, *rhs);
+          break;
+        case numeric:
+          return numeric_comparison(*lhs, *rhs);
+          break;
+        case general_numeric:
+          return general_numeric_comparison(*lhs, *rhs);
+          break;
       }
     };
 
     auto unordered_set_hash = [&](indirect val) -> size_t {
       const Token& t = output[val];
-      if (unique_numeric) {
-        return numeric_hash(t.cbegin(), t.cend());
-      } else {
-        auto view = std::string_view(t.cbegin(), t.cend() - t.cbegin());
-        return std::hash<std::string_view>{}(view);
+      switch (unique_type) {
+        default: {
+          auto view = std::string_view(t.cbegin(), t.cend() - t.cbegin());
+          return std::hash<std::string_view>{}(view);
+        } break;
+        case numeric:
+          return numeric_hash(t.cbegin(), t.cend());
+          break;
+        case general_numeric:
+          return general_numeric_hash(t.cbegin(), t.cend());
+          break;
       }
     };
 
     auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
       const Token& lhs = output[lhs_arg];
       const Token& rhs = output[rhs_arg];
-      if (unique_numeric) {
-        return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-      } else {
-        return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+      switch (unique_type) {
+        default:
+          return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case numeric:
+          return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case general_numeric:
+          return general_numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+      }
+    };
+
+    auto consecutive_equality_predicate = [&](const Token& lhs, const Token& rhs) -> bool { //
+      switch (sort_type) {
+        default:
+          return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case numeric:
+          return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
+        case general_numeric:
+          return general_numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
+          break;
       }
     };
 
@@ -295,7 +356,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
         } else {
           auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
-          s.max_load_factor(0.125); // obtained experimentally. see perf.md
+          s.max_load_factor(args.unique_load_factor);
           return unique_checker_T(std::move(s));
         }
       } else {
@@ -351,7 +412,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 #ifndef CHOOSE_DISABLE_FIELD
         t.set_field(args.field, field_data);
 #endif
-        if (!output_size_bounded) {
+        if (!output_is_shifting) {
           // typical case
           output.push_back(std::move(t));
           if (unique) {
@@ -366,21 +427,28 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           // precondition here is that unique is false. but everything else should be handled
           if (sort) {
             // note that the sorting is reversed if tail is used. so this
-            // handles tail and non tail cases. see UncompiledCodes
+            // handles tail and non tail cases. see UncompiledCodes.
+            // always a stable sort, given insertion position
             auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, sort_comparison);
-            output.insert(insertion_pos, std::move(t)); // stable sort applied from insertion position
-            if (output.size() > *args.out_end) {
-              output.pop_back();
+            if (likely(output.size() == *args.out_end)) {
+              // a faster branch that avoids any vector realloc logic.
+              // it's basically a fixed length buffer at this point
+              while (insertion_pos < output.end()) {
+                std::swap(*insertion_pos++, t);
+              }
               return false;
+            } else {
+              output.insert(insertion_pos, std::move(t));
             }
           } else {
-            output.push_back(std::move(t));
-            if (tail) {
-              if (output.size() > *args.out_end) {
-                output.erase(output.begin());
-                return false;
+            if (tail && likely(output.size() == *args.out_end)) {
+              // same reasoning as above. fixed length buffer being moved around
+              auto it = output.rbegin();
+              while (it != output.rend()) {
+                std::swap(*it++, t);
               }
             } else {
+              output.push_back(std::move(t));
               // for non tail case caller looks at size of output to determine
               // if finished
             }
@@ -389,7 +457,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 #ifdef OUTPUT_SIZE_BOUND_TESTING
         if (output_size_bound_testing && output.size() > *output_size_bound_testing) {
           throw std::runtime_error("max output size exceeded!\n");
-          return false;
         }
 #endif
         return true;
@@ -481,7 +548,7 @@ after_direct_apply:
       } else {
         check_unique_then_append(); // result ignored
         // handle the case mentioned in check_unique_then_append
-        if (output_size_bounded && !sort && !tail) {
+        if (output_is_shifting && !sort && !tail) {
           if (output.size() == *args.out_end) {
             return true;
           }
@@ -751,10 +818,35 @@ skip_read: // do another iteration but don't read in any more bytes
         } else {
           std::sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
         }
+        if (args.unique_consecutive) {
+          if (!args.tui && !args.flip) {
+            // don't bother moving memory around. just write to the output.
+            // !args.flip since that step can't be skipped (below)
+
+            if (!output.empty()) {
+              // unconditionally write the first element
+              auto last_written = output.cbegin();
+              direct_output.write_output(*last_written);
+
+              auto cursor = last_written;
+              while (++cursor != output.cend()) {
+                if (!consecutive_equality_predicate(*cursor, *last_written)) {
+                  last_written = cursor;
+                  direct_output.write_output(*last_written);
+                }
+              }
+            }
+            direct_output.finish_output();
+            throw termination_request();
+          } else {
+            auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), consecutive_equality_predicate);
+            output.resize(new_end - output.begin());
+          }
+        }
       }
     } else {
       // truncate the ends, leaving only the beginning elements
-      if (output_size_bounded) {
+      if (output_is_shifting) {
         // sort and end truncation has already been applied
       } else {
         // truncate the end
@@ -807,11 +899,9 @@ skip_read: // do another iteration but don't read in any more bytes
 skip_all:
 
   if (!args.tui) {
-    // don't apply truncation again (in direct_output logic below), since it was already done above
-    args.out_start = std::nullopt;
-    args.out_end = std::nullopt;
     for (const Token& t : output) {
-      direct_output.write_output(t);
+      // don't apply truncation again since it was already done above
+      direct_output.write_output_no_truncate(t);
     }
     direct_output.finish_output();
     throw termination_request();

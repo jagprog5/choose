@@ -4,7 +4,8 @@
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-choose is a tool for creating selection dialogs and doing fancy transformations with regular expressions.
+choose is a tool for performing transformations with regular expressions. It also applies sorting and uniqueness, and creates selection dialogs.
+
 ## Install
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
@@ -101,11 +102,11 @@ Compared to this:
 cat some_content | choose -f "test" --head 5
 ```
 
-The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are arbitrary and can contain newline characters, whereas lines can't.
+The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are contiguous ranges and can contain newline characters, whereas lines can't.
 
 # Sorting and Uniqueness
 
-choose uses lexicographical comparison or numerical comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
+choose uses lexicographical, numerical, or general numeric comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
 
@@ -126,7 +127,7 @@ And this command sorts based on a specified field:
 echo "1,gamma,1
 3,alpha,3
 2,beta,2"\
-  | choose -s --field '[^,]*,\K[^,]*'
+  | choose -s --field '^[^,]*+.\K[^,]*+'
 ```
 
 <pre>
@@ -138,10 +139,36 @@ echo "1,gamma,1
 Sorting is implemented to effectively leverage truncation. For example:
 
 ```bash
-echo very_long_input | choose --sort --out=5
+cat very_large_file | choose --sort --out=5
 ```
 
-That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately. The equivalent: `sort | head -n5` does not do this and will be slower.
+That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately, no matter the size of the input. The equivalent: `sort | head -n5` does not do this and will be slower.
+
+## Compared to sort -u
+
+gnu sort implements uniqueness in the following way:
+
+1. Read the input and sort it.
+2. Remove consecutive duplicate entries from the sorted elements, like the `uniq` command.
+
+choose instead applies uniqueness upfront:
+
+1. For every element in the input, check if it's been seen before.
+2. If it hasn't yet been seen, add it to the output.
+3. Sort the output.
+
+A bonus of this implementation is that uniqueness and sorting can use different comparison types. For example, choose can apply uniqueness numerically, but sorting lexicographically. Whereas sort needs to use the same comparison for both.
+
+A drawback is that it can use more memory, since a separate data structure is maintained to determine if new elements are unique. But, there's a degree of control since uniqueness related args are provided. choose can also revert back to the way sort does things by doing `choose -s --uniq`.
+
+## Flushing
+
+```bash
+(echo "4" ; sleep 1 ; echo "3" ; sleep 1 ; echo "3" ; sleep 1 ; echo "5" )\
+  | choose -u --flush
+```
+
+Suppose there is a long running input. choose can apply uniqueness and provide the output at the same time it arrives.
 
 # Matching
 
@@ -179,7 +206,7 @@ echo "this is a test" | choose -r "\w+" -o banana -d
 
 ## Compared to sed
 
-choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which allows only [basic expressions](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires [different logic](https://www.pcre.org/current/doc/html/pcre2partial.html#SEC4) for management of the match buffer, since lookbehind bytes must be properly retained as tokens are created. Meaning sed can't handle expressions like this:
+choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), which allows for lookarounds + various other regex features, compared to sed which allows only [sed regex](https://www.gnu.org/software/sed/manual/html_node/Regular-Expressions.html). This requires [different logic](https://www.pcre.org/current/doc/html/pcre2partial.html#SEC4) for management of the match buffer, since lookbehind bytes must be properly retained as tokens are created. Meaning sed can't match expressions like this:
 
 ```bash
 echo "banana test test" | choose -r --sed '(?<!banana )test' --replace hello

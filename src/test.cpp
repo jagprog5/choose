@@ -141,6 +141,8 @@ BOOST_AUTO_TEST_SUITE(numeric_compare_test_suite)
 
 BOOST_AUTO_TEST_CASE(numeric_compare_test) {
   auto comp_str = [](const std::string& lhs, const std::string& rhs) -> bool { return numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend()); };
+  BOOST_REQUIRE(!comp_str("2", "1"));
+  BOOST_REQUIRE(comp_str("1", "2"));
   BOOST_REQUIRE(!comp_str(".", "."));
   BOOST_REQUIRE(!comp_str(".", ".00000000000"));
   BOOST_REQUIRE(!comp_str(".00000000001", "."));
@@ -154,8 +156,8 @@ BOOST_AUTO_TEST_CASE(numeric_compare_test) {
   BOOST_REQUIRE(comp_str("22", "22.001"));
 
   BOOST_REQUIRE(!comp_str("", ""));
-  BOOST_REQUIRE(!comp_str("-0.000", "+") && !comp_str("+", "-0.000"));
-  BOOST_REQUIRE(!comp_str("+,,.123", "0.123") && !comp_str("0.123", "+,,.123"));
+  BOOST_REQUIRE(!comp_str("-0.000", "") && !comp_str("", "-0.000"));
+  BOOST_REQUIRE(!comp_str(",,.123", "0.123") && !comp_str("0.123", ",,.123"));
   BOOST_REQUIRE(!comp_str("1,,,,23", "123") && !comp_str("123", "1,,,,23"));
   BOOST_REQUIRE(comp_str("123", "234"));
   BOOST_REQUIRE(comp_str("012", "123"));
@@ -165,21 +167,26 @@ BOOST_AUTO_TEST_CASE(numeric_compare_test) {
   BOOST_REQUIRE(comp_str("99", "111"));
   BOOST_REQUIRE(!comp_str("-99", "-111"));
 
-  BOOST_REQUIRE(!comp_str("+", "-"));
-  BOOST_REQUIRE(comp_str("   -9,,,,9", "    +99"));
+  BOOST_REQUIRE(!comp_str("", "-"));
+  BOOST_REQUIRE(comp_str("-9,,,,9", "99"));
+
+  BOOST_REQUIRE(!comp_str("1\xAE", "1"));
+  BOOST_REQUIRE(!comp_str("1", "1\xAE"));
 }
 
 BOOST_AUTO_TEST_CASE(numeric_hash_test) {
   auto h = [](const std::string& s) -> size_t { return numeric_hash(&*s.cbegin(), &*s.cend()); };
-  BOOST_REQUIRE_EQUAL(h("-00,.0000"), h("+0.0"));
+  BOOST_REQUIRE_EQUAL(h("-00,.0000"), h("0.0"));
   BOOST_REQUIRE_EQUAL(h("-."), h("00000"));
-  BOOST_REQUIRE_EQUAL(h("123"), h("   +00001,,,2,,,3"));
+  BOOST_REQUIRE_EQUAL(h("123"), h("00001,,,2,,,3"));
   BOOST_REQUIRE_NE(h("+123"), h("-123"));
   BOOST_REQUIRE_EQUAL(h("123"), h("123."));
   BOOST_REQUIRE_EQUAL(h("123"), h("123.00000"));
   BOOST_REQUIRE_NE(h("123"), h("123.000001"));
   BOOST_REQUIRE_NE(h("123.456"), h("123456"));
   BOOST_REQUIRE_EQUAL(h("123.456"), h("123.456000000"));
+
+  BOOST_REQUIRE_EQUAL(h("1"), h("1\xAE"));
 }
 
 BOOST_AUTO_TEST_CASE(numeric_equal_test) {
@@ -187,6 +194,7 @@ BOOST_AUTO_TEST_CASE(numeric_equal_test) {
   BOOST_REQUIRE(!equal_str("-1", "0"));
   BOOST_REQUIRE(!equal_str(".001", ".00"));
   BOOST_REQUIRE(equal_str(".", ".0000"));
+  BOOST_REQUIRE(equal_str(".", ""));
   BOOST_REQUIRE(!equal_str(".", ".0001"));
   BOOST_REQUIRE(!equal_str(".00", ".0001"));
   BOOST_REQUIRE(equal_str("123", "123"));
@@ -201,8 +209,10 @@ BOOST_AUTO_TEST_CASE(numeric_equal_test) {
   BOOST_REQUIRE(!equal_str(".001", ".002"));
   BOOST_REQUIRE(equal_str(".0000000", "."));
   BOOST_REQUIRE(equal_str(".0000000", "0.000000"));
-  BOOST_REQUIRE(equal_str("+123.000", "123"));
+  BOOST_REQUIRE(equal_str("123.000", "123"));
   BOOST_REQUIRE(!equal_str("345", "123"));
+
+  BOOST_REQUIRE(equal_str("1", "1\xAE"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -521,50 +531,89 @@ BOOST_AUTO_TEST_CASE(sort) {
 }
 
 BOOST_AUTO_TEST_CASE(unique) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique"});
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--unique", "--load-factor=1"});
   choose_output correct_output{to_vec("this\nis\na\ntest\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique) {
-  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric"});
+  choose_output out = run_choose("-0\n0\n0\n.0\n.\n\n1\n1.0\n0001.0", {"--unique-numeric"});
   choose_output correct_output{to_vec("-0\n1\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(general_numeric_unique) {
+  choose_output out = run_choose("1\n10\n1.0\n1e0\n1e1", {"--unique-general-numeric"});
+  choose_output correct_output{to_vec("1\n10\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(general_numeric_unique_with_parse_failure) {
+  choose_output out = run_choose("1\n10\n\n \n+\n", {"--unique-general-numeric"});
+  choose_output correct_output{to_vec("1\n10\n\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
-  choose_output out = run_choose("-0\n+0\n.0\n1\n+1.0\n0001.0", {"--unique-numeric", "--unique-use-set"});
+  choose_output out = run_choose("-0\n0\n.0\n1\n1.0\n0001.0", {"--unique-numeric", "--unique-use-set"});
   choose_output correct_output{to_vec("-0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(general_numeric_unique_use_set) {
+  choose_output out = run_choose("1\n10\n1e1\n1e0", {"--unique-general-numeric", "--unique-use-set"});
+  choose_output correct_output{to_vec("1\n10\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(numeric_sort) {
-  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"--sort-numeric", "--stable"});
-  choose_output correct_output{to_vec("-0\n+0\n.0\n1\n+1.0\n0001.0\n17\n")};
+  choose_output out = run_choose("17\n-0\n.0\n1\n0001.0", {"--sort-numeric", "--stable"});
+  choose_output correct_output{to_vec("-0\n.0\n1\n0001.0\n17\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(general_numeric_sort) {
+  choose_output out = run_choose("1\n10\n1.0\n1e0\n1e1", {"--sort-general-numeric", "--stable"});
+  choose_output correct_output{to_vec("1\n1.0\n1e0\n10\n1e1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(numeric_sort_2) {
-  choose_output out = run_choose("3\n-2.1\n-2\n-1\n2\n+1\n3", {"--sort-numeric"});
-  choose_output correct_output{to_vec("-2.1\n-2\n-1\n+1\n2\n3\n3\n")};
+  choose_output out = run_choose("3\n-2.1\n-2\n-1\n2\n1\n3", {"--sort-numeric"});
+  choose_output correct_output{to_vec("-2.1\n-2\n-1\n1\n2\n3\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(general_numeric_sort_with_parse_failure) {
+  choose_output out = run_choose("4\n1\nfirst\nsecond\n3", {"--sort-general-numeric", "--stable"});
+  choose_output correct_output{to_vec("first\nsecond\n1\n3\n4\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_sort_hex) {
+  // this is a quirk of numeric comparison, just happens to work if the
+  // beginning of the tokens all start with or all without "0x". If that isn't
+  // the case then --field can match the desired part to make it so
+  choose_output out = run_choose("0xABC\n0x0\n0x9\n0x999\n0xFFF", {"--sort-numeric"});
+  choose_output correct_output{to_vec("0x0\n0x9\n0x999\n0xABC\n0xFFF\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(numeric_sort_lex_unique) {
-  choose_output out = run_choose("2\n+2\n2.0\n2\n1\n+1\n1.0\n1\n1", {"--sort-numeric", "--stable", "-u"});
-  choose_output correct_output{to_vec("1\n+1\n1.0\n2\n+2\n2.0\n")};
+  choose_output out = run_choose("2\n2.0\n2\n1\n1.0\n1\n1", {"--sort-numeric", "--stable", "-u"});
+  choose_output correct_output{to_vec("1\n1.0\n2\n2.0\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(lex_sort_numeric_unique) {
-  choose_output out = run_choose("10\n2\n1\n+10.0\n+2", {"--sort", "--unique-numeric"});
+  choose_output out = run_choose("10\n2\n1\n10.0\n2.0", {"--sort", "--unique-numeric"});
   choose_output correct_output{to_vec("1\n10\n2\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(stable_partial_sort) {
-  choose_output out = run_choose("17\n-0\n+0\n.0\n1\n+1.0\n0001.0", {"-u", "--sort-numeric", "--stable", "--out=3"});
-  choose_output correct_output{to_vec("-0\n+0\n.0\n")};
+  choose_output out = run_choose("17\n-0\n.0\n1\n1.0\n0001.0", {"-u", "--sort-numeric", "--stable", "--out=3"});
+  choose_output correct_output{to_vec("-0\n.0\n1\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -611,6 +660,67 @@ BOOST_AUTO_TEST_CASE(tail_min) {
 BOOST_AUTO_TEST_CASE(sort_unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique"});
   choose_output correct_output{to_vec("a\nis\ntest\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq"});
+  choose_output correct_output{to_vec("a\nis\ntest\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_numeric) {
+  choose_output out = run_choose("3\n2\n1\n3.0\n2.0\n1.0", {"-n", "--sort", "--stable", "--uniq"});
+  choose_output correct_output{to_vec("1\n2\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_general_numeric) {
+  choose_output out = run_choose("3\n2\n1\n3e0\n2e0\n1e0", {"-g", "--sort", "--stable", "--uniq"});
+  choose_output correct_output{to_vec("1\n2\n3\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_empty) {
+  choose_output out = run_choose("", {"--sort", "--uniq"});
+  choose_output correct_output{to_vec("")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_tui) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq", "-t"});
+  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(sort_uniq_flip) {
+  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq", "--flip"});
+  choose_output correct_output{to_vec("this\ntest\nis\na\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_sort) {
+  // difficult to see different from this option, other than from the benchmarks
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--out=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("a\nis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_tail) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--tail=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("a\ntest\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_sort_tail) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--sort", "--tail=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("test\nthis\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_no_bound_out) {
+  choose_output out = run_choose("this\nis\na\ntest", {"--out=2", "--truncate-no-bound"});
+  choose_output correct_output{to_vec("this\nis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
@@ -664,12 +774,14 @@ BOOST_AUTO_TEST_CASE(sort_flip_tail) {
 }
 
 BOOST_AUTO_TEST_CASE(unique_out) {
+  OutputSizeBoundFixture f(2);
   choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--out=1,2"});
   choose_output correct_output{to_vec("b\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(unique_tail) {
+  // output vector size is NOT bounded in these cases. unique elements must be kept track of
   choose_output out = run_choose("a\na\na\na\na\nb\nb\nb\nc\nc\nc", {"--unique", "--tail=2"});
   choose_output correct_output{to_vec("b\nc\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -690,24 +802,30 @@ BOOST_AUTO_TEST_CASE(out_tail) {
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_out) {
+  // entirety of the input is read, but the mem size should not exceed the number of
+  // unique elements from the input
+  OutputSizeBoundFixture f(4);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=2"});
   choose_output correct_output{to_vec("a\nis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_out_min) {
+  OutputSizeBoundFixture f(4);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=1,2"});
   choose_output correct_output{to_vec("is\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_tail) {
+  OutputSizeBoundFixture f(4);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=2"});
   choose_output correct_output{to_vec("test\nthis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_tail_min) {
+  OutputSizeBoundFixture f(4);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=1,2"});
   choose_output correct_output{to_vec("test\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
@@ -721,14 +839,20 @@ BOOST_AUTO_TEST_CASE(unique_with_set) {
 
 #ifndef CHOOSE_DISABLE_FIELD
 BOOST_AUTO_TEST_CASE(unique_by_field) {
-  choose_output out = run_choose("alpha,tester\nbeta,tester\ngamma,tester,abcde", {"-t", "--unique", "--field", "[^,]*,\\K[^,]*"});
+  choose_output out = run_choose("alpha,tester\nbeta,tester\ngamma,tester,abcde", {"-t", "--unique", "--field", "^[^,]*+.\\K[^,]*+"});
   choose_output correct_output{std::vector<choose::Token>{"alpha,tester"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_by_field) {
-  choose_output out = run_choose("a,z\nb,y\nc,x", {"-t", "--sort", "--field", "[^,]*,\\K[^,]*"});
+  choose_output out = run_choose("a,z\nb,y\nc,x", {"-t", "--sort", "--field", "^[^,]*+.\\K[^,]*+"});
   choose_output correct_output{std::vector<choose::Token>{"c,x", "b,y", "a,z"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(field_with_no_matches) {
+  choose_output out = run_choose("abc 1245\nzzz 123\nno match!", {"-t", "-s", "--field", "\\d+"});
+  choose_output correct_output{std::vector<choose::Token>{"no match!", "zzz 123", "abc 1245"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 #endif

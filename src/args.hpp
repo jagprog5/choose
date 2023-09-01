@@ -18,6 +18,13 @@ namespace choose {
 #define choose_str(a) #a
 
 #define BUF_SIZE_DEFAULT 32768
+#define UNIQUE_LOAD_FACTOR_DEFAULT 0.125
+
+enum Comparison {
+  lexicographical,
+  numeric,
+  general_numeric,
+};
 
 struct Arguments {
   std::vector<OrderedOp> ordered_ops;
@@ -28,14 +35,19 @@ struct Arguments {
   bool tenacious = false;
   bool use_input_delimiter = false;
   bool end = false;
-  bool sort = false;         // indicates that any sort is applied
-  bool sort_numeric = false; // requires sort. false indicates lexicographical
+  bool sort = false; // indicates that any sort is applied
+  Comparison sort_type = lexicographical;
   bool sort_reverse = false; // requires sort
-  bool sort_stable = false;
+  bool sort_stable = false;  // requires sort
 
-  bool unique = false;         // indicates that any type of uniqueness is applied
-  bool unique_numeric = false; // requires unique. false indicates lexicographical
-  bool unique_use_set = false;
+  bool unique = false; // indicates that any unique is applied
+  Comparison unique_type = lexicographical;
+  bool unique_use_set = false; // requires unique
+  // if unordered_map is used, this is the max load factor
+  // this default value seems to work well
+  float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
+  bool unique_consecutive = false; // after sorting uniqueness
+
   bool flip = false;
   bool flush = false;
   bool multiple_selections = false;
@@ -51,6 +63,7 @@ struct Arguments {
   std::optional<InLimitOp::T> out_start;
   // truncate end of result, exclusive
   std::optional<InLimitOp::T> out_end;
+  bool truncate_no_bound = false;
 
   // modifier on out_start and out_end. truncation is from the end not the beginning
   bool tail = false;
@@ -292,8 +305,14 @@ void print_help_message() {
       "        --flip\n"
       "                reverse the token order. this is the last step before being sent\n"
       "                to the output or to the tui\n"
+      "        -g, --general-numeric\n"
+      "                if --sort or --unique is specified it will be done general\n"
+      "                numerically. mustn't have leading spaces, or leading plus sign.\n"
+      "                must have at least one digit. parse failures are smallest\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
+      "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
+      "                if a hash table is used for uniqueness, set the max load factor\n"
       "        --locale <locale>\n"
       "        -m, --multi\n"
       "                allow the selection of multiple tokens\n"
@@ -307,14 +326,18 @@ void print_help_message() {
       "                its beginning. if not specified, it is auto detected from the\n"
       "                pattern but may not be accurate for nested lookbehinds\n"
       "        -n, --numeric\n"
-      "                if --sort or --unique are specified, it will be done numerically\n"
-      "                numeric strings are: ^[ \\t]*[-+]?[0-9,]*(?:\\.[0-9]*)?$\n"
+      "                if --sort or --unique is specified it will be done numerically.\n"
+      "                tokens should match: ^-?[0-9,]*(?:\\.[0-9]*)?$\n"
+      "                tokens not in that format are treated as is; digit comparison is\n"
+      "                based on ascii value with no special handling for non digits.\n"
+      "                additionally, 0xAE is treated as end of string, but ideally this\n"
+      "                should never happen since it's not part of the format\n"
       "        --no-warn\n"
       "        --null, --read0\n"
       "                delimit the input on null chars\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"
       "                an output delimiter is placed after each token in the output\n"
-      "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: +10>]\n"
+      "        --out [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                truncate the output\n"
       "        -p, --prompt <tui prompt>\n"
       "        -r, --regex\n"
@@ -325,6 +348,8 @@ void print_help_message() {
       "                sort each token lexicographically\n"
       "        --sort-numeric\n"
       "                apply sorting numerically. implies --sort\n"
+      "        --sort-general-numeric\n"
+      "                apply sorting general numerically. implies --sort\n"
       "        --sort-reverse\n"
       "                apply the sort in reverse order. implies --sort\n"
       "        --sed\n"
@@ -345,10 +370,24 @@ void print_help_message() {
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
+      "        --truncate-no-bound\n"
+      "                if truncation is specified (--out/--tail) and uniqueness is not\n"
+      "                specified, then choose only retains the relevant n values in\n"
+      "                memory. This is only faster for small values of n, as elements\n"
+      "                are shifted within this storage space. If n is large, this\n"
+      "                option should be used to disable this optimization, leading to\n"
+      "                faster speed but more space used\n"
       "        -u, --unique\n"
-      "                remove duplicate input tokens. leaves first occurrences\n"
+      "                remove duplicate input tokens. leaves first occurrences. applied\n"
+      "                before sorting\n"
+      "        --uniq\n"
+      "                unrelated to any other uniqueness options. after sorting, remove\n"
+      "                consecutive duplicate elements. requires --sort. ignored by\n"
+      "                truncation --out/--tail (use normal -u in these cases instead)\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies --unique\n"
+      "        --unique-general-numeric\n"
+      "                apply uniqueness general numerically. implies --unique\n"
       "        --unique-use-set\n"
       "                apply uniqueness with a tree instead of a hash table\n"
       "        --use-delimiter\n"
@@ -373,6 +412,8 @@ void print_help_message() {
       "                --index=after -f '[02468]$' --sub '(.*) [0-9]+' '$1'\n"
       "        echo -n \"a b c d e f\" | choose ' ' -rt --sub '.+' '$0 in:' --index\\\n"
       "                after --rm '^c' --sub '.+' '$0 out:' --index after\n"
+      "        choose -s --field '^[^,]*+.\\K[^,]*+' # sort, match second field in csv\n"
+      "        choose -s --field '^(?>(?:[^,]*+.){N})\\K[^,]*+' # (replace N) Nth field\n"
       "        echo -e \"this\\nis\\na\\ntest\" | choose -r --sed \".+\" --replace banana\n"
       "        # some options are only available via prefix\n"
       "        echo -n \"1a2A3\" | choose -r '(*NO_JIT)(*LIMIT_HEAP=1000)(?i)a'\n"
@@ -458,6 +499,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"rm", required_argument, NULL, 0},
         {"max-lookbehind", required_argument, NULL, 0},
         {"read", required_argument, NULL, 0},
+        {"load-factor", required_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
         {"head", optional_argument, NULL, 0},
@@ -478,11 +520,15 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
         {"numeric", no_argument, NULL, 'n'},
+        {"general-numeric", no_argument, NULL, 'g'},
         {"null", no_argument, NULL, 0},
         {"read0", no_argument, NULL, 0},
         {"sort-reverse", no_argument, NULL, 0},
         {"sort-numeric", no_argument, NULL, 0},
+        {"sort-general-numeric", no_argument, NULL, 0},
+        {"uniq", no_argument, NULL, 0},
         {"unique-numeric", no_argument, NULL, 0},
+        {"unique-general-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
         {"regex", no_argument, NULL, 'r'},
         {"sed", no_argument, NULL, 0},
@@ -490,6 +536,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"stable", no_argument, NULL, 0},
         {"selection-order", no_argument, NULL, 0},
         {"tenacious", no_argument, NULL, 0},
+        {"truncate-no-bound", no_argument, NULL, 0},
         {"tui", no_argument, NULL, 't'},
         {"unique", no_argument, NULL, 'u'},
         {"unique-use-set", no_argument, NULL, 0},
@@ -501,7 +548,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:trdeimnrsuyz", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-vho:b:p:f:trdegimnrsuyz", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
@@ -649,6 +696,12 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               ++optind;
               uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
             }
+          } else if (strcmp("load-factor", name) == 0) {
+            char* end_ptr; // NOLINT
+            ret.unique_load_factor = strtof(optarg, &end_ptr);
+            if (optarg == end_ptr || *end_ptr != '\0' || ret.unique_load_factor <= 0) {
+              on_num_err();
+            }
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
           } else if (strcmp("take", name) == 0) {
@@ -690,10 +743,18 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.can_drop_warn = false;
           } else if (strcmp("sort-numeric", name) == 0) {
             ret.sort = true;
-            ret.sort_numeric = true;
+            ret.sort_type = numeric;
+          } else if (strcmp("sort-general-numeric", name) == 0) {
+            ret.sort = true;
+            ret.sort_type = general_numeric;
+          } else if (strcmp("uniq", name) == 0) {
+            ret.unique_consecutive = true;
           } else if (strcmp("unique-numeric", name) == 0) {
             ret.unique = true;
-            ret.unique_numeric = true;
+            ret.unique_type = numeric;
+          } else if (strcmp("unique-general-numeric", name) == 0) {
+            ret.unique = true;
+            ret.unique_type = general_numeric;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -707,6 +768,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.selection_order = true;
           } else if (strcmp("tenacious", name) == 0) {
             ret.tenacious = true;
+          } else if (strcmp("truncate-no-bound", name) == 0) {
+            ret.truncate_no_bound = true;
           } else if (strcmp("index", name) == 0) {
             index_handler(false);
           } else if (strcmp("unique-use-set", name) == 0) {
@@ -762,12 +825,16 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case 'e':
         ret.end = true;
         break;
+      case 'g':
+        ret.sort_type = general_numeric;
+        ret.unique_type = general_numeric;
+        break;
       case 'i':
         uncompiled_output.re_options |= PCRE2_CASELESS;
         break;
       case 'n':
-        ret.unique_numeric = true;
-        ret.sort_numeric = true;
+        ret.sort_type = numeric;
+        ret.unique_type = numeric;
         break;
       case 'm':
         ret.multiple_selections = true;
