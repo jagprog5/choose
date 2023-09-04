@@ -20,7 +20,7 @@ Also note the compile time option called `DISABLE_FIELD`. It disables the `--fie
 
 ### Sorting, and Sorting + Uniqueness
 
-In most cases, `choose` is faster than `sort` and `sort -u` at sorting and sorting + uniqueness, respectively.
+In most cases, `choose` is faster than `sort` and `sort -u` at sorting and sorting + uniqueness, respectively. Note however that the c locale isn't used for comparisons, and again it is the task clock that is reported.
 
 ## Input Data
 
