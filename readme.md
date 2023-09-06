@@ -89,13 +89,13 @@ Transformations can be done in a specified order. This command prints every othe
 
 1. Suffixing each token with its arrival order
 2. Filtering for tokens that end with an even number
-3. Substituting to remove the index
+3. Substituting to remove the arrival order
 
 ```bash
 echo -n 'every other word is printed here' | \
-  choose -r ' ' --index=after\           # 1
-                -f '[02468]$'\           # 2
-                --sub '(.*) [0-9]+' '$1' # 3
+  choose -r ' ' --index=after            `# <-- 1` \
+                -f '[02468]$'            `# <-- 2` \
+                --sub '(.*) [0-9]+' '$1' `# <-- 3`
 ```
 
 ## Lines vs Tokens
