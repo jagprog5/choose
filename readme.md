@@ -6,6 +6,16 @@
 
 choose is a tool for performing transformations with regular expressions. It also applies sorting and uniqueness, and creates selection dialogs.
 
+# Why?
+
+Here's a few distinct use cases that other tools have trouble with:
+
+ - [sort csv and truncate output](https://stackoverflow.com/a/77025562/15534181)
+ - [sort csv with embedded commas](https://stackoverflow.com/a/77034520/15534181)
+ - [stream edit with lookarounds](https://stackoverflow.com/a/77025816/15534181)
+
+Also it's fast. See benchmarks [here](./perf/perf.md) comparing choose to other tools with similar functionality.
+
 ## Install
 ```bash
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
@@ -79,13 +89,13 @@ Transformations can be done in a specified order. This command prints every othe
 
 1. Suffixing each token with its arrival order
 2. Filtering for tokens that end with an even number
-3. Substituting to remove the index
+3. Substituting to remove the arrival order
 
 ```bash
 echo -n 'every other word is printed here' | \
-  choose -r ' ' --index=after\           # 1
-                -f '[02468]$'\           # 2
-                --sub '(.*) [0-9]+' '$1' # 3
+  choose -r ' ' --index=after            `# <-- 1` \
+                -f '[02468]$'            `# <-- 2` \
+                --sub '(.*) [0-9]+' '$1' `# <-- 3`
 ```
 
 ## Lines vs Tokens
@@ -219,10 +229,6 @@ echo -e "this\n\0is\na\ntest" | choose -r --sed 'is\n\0is' --replace something
 ```
 
 sed can't make a substitution if the target contains the delimiter (a newline character); the input is split into lines before substitution occurs, so the delimiter never makes it to the substitution logic. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly. One quick way of fixing this is to use `tr` to change the input before it gets to sed (by changing null to a different character), but this can lose information and lead to ambiguous cases (if the delimiter is changed to something found naturally in the input).
-
-# Speed
-
-See benchmarks [here](./perf/perf.md) comparing choose to other tools with similar functionality.
 
 # ch_hist
 
