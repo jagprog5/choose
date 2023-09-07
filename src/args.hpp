@@ -48,6 +48,8 @@ struct Arguments {
   float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
   bool unique_consecutive = false; // after sorting uniqueness
 
+  size_t unique_limit = 0; // 0 indicates unused
+
   bool flip = false;
   bool flush = false;
   bool multiple_selections = false;
@@ -385,11 +387,14 @@ void print_help_message() {
       "                consecutive duplicate elements. requires --sort. ignored by\n"
       "                truncation --out/--tail (use normal -u in these cases instead)\n"
       "        --unique-numeric\n"
-      "                apply uniqueness numerically. implies --unique\n"
+      "                apply uniqueness numerically. implies -u\n"
       "        --unique-general-numeric\n"
-      "                apply uniqueness general numerically. implies --unique\n"
+      "                apply uniqueness general numerically. implies -u\n"
+      "        --unique-limit [<#tokens>]\n"
+      "                implies -u. check uniqueness against only the previous n\n"
+      "                distinct tokens\n"
       "        --unique-use-set\n"
-      "                apply uniqueness with a tree instead of a hash table\n"
+      "                implies -u. apply uniqueness with a tree instead of a hash table\n"
       "        --use-delimiter\n"
       "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
@@ -502,6 +507,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"load-factor", required_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
+        {"unique-limit", required_argument, NULL, 0},
         {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
         {"out", optional_argument, NULL, 0},
@@ -685,6 +691,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               }
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledReplaceOp(optarg));
+          } else if (strcmp("unique-limit", name) == 0) {
+            ret.unique_limit = num::parse_number<decltype(ret.unique_limit)>(on_num_err, optarg, false);
+            ret.unique = true;
           } else if (strcmp("sub", name) == 0 || strcmp("substitute", name) == 0) {
             // special handing here since getopt doesn't normally support multiple arguments
             if (optind >= argc) {
@@ -773,6 +782,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("index", name) == 0) {
             index_handler(false);
           } else if (strcmp("unique-use-set", name) == 0) {
+            ret.unique = true;
             ret.unique_use_set = true;
           } else if (strcmp("use-delimiter", name) == 0) {
             ret.use_input_delimiter = true;

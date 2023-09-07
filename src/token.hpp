@@ -238,7 +238,6 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool tail = args.tail;
 
   const bool unique = args.unique;
-  const bool unique_use_set = args.unique_use_set;
   const Comparison unique_type = args.unique_type;
   const bool sort = args.sort;
   const Comparison sort_type = args.sort_type;
@@ -346,18 +345,31 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    using uniqueness_set_T = std::set<indirect, decltype(uniqueness_set_comparison)>;
     using unordered_uniqueness_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
-    using unique_checker_T = std::variant<std::monostate, uniqueness_set_T, unordered_uniqueness_set_T>;
+    using unordered_uniqueness_limit_set_T = ForgetfulUnorderedSet<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
+    using uniqueness_set_T = std::set<indirect, decltype(uniqueness_set_comparison)>;
+    using uniqueness_limit_set_T = ForgetfulSet<indirect, decltype(uniqueness_set_comparison)>;
+    using unique_checker_T = std::variant<std::monostate, unordered_uniqueness_set_T, unordered_uniqueness_limit_set_T, uniqueness_set_T, uniqueness_limit_set_T>;
 
     unique_checker_T unique_checker = [&]() -> unique_checker_T {
       if (unique) {
-        if (unique_use_set) {
-          return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
+        if (args.unique_use_set) {
+          if (args.unique_limit == 0) {
+            return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
+          } else {
+            return unique_checker_T(uniqueness_limit_set_T(uniqueness_set_comparison, args.unique_limit));
+          }
         } else {
-          auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
-          s.max_load_factor(args.unique_load_factor);
-          return unique_checker_T(std::move(s));
+          if (args.unique_limit == 0) {
+            auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
+            s.max_load_factor(args.unique_load_factor);
+            return unique_checker_T(std::move(s));
+          } else {
+            return unique_checker_T(unordered_uniqueness_limit_set_T(unordered_set_hash,      //
+                                                                     unordered_set_equals,    //
+                                                                     args.unique_load_factor, //
+                                                                     args.unique_limit));
+          }
         }
       } else {
         return unique_checker_T();
@@ -366,10 +378,14 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 
     // returns true if output[elem] is unique. requires unique == true
     auto uniqueness_check = [&](indirect elem) -> bool { //
-      if (unordered_uniqueness_set_T* set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
+      if (unordered_uniqueness_set_T* unordered_set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
+        return unordered_set->insert(elem).second;
+      } else if (unordered_uniqueness_limit_set_T* unordered_set_limit = std::get_if<unordered_uniqueness_limit_set_T>(&unique_checker)) {
+        return unordered_set_limit->insert(elem).second;
+      } else if (uniqueness_set_T* set = std::get_if<uniqueness_set_T>(&unique_checker)) {
         return set->insert(elem).second;
       } else {
-        return std::get<uniqueness_set_T>(unique_checker).insert(elem).second;
+        return std::get<uniqueness_limit_set_T>(unique_checker).insert(elem).second;
       }
     };
 
@@ -806,8 +822,12 @@ skip_read: // do another iteration but don't read in any more bytes
 
     if (unordered_uniqueness_set_T* uniqueness_unordered_set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
       uniqueness_unordered_set->clear();
+    } else if (unordered_uniqueness_limit_set_T* uniqueness_limit_unordered_set = std::get_if<unordered_uniqueness_limit_set_T>(&unique_checker)) {
+      uniqueness_limit_unordered_set->clear();
     } else if (uniqueness_set_T* set = std::get_if<uniqueness_set_T>(&unique_checker)) {
       set->clear();
+    } else if (uniqueness_limit_set_T* set_limit = std::get_if<uniqueness_limit_set_T>(&unique_checker)) {
+      set_limit->clear();
     }
 
     if (!args.out_start && !args.out_end) {

@@ -8,7 +8,7 @@ choose is a tool for performing transformations with regular expressions. It als
 
 # Why?
 
-Here's a few distinct use cases that other tools have trouble with:
+Here's a few use cases that other tools have trouble with:
 
  - [sort csv and truncate output](https://stackoverflow.com/a/77025562/15534181)
  - [sort csv with embedded commas](https://stackoverflow.com/a/77034520/15534181)
