@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "likely_unlikely.hpp"
+
 namespace choose {
 
 namespace str {
@@ -299,9 +301,10 @@ struct QueuedOutput {
   }
 };
 
+// block until n bytes have been made available in the file, or EOF
 size_t get_bytes(FILE* f, size_t n, char* out) {
   size_t read_ret = fread(out, sizeof(char), n, f);
-  if (read_ret == 0) {
+  if (unlikely(read_ret == 0)) {
     if (feof(f)) {
       return read_ret;
     } else if (ferror(f)) {
@@ -312,9 +315,10 @@ size_t get_bytes(FILE* f, size_t n, char* out) {
   return read_ret;
 }
 
+// returns once any positive number of bytes are made available in the file, or EOF
 size_t get_bytes_unbuffered(int fileno, size_t n, char* out) {
   ssize_t read_ret = read(fileno, out, n);
-  if (read_ret == -1) {
+  if (unlikely(read_ret == -1)) {
     const char* err_string = strerror(errno);
     throw std::runtime_error(err_string);
   }

@@ -5,6 +5,8 @@
 #include <execution>
 #include <vector>
 
+#include "likely_unlikely.hpp"
+
 namespace choose {
 
 template <typename ExecutionPolicy, typename it, typename Comp>
@@ -96,11 +98,9 @@ size_t general_numeric_hash(const char* begin, const char* end) {
 // implementation is based on c strings, versus here ranges were used. so this
 // didn't exist yet.
 
-// leveraged under the following assumptions:
+// likely and unlikely are leveraged under the following assumptions:
 //   - end of string has not been reached
 //   - character frequency. e.g. obtaining any non-zero digit is more likely than zero digit (8/9 vs 1/9)
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
 
 namespace {
 
