@@ -46,7 +46,7 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
 }
 
 // only remembers last n elements
-template <typename Key, typename Compare = std::less<Key>, typename Allocator = std::allocator<Key>>
+template <typename Key, typename Compare = std::less<Key>, typename Allocator = std::allocator<Key>, bool unordered = false>
 class ForgetfulSet {
   std::set<Key, Compare, Allocator> s;
   const size_t n;                                    // cap for iters
@@ -88,7 +88,8 @@ class ForgetfulSet {
   }
 };
 
-// only remeber last n elements
+// only remembers last n elements.
+// largely copy paste from ForgetfulSet.
 template <typename Key, typename Hash = std::hash<Key>, typename KeyEqual = std::equal_to<Key>, typename Allocator = std::allocator<Key>>
 class ForgetfulUnorderedSet {
   std::unordered_set<Key, Hash, KeyEqual, Allocator> s;
