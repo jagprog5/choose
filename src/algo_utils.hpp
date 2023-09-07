@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstring> // memmove
 #include <execution>
+#include <set>
+#include <unordered_set>
 #include <vector>
 
 #include "likely_unlikely.hpp"
@@ -11,8 +14,6 @@ namespace choose {
 
 template <typename ExecutionPolicy, typename it, typename Comp>
 void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, Comp comp) {
-  static_assert(std::is_same_v<typename std::iterator_traits<it>::iterator_category, //
-                               std::random_access_iterator_tag>);
   // adapted from https://stackoverflow.com/a/27248519/15534181
   std::vector<it> sorted;
   sorted.resize(end - begin);
@@ -75,7 +76,7 @@ class ForgetfulSet {
 
       // treating this->iters like a fixed size array.
       // erase first element and push_back
-      memmove(this->iters.data(), this->iters.data() + 1, (this->iters.size() - 1) * sizeof(typename decltype(iters)::value_type));
+      std::memmove(this->iters.data(), this->iters.data() + 1, (this->iters.size() - 1) * sizeof(typename decltype(iters)::value_type));
       *this->iters.rbegin() = ret.first;
       return ret;
     }
@@ -124,7 +125,7 @@ class ForgetfulUnorderedSet {
 
       // treating this->iters like a fixed size array.
       // erase first element and push_back
-      memmove(this->iters.data(), this->iters.data() + 1, (this->iters.size() - 1) * sizeof(typename decltype(iters)::value_type));
+      std::memmove(this->iters.data(), this->iters.data() + 1, (this->iters.size() - 1) * sizeof(typename decltype(iters)::value_type));
       *this->iters.rbegin() = ret.first;
       return ret;
     }

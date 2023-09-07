@@ -365,9 +365,9 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             s.max_load_factor(args.unique_load_factor);
             return unique_checker_T(std::move(s));
           } else {
-            return unique_checker_T(unordered_uniqueness_limit_set_T(unordered_set_hash, //
-                                                                     unordered_set_equals, //
-                                                                     args.unique_load_factor,//
+            return unique_checker_T(unordered_uniqueness_limit_set_T(unordered_set_hash,      //
+                                                                     unordered_set_equals,    //
+                                                                     args.unique_load_factor, //
                                                                      args.unique_limit));
           }
         }

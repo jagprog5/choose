@@ -48,7 +48,7 @@ struct Arguments {
   float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
   bool unique_consecutive = false; // after sorting uniqueness
 
-  size_t unique_limit = 0; // requires unique_use_set. 0 indicates unused
+  size_t unique_limit = 0; // 0 indicates unused
 
   bool flip = false;
   bool flush = false;
