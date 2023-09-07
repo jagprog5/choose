@@ -45,6 +45,97 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   }
 }
 
+// only remembers last n elements
+template <typename Key, typename Compare = std::less<Key>, typename Allocator = std::allocator<Key>>
+class ForgetfulSet {
+  std::set<Key, Compare, Allocator> s;
+  const size_t n;                                    // cap for iters
+  std::vector<typename decltype(s)::iterator> iters; // point within s
+ public:
+  ForgetfulSet(const Compare& comp, size_t n) : s(comp), n(n == 0 ? 1 : n) {
+    // ^ n must be positive.
+    // given the context where it is constructed, arg n is never 0 anyways. but this is for safety.
+    // required for precondition below
+    iters.reserve(this->n);
+  }
+
+  void clear() {
+    s.clear();
+    iters.clear();
+  }
+
+  auto insert(Key k) {
+    auto ret = this->s.insert(k);
+
+    if (likely(this->s.size() > this->n)) {
+      // precondition this->iters not empty
+
+      // element was inserted AND it's now exceeding capacity
+      this->s.erase(*this->iters.begin());
+
+      // treating this->iters like a fixed size array.
+      // erase first element and push_back
+      memmove(this->iters.data(), this->iters.data() + 1, (this->iters.size() - 1) * sizeof(typename decltype(iters)::value_type));
+      *this->iters.rbegin() = ret.first;
+      return ret;
+    }
+
+    if (ret.second) {
+      this->iters.push_back(ret.first);
+    }
+
+    return ret;
+  }
+};
+
+// only remeber last n elements
+template <typename Key, typename Hash = std::hash<Key>, typename KeyEqual = std::equal_to<Key>, typename Allocator = std::allocator<Key>>
+class ForgetfulUnorderedSet {
+  std::unordered_set<Key, Hash, KeyEqual, Allocator> s;
+  const size_t n;                                    // cap for iters
+  std::vector<typename decltype(s)::iterator> iters; // point within s
+
+ public:
+  ForgetfulUnorderedSet(const Hash& hash, const KeyEqual key_equal, float load_factor, size_t n) : s(0, hash, key_equal), n(n == 0 ? 1 : n) {
+    // ^ n must be positive.
+    // given the context where it is constructed, arg n is never 0 anyways. but this is for safety.
+    // required for precondition below
+    iters.reserve(this->n);
+
+    s.max_load_factor(load_factor);
+    // prevent rehashing by allocating a large enough bucket size. required to prevent iters invalidation
+    s.reserve(this->n);
+  }
+
+  void clear() {
+    s.clear();
+    iters.clear();
+  }
+
+  auto insert(Key k) {
+    auto ret = this->s.insert(k);
+
+    if (likely(this->s.size() > this->n)) {
+      // precondition this->iters not empty
+
+      // element was inserted AND it's now exceeding capacity
+      this->s.erase(*this->iters.begin());
+
+      // treating this->iters like a fixed size array.
+      // erase first element and push_back
+      memmove(this->iters.data(), this->iters.data() + 1, (this->iters.size() - 1) * sizeof(typename decltype(iters)::value_type));
+      *this->iters.rbegin() = ret.first;
+      return ret;
+    }
+
+    if (ret.second) {
+      this->iters.push_back(ret.first);
+    }
+
+    return ret;
+  }
+};
+
 bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
   float lhs, rhs;
   // if from_chars isn't found, get a newer compiler. e.g.

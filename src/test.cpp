@@ -554,6 +554,18 @@ BOOST_AUTO_TEST_CASE(general_numeric_unique_with_parse_failure) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(unique_limit_set) {
+  choose_output out = run_choose("1\n1\n2\n2\n3\n3\n1\n2\n3\n4\n1\n1\n4\n4\n3\n3", {"--unique-use-set", "--unique-limit", "3"});
+  choose_output correct_output{to_vec("1\n2\n3\n4\n1\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_limit) {
+  choose_output out = run_choose("1\n1\n2\n2\n3\n3\n1\n2\n3\n4\n1\n1\n4\n4\n3\n3", {"--unique-limit", "3"});
+  choose_output correct_output{to_vec("1\n2\n3\n4\n1\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
   choose_output out = run_choose("-0\n0\n.0\n1\n1.0\n0001.0", {"--unique-numeric", "--unique-use-set"});
   choose_output correct_output{to_vec("-0\n1\n")};
