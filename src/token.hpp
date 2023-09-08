@@ -376,6 +376,15 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     }();
 
+    // annoying implementation detail, since moves or copies on construction
+    // can't be elided thru std::variant ctor. in a perfect world setup() would
+    // be folded into the ctor, but it can't
+    if (uniqueness_limit_set_T* set = std::get_if<uniqueness_limit_set_T>(&unique_checker)) {
+      set->setup();
+    } else if (unordered_uniqueness_limit_set_T* unordered_set = std::get_if<unordered_uniqueness_limit_set_T>(&unique_checker)) {
+      unordered_set->setup();
+    }
+
     // returns true if output[elem] is unique. requires unique == true
     auto uniqueness_check = [&](indirect elem) -> bool { //
       if (unordered_uniqueness_set_T* unordered_set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
