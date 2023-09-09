@@ -11,6 +11,7 @@
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
+#include "uniqueness_utils.hpp"
 
 /*
 There's a lot going on in this file. It should have complete code coverage. View with:
