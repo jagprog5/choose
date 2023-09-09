@@ -171,15 +171,6 @@ A bonus of this implementation is that uniqueness and sorting can use different 
 
 A drawback is that it can use more memory, since a separate data structure is maintained to determine if new elements are unique. But, there's a degree of control since uniqueness related args are provided. choose can also revert back to the way sort does things by doing `choose -s --uniq`.
 
-## Flushing
-
-```bash
-(echo "4" ; sleep 1 ; echo "3" ; sleep 1 ; echo "3" ; sleep 1 ; echo "5" )\
-  | choose -u --flush
-```
-
-Suppose there is a long running input. choose can apply uniqueness and provide the output at the same time it arrives.
-
 # Matching
 
 Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group form a token. This is like `grep -o`.
@@ -193,6 +184,25 @@ echo "aaabbbccc"\
 bbbccc
 ccc
 </pre>
+
+# Monitoring
+
+Suppose there's an input that's running for a really long time. For example, a python http server, with an output like this:
+
+```txt
+127.0.0.1 - - [08/Sep/2023 22:11:48] "GET /tester.txt HTTP/1.1" 200 -
+192.168.1.42 - - [08/Sep/2023 22:11:58] "GET /tester.txt HTTP/1.1" 200 -
+...
+```
+
+The goal is to monitor the output and print unique IPs:
+
+```bash
+# serves current dir on 8080
+python3 -m http.server --directory . 8080 2>&1 >/dev/null | choose --match --multiline -r "^(?>(?:\d++\.){3})\d++" --unique-limit 1000 --flush
+```
+
+This form of uniqueness keeps the last N unique ips; least recently received ips are forgotten and will appear in the output again. This keeps the memory usage bounded.
 
 # Stream Editing
 
