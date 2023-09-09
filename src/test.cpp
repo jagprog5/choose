@@ -1397,7 +1397,7 @@ BOOST_AUTO_TEST_CASE(parse_number_unsigned) {
 
   auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
-  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "+0"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "0"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "16"), 16);
 
@@ -1418,7 +1418,7 @@ BOOST_AUTO_TEST_CASE(parse_number_signed) {
   auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-128"), -128);
-  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "+127"), +127);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "127"), +127);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "72"), 72);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-72"), -72);
 
@@ -1426,7 +1426,7 @@ BOOST_AUTO_TEST_CASE(parse_number_signed) {
   auto must_be_called = [&]() { ++err_count; };
 
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "-129"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "+128"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "128"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, NULL), 0);
   BOOST_REQUIRE_EQUAL(err_count, 3);
 }
@@ -1437,7 +1437,7 @@ BOOST_AUTO_TEST_CASE(parse_number_pair) {
   using T = std::tuple<char, std::optional<char>>;
 
   BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15,51") == (T{15, 51}));
-  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "+15,-51") == (T{15, -51}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15,-51") == (T{15, -51}));
   BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15") == (T{15, std::nullopt}));
 
   int err_count = 0;
