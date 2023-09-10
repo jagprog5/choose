@@ -87,9 +87,9 @@ here
 
 Transformations can be done in a specified order. This command prints every other word by:
 
-1. Suffixing each token with its arrival order
-2. Filtering for tokens that end with an even number
-3. Substituting to remove the arrival order
+1. Suffixing each token with its arrival order.
+2. Filtering for tokens that end with an even number.
+3. Substituting to remove the arrival order.
 
 ```bash
 echo -n 'every other word is printed here' | \
@@ -112,7 +112,7 @@ Compared to this:
 cat some_content | choose -f "test" --head 5
 ```
 
-The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are contiguous ranges and can contain newline characters, whereas lines can't.
+The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are contiguous ranges and can contain newline characters, whereas lines can't. choose is line oriented by default, but doesn't have to be.
 
 # Sorting and Uniqueness
 
@@ -187,7 +187,7 @@ ccc
 
 # Monitoring
 
-Suppose there's an input that's running for a really long time. For example, a python http server, with an output like this:
+Suppose there's an input that's running for a _really_ long time. For example, a python http server, with an output like this:
 
 ```txt
 127.0.0.1 - - [08/Sep/2023 22:11:48] "GET /tester.txt HTTP/1.1" 200 -
@@ -199,10 +199,14 @@ The goal is to monitor the output and print unique IPs:
 
 ```bash
 # serves current dir on 8080
-python3 -m http.server --directory . 8080 2>&1 >/dev/null | choose --match --multiline -r "^(?>(?:\d++\.){3})\d++" --unique-limit 1000 --flush
+python3 -m http.server --directory . 8080 2>&1 >/dev/null\
+  | choose --match --multiline -r "^(?>(?:\d++\.){3})\d++" --unique-limit 1000 --unique-expiry 900 --flush
 ```
 
-This form of uniqueness keeps the last N unique ips; least recently received ips are forgotten and will appear in the output again. This keeps the memory usage bounded.
+This applies a form of bounded uniqueness in the face of an infinite input; tokens can be forgotten based on space and time constraints, meaning they can pass to the output again:
+
+ - There is a restriction in the number of tokens that can be remembered (`unique-limit`); least recently received tokens are forgotten.
+ - There is a limit on the recentness of tokens (`unique-expiry`); if a token hasn't been seen in a while then it is also forgotten.
 
 # Stream Editing
 

@@ -7,6 +7,7 @@ std::optional<size_t> output_size_bound_testing;
 
 #define BOOST_TEST_MODULE choose_test_module
 #include <boost/test/unit_test.hpp>
+#include <thread>
 #include "args.hpp"
 #include "ncurses_wrapper.hpp"
 #include "token.hpp"
@@ -576,6 +577,99 @@ BOOST_AUTO_TEST_CASE(unique_limit_lru) {
   choose_output out = run_choose("1\n1\n2\n2\n3\n3\n1\n4\n4\n1\n2\n3\n4", {"--tui", "--unique-limit", "3"});
   choose_output correct_output{std::vector<choose::Token>{"1", "2", "3", "4", "2", "3", "4"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_expiry) {
+  // visual inspections also include:
+  // (echo "1";echo "2";echo "3";sleep 1;echo "2";sleep 1;echo "1";echo "2";echo "3") | choose --unique-limit 1000 --unique-expiry 2 --flush
+  // # 12313
+  auto cmp = [](const choose::Token& lhs, const choose::Token& rhs) { //
+    return std::lexicographical_compare(lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
+  };
+
+  auto hash = [](const choose::Token&) {
+    return 0; // lazy, doesn't matter
+  };
+
+  auto eq = [](const choose::Token& lhs, const choose::Token& rhs) { //
+    return lhs.buffer == rhs.buffer;
+  };
+
+  auto delay = std::chrono::milliseconds(10);
+
+  choose::Token token_1(to_vec("1"));
+  choose::Token token_2(to_vec("2"));
+
+  std::atomic_bool has_errors = false;
+  // this test is tempermental for CI / valgrind, where the program is run in an
+  // environment where it can be paused unexpectantly or otherwise take too
+  // long. hence use of local_assert
+  auto local_assert = [&](bool p) {
+    if (!p) {
+      has_errors = true;
+    }
+  };
+
+  // running these tests in parallel since they incur delays.
+  std::thread set_thread([&]() {
+    ForgetfulSet<choose::Token, decltype(cmp)> s(cmp, 2, delay);
+    s.setup();
+    // first insertions are successful
+    local_assert(s.insert(token_2).second);
+    local_assert(s.insert(token_1).second);
+    auto start_time1 = std::chrono::steady_clock::now();
+
+    // spin lock until delay has passed.
+    // deliberately not using sleep_until / sleep_for.
+    // this test is impossible to perfect unless running on a hard real time OS
+    while (start_time1 + delay > std::chrono::steady_clock::now()) {
+      local_assert(!s.insert(token_1).second);
+    }
+
+    // correct token was being refreshed
+    local_assert(!s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
+    auto start_time2 = std::chrono::steady_clock::now();
+    // spin lock until delay has passed
+    while (start_time2 + delay > std::chrono::steady_clock::now()) {
+    }
+    local_assert(s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
+  });
+
+  std::thread unordered_thread([&]() {
+    ForgetfulUnorderedSet<choose::Token, decltype(hash), decltype(eq)> s(hash, eq, 1, 2, delay);
+    s.setup();
+    // first insertions are successful
+    local_assert(s.insert(token_2).second);
+    local_assert(s.insert(token_1).second);
+    auto start_time1 = std::chrono::steady_clock::now();
+
+    // spin lock until delay has passed.
+    // deliberately not using sleep_until / sleep_for.
+    // this test is impossible to perfect unless running on a hard real time OS
+    while (start_time1 + delay > std::chrono::steady_clock::now()) {
+      local_assert(!s.insert(token_1).second);
+    }
+
+    // correct token was being refreshed
+    local_assert(!s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
+    auto start_time2 = std::chrono::steady_clock::now();
+    // spin lock until delay has passed
+    while (start_time2 + delay > std::chrono::steady_clock::now()) {
+    }
+    local_assert(s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
+  });
+
+  set_thread.join();
+  unordered_thread.join();
+
+  if (has_errors) {
+    std::cerr << boost::unit_test::framework::current_test_case().full_name().c_str();
+    std::cerr << ": test failed due to timing. generally ignore this\n";
+  }
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
@@ -1397,7 +1491,7 @@ BOOST_AUTO_TEST_CASE(parse_number_unsigned) {
 
   auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
-  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "+0"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "0"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "4294967295"), 0xFFFFFFFF);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(should_not_be_called, "16"), 16);
 
@@ -1418,7 +1512,7 @@ BOOST_AUTO_TEST_CASE(parse_number_signed) {
   auto should_not_be_called = []() { BOOST_REQUIRE(false); };
 
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-128"), -128);
-  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "+127"), +127);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "127"), +127);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "72"), 72);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(should_not_be_called, "-72"), -72);
 
@@ -1426,7 +1520,7 @@ BOOST_AUTO_TEST_CASE(parse_number_signed) {
   auto must_be_called = [&]() { ++err_count; };
 
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "-129"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "+128"), 0);
+  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "128"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, NULL), 0);
   BOOST_REQUIRE_EQUAL(err_count, 3);
 }
@@ -1437,7 +1531,7 @@ BOOST_AUTO_TEST_CASE(parse_number_pair) {
   using T = std::tuple<char, std::optional<char>>;
 
   BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15,51") == (T{15, 51}));
-  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "+15,-51") == (T{15, -51}));
+  BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15,-51") == (T{15, -51}));
   BOOST_REQUIRE(num::parse_number_pair<char>(should_not_be_called, "15") == (T{15, std::nullopt}));
 
   int err_count = 0;

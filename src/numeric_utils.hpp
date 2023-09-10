@@ -36,6 +36,7 @@ std::optional<T> add_overflow(const T& a, const T& b) {
 }
 
 // parse T from null or comma terminating base 10 string.
+// the string should otherwise only contain digits
 template <typename T, typename OnErr>
 std::enable_if_t<std::is_unsigned<T>::value, T> parse_number(OnErr onErr, const char* str, bool zero_allowed = true, bool max_allowed = true) {
   // this function was surprisingly difficult to make.
@@ -49,10 +50,6 @@ std::enable_if_t<std::is_unsigned<T>::value, T> parse_number(OnErr onErr, const 
     return 0;
   }
   T out = 0;
-
-  if (*str == '+') {
-    ++str;
-  }
 
   while (1) {
     char ch = *str++;
@@ -93,6 +90,7 @@ std::enable_if_t<std::is_unsigned<T>::value, T> parse_number(OnErr onErr, const 
   return out;
 }
 
+// allows a leading negative sign followed by digits
 template <typename T, typename OnErr>
 std::enable_if_t<std::is_signed<T>::value, T> parse_number(OnErr onErr, const char* str) {
   if (str == 0) {
@@ -125,33 +123,42 @@ std::enable_if_t<std::is_signed<T>::value, T> parse_number(OnErr onErr, const ch
 
 template <typename T, typename OnErr>
 std::tuple<T, std::optional<T>> parse_number_pair(OnErr onErr, const char* str) {
-  bool erred = false;
+  if (str == 0) {
+    onErr();
+    return {0, 0};
+  }
+
+  bool erred = false; // parse result
   auto local_on_err = [&]() {
     erred = true;
     onErr();
   };
 
+  // parse the first number
   T first = parse_number<T>(local_on_err, str);
   if (erred) {
     return {0, 0};
   }
+
+  // iterate until terminator
   while (1) {
-    char ch = *str;
+    char ch = *str++;
     if (ch == '\0') {
+      // number pair only had first number
       return {first, std::nullopt};
-    } else if (ch == ',') {
-      ++str;
-      break;
-    } else if (!in(ch, '0', '9') && ch != '+' && ch != '-') {
-      onErr();
-      return {0, 0};
     }
-    ++str;
+
+    if (ch == ',') {
+      // number pair had second number
+      break;
+    }
   }
+
   T second = parse_number<T>(local_on_err, str);
   if (erred) {
     return {0, 0};
   }
+
   return {first, second};
 }
 
