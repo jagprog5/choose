@@ -580,9 +580,6 @@ BOOST_AUTO_TEST_CASE(unique_limit_lru) {
 }
 
 BOOST_AUTO_TEST_CASE(unique_expiry) {
-  // running these tests in parallel since they incur delays.
-  // real time delay of ~20ms for this test
-
   auto cmp = [](const choose::Token& lhs, const choose::Token& rhs) { //
     return std::lexicographical_compare(lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
   };
@@ -595,64 +592,81 @@ BOOST_AUTO_TEST_CASE(unique_expiry) {
     return lhs.buffer == rhs.buffer;
   };
 
-  auto delay = std::chrono::milliseconds(10);
-  auto sixtyfourth_delay = delay / 64;
+  auto delay = std::chrono::milliseconds(25);
 
   choose::Token token_1(to_vec("1"));
   choose::Token token_2(to_vec("2"));
 
+  std::atomic_bool has_errors = false;
   // this test is tempermental for CI / valgrind, where the program is run in an
   // environment where it can be paused unexpectantly or otherwise take too
-  // long. hence use of BOOST_WARN
+  // long. hence use of local_assert
+  auto local_assert = [&](bool p) {
+    if (!p) {
+      has_errors = true;
+    }
+  };
+
+  // running these tests in parallel since they incur delays.
   std::thread set_thread([&]() {
     ForgetfulSet<choose::Token, decltype(cmp)> s(cmp, 2, delay);
     s.setup();
     // first insertions are successful
-    BOOST_WARN(s.insert(token_1).second);
-    BOOST_WARN(s.insert(token_2).second);
+    local_assert(s.insert(token_2).second);
+    local_assert(s.insert(token_1).second);
+    auto start_time1 = std::chrono::steady_clock::now();
 
-    // keeps being refreshed frequently, but the total delay is enough where it
-    // would be stale without the refreshes. this tests relies on the program
-    // not getting externally paused in this section (e.g. the scheduler hasn't
-    // gotten back to this task), such that the small delay is extended too
-    // long.
-    for (int i = 0; i < 64; ++i) {
-      std::this_thread::sleep_for(sixtyfourth_delay);
-      BOOST_WARN(!s.insert(token_1).second);
+    // spin lock until delay has passed.
+    // deliberately not using sleep_until / sleep_for.
+    // this test is impossible to perfect unless running on a hard real time OS
+    while (start_time1 + delay > std::chrono::steady_clock::now()) {
+      local_assert(!s.insert(token_1).second);
     }
+
     // correct token was being refreshed
-    BOOST_WARN(!s.insert(token_1).second);
-    BOOST_WARN(s.insert(token_2).second);
-    std::this_thread::sleep_for(delay);
-    BOOST_WARN(s.insert(token_1).second);
-    BOOST_WARN(s.insert(token_2).second);
+    local_assert(!s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
+    auto start_time2 = std::chrono::steady_clock::now();
+    // spin lock until delay has passed
+    while (start_time2 + delay > std::chrono::steady_clock::now()) {
+    }
+    local_assert(s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
   });
 
   std::thread unordered_thread([&]() {
     ForgetfulUnorderedSet<choose::Token, decltype(hash), decltype(eq)> s(hash, eq, 1, 2, delay);
     s.setup();
     // first insertions are successful
-    BOOST_WARN(s.insert(token_1).second);
-    BOOST_WARN(s.insert(token_2).second);
+    local_assert(s.insert(token_2).second);
+    local_assert(s.insert(token_1).second);
+    auto start_time1 = std::chrono::steady_clock::now();
 
-    // keeps being refreshed frequently, but the total delay
-    // is enough where it would be stale without the refreshes.
-    // this tests relies on the program not getting externally paused
-    // in this section, such that the small delay is extended too long.
-    for (int i = 0; i < 64; ++i) {
-      std::this_thread::sleep_for(sixtyfourth_delay);
-      BOOST_WARN(!s.insert(token_1).second);
+    // spin lock until delay has passed.
+    // deliberately not using sleep_until / sleep_for.
+    // this test is impossible to perfect unless running on a hard real time OS
+    while (start_time1 + delay > std::chrono::steady_clock::now()) {
+      local_assert(!s.insert(token_1).second);
     }
+
     // correct token was being refreshed
-    BOOST_WARN(!s.insert(token_1).second);
-    BOOST_WARN(s.insert(token_2).second);
-    std::this_thread::sleep_for(delay);
-    BOOST_WARN(s.insert(token_1).second);
-    BOOST_WARN(s.insert(token_2).second);
+    local_assert(!s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
+    auto start_time2 = std::chrono::steady_clock::now();
+    // spin lock until delay has passed
+    while (start_time2 + delay > std::chrono::steady_clock::now()) {
+    }
+    local_assert(s.insert(token_1).second);
+    local_assert(s.insert(token_2).second);
   });
 
   set_thread.join();
   unordered_thread.join();
+
+  if (has_errors) {
+    std::cerr << boost::unit_test::framework::current_test_case().full_name().c_str();
+    std::cerr << ": test failed due to timing. generally ignore this\n";
+  }
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
