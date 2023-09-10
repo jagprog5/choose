@@ -580,6 +580,9 @@ BOOST_AUTO_TEST_CASE(unique_limit_lru) {
 }
 
 BOOST_AUTO_TEST_CASE(unique_expiry) {
+  // visual inspections also include:
+  // (echo "1";echo "2";echo "3";sleep 1;echo "2";sleep 1;echo "1";echo "2";echo "3") | choose --unique-limit 1000 --unique-expiry 2 --flush
+  // # 12313
   auto cmp = [](const choose::Token& lhs, const choose::Token& rhs) { //
     return std::lexicographical_compare(lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
   };
