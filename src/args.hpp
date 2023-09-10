@@ -1,6 +1,7 @@
 #pragma once
 #include <getopt.h>
 #include <unistd.h>
+#include <chrono>
 #include <csignal>
 #include <cstring>
 #include <limits>
@@ -49,6 +50,7 @@ struct Arguments {
   bool unique_consecutive = false; // after sorting uniqueness
 
   size_t unique_limit = 0; // 0 indicates unused
+  std::chrono::seconds unique_expiry = std::chrono::seconds::zero();
 
   bool flip = false;
   bool flush = false;
@@ -388,9 +390,12 @@ void print_help_message() {
       "                truncation --out/--tail (use normal -u in these cases instead)\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies -u\n"
+      "        --unique-expiry <# seconds>\n"
+      "                requires --unique-limit. tokens not received again over a\n"
+      "                specified duration are forgotten\n"
       "        --unique-general-numeric\n"
       "                apply uniqueness general numerically. implies -u\n"
-      "        --unique-limit [<#tokens>]\n"
+      "        --unique-limit <#tokens>\n"
       "                implies -u. forget least recently used tokens\n"
       "        --unique-use-set\n"
       "                implies -u. apply uniqueness with a tree instead of a hash table\n"
@@ -506,6 +511,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"load-factor", required_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
+        {"unique-expiry", required_argument, NULL, 0},
         {"unique-limit", required_argument, NULL, 0},
         {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
@@ -690,6 +696,15 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               }
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledReplaceOp(optarg));
+          } else if (strcmp("unique-expiry", name) == 0) {
+            using T = decltype(ret.unique_expiry)::rep;
+            T t = num::parse_number<T>(on_num_err, optarg);
+            if constexpr (std::is_signed<T>::value) {
+              if (t < 0) {
+                on_num_err(); // only positive expiry is allowed
+              }
+            }
+            ret.unique_expiry = std::chrono::seconds(t);
           } else if (strcmp("unique-limit", name) == 0) {
             ret.unique_limit = num::parse_number<decltype(ret.unique_limit)>(on_num_err, optarg, false);
             ret.unique = true;

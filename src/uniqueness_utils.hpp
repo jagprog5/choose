@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstring> // memcpy
 #include <deque>
 #include <list>
@@ -11,20 +12,32 @@ namespace choose {
 namespace {
 
 // used in conjunction with ForgetfulSet or ForgetfulUnorderedSet.
-// this manages the least recently used logic
+// this manages the least recently used logic and expiry logic
 // if a new element is inserted into a uniqueness set, it should also be inserted here.
 // upon insertion here, the least recently used element will be removed from the uniqueness set if capacity is reached.
 template <typename T>
 struct ForgetfulManager {
+  using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
+  using duration_t = typename time_point_t::duration;
+
   T* obj = 0;
 
+  const size_t n;          // elems cap
+  const duration_t expiry; // 0 indicates no expiry - functionality disabled
+
+  struct Entry {
+    typename T::iterator it; // element in set
+    time_point_t t;          // last used time
+  };
+
   // least recently used queue. back is next to be removed. front is most recently used
-  std::list<typename T::iterator> elems;
-  const size_t n; // elems cap
+  std::list<Entry> elems;
 
   using refresh_handle = typename decltype(elems)::iterator;
 
-  ForgetfulManager(size_t n) : n(n == 0 ? 1 : n) {
+  ForgetfulManager(size_t n, //
+                   duration_t expiry = duration_t::zero())
+      : n(n == 0 ? 1 : n), expiry(expiry) {
     // given the context when this is used, n arg is never 0.
     // enforced above for safety.
     // it is required since n==0 means upon insertion of an element into the uniqueness set,
@@ -32,14 +45,29 @@ struct ForgetfulManager {
     // meaning the returned iterator (by ForgetfulSet::insert) would be invalid
   }
 
-  // must be called before using
+  // must be called before using and after all copies or moves of this instance
   void setup(T* obj) { this->obj = obj; }
+
+  // remove expired elements. must be called before attempting insertion in uniqueness set
+  void remove_old() {
+    if (expiry != duration_t::zero()) {
+      while (!elems.empty()) {
+        if (std::chrono::steady_clock::now() - elems.back().t >= expiry) {
+          obj->erase(elems.back().it);
+          elems.pop_back();
+        } else {
+          break;
+        }
+      }
+    }
+  }
 
   // if an insertion into the uniqueness set failed because it already existed,
   // call this function to update the recent-ness of that element
   void refresh(refresh_handle it) {
+    it->t = std::chrono::steady_clock::now();
     if (it == elems.begin()) {
-      // no action is needed. refreshed element is already most recent
+      // no splice is needed. refreshed element is already most recent
     } else {
       // move refreshed element to the front
       elems.splice(elems.begin(), elems, it);
@@ -47,10 +75,11 @@ struct ForgetfulManager {
   }
 
   // call when an insertion into the uniqueness set succeeds
-  void insert(typename T::iterator t) {
-    elems.push_front(t);
+  void insert(typename T::iterator it) {
+    Entry e{it, std::chrono::steady_clock::now()};
+    elems.push_front(e);
     if (likely(elems.size() > n)) {
-      obj->erase(elems.back());
+      obj->erase(elems.back().it);
       elems.pop_back();
     }
   }
@@ -65,7 +94,7 @@ struct ForgetfulManager {
 
 // only remembers last n elements. least recently used forgotten
 template <typename Key, typename Compare>
-class ForgetfulSet {
+struct ForgetfulSet {
   struct KeyInternal {
     Key key;
     // ran into some issues with circular type declarations. refresh_handle's
@@ -80,9 +109,11 @@ class ForgetfulSet {
   ForgetfulManager<decltype(s)> lru;
 
  public:
-  ForgetfulSet(const Compare& comp, size_t n)
+  ForgetfulSet(const Compare& comp, //
+               size_t n,
+               typename decltype(lru)::duration_t expiry = decltype(lru)::duration_t::zero())
       : s(comp), //
-        lru(n) {}
+        lru(n, expiry) {}
 
   // must be called before using and after all copies or moves of this instance
   void setup() { lru.setup(&s); }
@@ -92,6 +123,7 @@ class ForgetfulSet {
   }
 
   auto insert(Key k) {
+    lru.remove_old();
     KeyInternal ki;
     ki.key = k;
     auto ret = this->s.insert(ki);
@@ -126,7 +158,7 @@ class ForgetfulSet {
 
 // largely copy paste from ForgetfulSet.
 template <typename Key, typename Hash, typename KeyEqual>
-class ForgetfulUnorderedSet {
+struct ForgetfulUnorderedSet {
   struct KeyInternal {
     Key key;
     // ran into some issues with circular type declarations. refresh_handle's
@@ -141,7 +173,12 @@ class ForgetfulUnorderedSet {
   ForgetfulManager<decltype(s)> lru;
 
  public:
-  ForgetfulUnorderedSet(const Hash& hash, const KeyEqual key_equal, float load_factor, size_t n) : s(0, hash, key_equal), lru(n) {
+  ForgetfulUnorderedSet(const Hash& hash, //
+                        const KeyEqual key_equal,
+                        float load_factor,
+                        size_t n,
+                        typename decltype(lru)::duration_t expiry = decltype(lru)::duration_t::zero())
+      : s(0, hash, key_equal), lru(n, expiry) {
     s.max_load_factor(load_factor);
     // prevent rehashing by allocating a large enough bucket size. required to
     // prevent iters invalidation. +1 since element is inserted before one is erased to maintain cap
@@ -156,6 +193,7 @@ class ForgetfulUnorderedSet {
   }
 
   auto insert(Key k) {
+    lru.remove_old();
     KeyInternal ki;
     ki.key = k;
     auto ret = this->s.insert(ki);

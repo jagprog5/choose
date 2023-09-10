@@ -7,6 +7,7 @@ std::optional<size_t> output_size_bound_testing;
 
 #define BOOST_TEST_MODULE choose_test_module
 #include <boost/test/unit_test.hpp>
+#include <thread>
 #include "args.hpp"
 #include "ncurses_wrapper.hpp"
 #include "token.hpp"
@@ -576,6 +577,82 @@ BOOST_AUTO_TEST_CASE(unique_limit_lru) {
   choose_output out = run_choose("1\n1\n2\n2\n3\n3\n1\n4\n4\n1\n2\n3\n4", {"--tui", "--unique-limit", "3"});
   choose_output correct_output{std::vector<choose::Token>{"1", "2", "3", "4", "2", "3", "4"}};
   BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
+BOOST_AUTO_TEST_CASE(unique_expiry) {
+  // running these tests in parallel since they incur delays.
+  // real time delay of ~20ms for this test
+
+  auto cmp = [](const choose::Token& lhs, const choose::Token& rhs) { //
+    return std::lexicographical_compare(lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
+  };
+
+  auto hash = [](const choose::Token&) {
+    return 0; // lazy, doesn't matter
+  };
+
+  auto eq = [](const choose::Token& lhs, const choose::Token& rhs) { //
+    return lhs.buffer == rhs.buffer;
+  };
+
+  auto delay = std::chrono::milliseconds(10);
+  auto sixtyfourth_delay = delay / 64;
+
+  choose::Token token_1(to_vec("1"));
+  choose::Token token_2(to_vec("2"));
+
+  // this test is tempermental for CI / valgrind, where the program is run in an
+  // environment where it can be paused unexpectantly or otherwise take too
+  // long. hence use of BOOST_WARN
+  std::thread set_thread([&]() {
+    ForgetfulSet<choose::Token, decltype(cmp)> s(cmp, 2, delay);
+    s.setup();
+    // first insertions are successful
+    BOOST_WARN(s.insert(token_1).second);
+    BOOST_WARN(s.insert(token_2).second);
+
+    // keeps being refreshed frequently, but the total delay is enough where it
+    // would be stale without the refreshes. this tests relies on the program
+    // not getting externally paused in this section (e.g. the scheduler hasn't
+    // gotten back to this task), such that the small delay is extended too
+    // long.
+    for (int i = 0; i < 64; ++i) {
+      std::this_thread::sleep_for(sixtyfourth_delay);
+      BOOST_WARN(!s.insert(token_1).second);
+    }
+    // correct token was being refreshed
+    BOOST_WARN(!s.insert(token_1).second);
+    BOOST_WARN(s.insert(token_2).second);
+    std::this_thread::sleep_for(delay);
+    BOOST_WARN(s.insert(token_1).second);
+    BOOST_WARN(s.insert(token_2).second);
+  });
+
+  std::thread unordered_thread([&]() {
+    ForgetfulUnorderedSet<choose::Token, decltype(hash), decltype(eq)> s(hash, eq, 1, 2, delay);
+    s.setup();
+    // first insertions are successful
+    BOOST_WARN(s.insert(token_1).second);
+    BOOST_WARN(s.insert(token_2).second);
+
+    // keeps being refreshed frequently, but the total delay
+    // is enough where it would be stale without the refreshes.
+    // this tests relies on the program not getting externally paused
+    // in this section, such that the small delay is extended too long.
+    for (int i = 0; i < 64; ++i) {
+      std::this_thread::sleep_for(sixtyfourth_delay);
+      BOOST_WARN(!s.insert(token_1).second);
+    }
+    // correct token was being refreshed
+    BOOST_WARN(!s.insert(token_1).second);
+    BOOST_WARN(s.insert(token_2).second);
+    std::this_thread::sleep_for(delay);
+    BOOST_WARN(s.insert(token_1).second);
+    BOOST_WARN(s.insert(token_2).second);
+  });
+
+  set_thread.join();
+  unordered_thread.join();
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {

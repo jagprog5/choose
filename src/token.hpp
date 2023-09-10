@@ -358,7 +358,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (args.unique_limit == 0) {
             return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
           } else {
-            return unique_checker_T(uniqueness_limit_set_T(uniqueness_set_comparison, args.unique_limit));
+            return unique_checker_T(uniqueness_limit_set_T(uniqueness_set_comparison, args.unique_limit, args.unique_expiry));
           }
         } else {
           if (args.unique_limit == 0) {
@@ -369,7 +369,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             return unique_checker_T(unordered_uniqueness_limit_set_T(unordered_set_hash,      //
                                                                      unordered_set_equals,    //
                                                                      args.unique_load_factor, //
-                                                                     args.unique_limit));
+                                                                     args.unique_limit,       //
+                                                                     args.unique_expiry));
           }
         }
       } else {

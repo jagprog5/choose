@@ -199,10 +199,11 @@ The goal is to monitor the output and print unique IPs:
 
 ```bash
 # serves current dir on 8080
-python3 -m http.server --directory . 8080 2>&1 >/dev/null | choose --match --multiline -r "^(?>(?:\d++\.){3})\d++" --unique-limit 1000 --flush
+python3 -m http.server --directory . 8080 2>&1 >/dev/null\
+  | choose --match --multiline -r "^(?>(?:\d++\.){3})\d++" --unique-limit 1000 --unique-expiry 900 --flush
 ```
 
-This form of uniqueness keeps the last N unique ips; least recently received ips are forgotten and will appear in the output again. This keeps the memory usage bounded.
+This form of uniqueness keeps the last N unique ips; least recently received ips are forgotten and will appear in the output again. This keeps the memory usage bounded. ips are also forgotten if they haven't been seen in a while.
 
 # Stream Editing
 
