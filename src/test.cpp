@@ -592,7 +592,7 @@ BOOST_AUTO_TEST_CASE(unique_expiry) {
     return lhs.buffer == rhs.buffer;
   };
 
-  auto delay = std::chrono::milliseconds(25);
+  auto delay = std::chrono::milliseconds(10);
 
   choose::Token token_1(to_vec("1"));
   choose::Token token_2(to_vec("2"));
