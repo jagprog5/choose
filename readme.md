@@ -18,7 +18,7 @@ Also it's fast. See benchmarks [here](./perf/perf.md) comparing choose to other 
 
 ## Install
 ```bash
-sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
+sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev libtbb-dev
 git clone https://github.com/jagprog5/choose.git && cd choose
 make install
 source ~/.bashrc
@@ -187,7 +187,7 @@ ccc
 
 # Monitoring
 
-Suppose there's an input that's running for a _really_ long time. For example, a python http server, with an output like this:
+Suppose there's an input that's running for a _long_ time. For example, a python http server, with an output like:
 
 ```txt
 127.0.0.1 - - [08/Sep/2023 22:11:48] "GET /tester.txt HTTP/1.1" 200 -
@@ -199,8 +199,11 @@ The goal is to monitor the output and print unique IPs:
 
 ```bash
 # serves current dir on 8080
-python3 -m http.server --directory . 8080 2>&1 >/dev/null\
-  | choose --match --multiline -r "^(?>(?:\d++\.){3})\d++" --unique-limit 1000 --unique-expiry 900 --flush
+python3 -u -m http.server --directory . 8080 2>&1 >/dev/null\
+  | choose --match --multiline -r '^(?:\d++\.){3}\d++' \
+      --unique-limit 1000\
+      --unique-expiry 900\
+      --flush
 ```
 
 This applies a form of bounded uniqueness in the face of an infinite input; tokens can be forgotten based on space and time constraints, meaning they can pass to the output again:
@@ -249,20 +252,10 @@ sed can't make a substitution if the target contains the delimiter (a newline ch
 `ch_hist` is a bash function installed with choose. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
 
 ```txt
-  git log --oneline
-  top
-  cat temp.txt
-  git commit --amend
-  git push
-  clear
-  cd ~/
-  ls
-  cd choose/
-  git pull
   cd build
   rm -rf *
   cmake ..
-  sudo make install
+  make install
 > choose -h
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │Select a line to edit then run.                                                 │
@@ -271,6 +264,7 @@ sed can't make a substitution if the target contains the delimiter (a newline ch
 ## Examples
 
 ```bash
+ch_hist
 ch_hist git
 ch_hist hello there
 ```

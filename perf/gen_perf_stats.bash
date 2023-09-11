@@ -5,6 +5,9 @@
 set -e
 sudo echo -n '' # do nothing. perf requires sudo. doing the prompt at the beginning
 
+# fairer performance for sort
+export LC_ALL=C
+
 # e.g. -n makes the benchmarks apply sorting and uniqueness numerically (but not for just uniqueness since awk doesn't support this)
 COMP_FLAGS=
 

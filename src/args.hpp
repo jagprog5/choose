@@ -117,6 +117,13 @@ struct Arguments {
     return is_direct_output() && !unique;
   }
 
+  // the elements in output vector are being inserted with any excess being discarded
+  bool mem_is_bounded() const {
+    return out_end.has_value()   //
+           && !truncate_no_bound //
+           && (unique ? sort && unique_type == sort_type : true);
+  }
+
   void drop_warning() {
     if (this->can_drop_warn) {
       this->can_drop_warn = false;
@@ -134,8 +141,9 @@ struct Arguments {
 namespace {
 
 struct UncompiledCodes {
-  // all args must be parsed before the args are compiled
-  // the uncompiled args are stored here before transfer to the Arguments output.
+  // all args must be parsed before the args are compiled. the uncompiled args
+  // are stored here before transfer to the Arguments output. this also contains
+  // fields that aren't needed in the rest of the program, past the arg parsing
   uint32_t re_options = PCRE2_LITERAL;
   std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
@@ -151,6 +159,8 @@ struct UncompiledCodes {
   // needed since they take default values
   bool bout_delimiter_set = false;
   bool primary_set = false;
+
+  bool is_bounded_query = false;
 
   void compile(Arguments& output) const {
     for (const uncompiled::UncompiledOrderedOp& op : ordered_ops) {
@@ -315,6 +325,9 @@ void print_help_message() {
       "                must have at least one digit. parse failures are smallest\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
+      "        --is-bounded\n"
+      "                prints a line indicating if the memory usage is bounded from\n"
+      "                truncation (--out/--tail), then exits\n"
       "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
       "                if a hash table is used for uniqueness, set the max load factor\n"
       "        --locale <locale>\n"
@@ -375,19 +388,19 @@ void print_help_message() {
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
       "        --truncate-no-bound\n"
-      "                if truncation is specified (--out/--tail) and uniqueness is not\n"
-      "                specified, then choose only retains the relevant n values in\n"
-      "                memory. This is only faster for small values of n, as elements\n"
-      "                are shifted within this storage space. If n is large, this\n"
-      "                option should be used to disable this optimization, leading to\n"
-      "                faster speed but more space used\n"
+      "                if truncation is specified (--out/--tail) then choose may retain\n"
+      "                only the relevant n values in memory. see --is-bounded. this is\n"
+      "                faster for small values of n, as elements are shifted within\n"
+      "                this storage space. If n is large, this option should be used to\n"
+      "                disable this optimization\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences. applied\n"
       "                before sorting\n"
       "        --uniq\n"
       "                unrelated to any other uniqueness options. after sorting, remove\n"
-      "                consecutive duplicate elements. requires --sort. ignored by\n"
-      "                truncation --out/--tail (use normal -u in these cases instead)\n"
+      "                consecutive duplicate elements. requires --sort. ignored if\n"
+      "                memory is bounded from truncation (see --is-bounded. use normal\n"
+      "                -u in these cases instead)\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies -u\n"
       "        --unique-expiry <# seconds>\n"
@@ -396,9 +409,11 @@ void print_help_message() {
       "        --unique-general-numeric\n"
       "                apply uniqueness general numerically. implies -u\n"
       "        --unique-limit <#tokens>\n"
-      "                implies -u. forget least recently used tokens\n"
+      "                implies -u. forget least recently used tokens. ignored if memory\n"
+      "                is bounded from truncation (see --is-bounded)\n"
       "        --unique-use-set\n"
       "                implies -u. apply uniqueness with a tree instead of a hash table\n"
+      "                ignored if memory is bounded from truncation (see --is-bounded)\n"
       "        --use-delimiter\n"
       "                don't ignore a delimiter at the end of the input\n"
       "        --utf\n"
@@ -527,6 +542,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"flip", no_argument, NULL, 0},
         {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
+        {"is-bounded", no_argument, NULL, 0},
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
@@ -776,6 +792,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("unique-general-numeric", name) == 0) {
             ret.unique = true;
             ret.unique_type = general_numeric;
+          } else if (strcmp("is-bounded", name) == 0) {
+            uncompiled_output.is_bounded_query = true;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -996,6 +1014,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       fputs("--sed is incompatible with options that prevents direct output, including: sorting, reverse, and tui.\n", stderr);
       exit(EXIT_FAILURE);
     }
+  }
+
+  if (uncompiled_output.is_bounded_query) {
+    int exit_code = puts(ret.mem_is_bounded() ? "yes" : "no") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    exit(exit_code);
   }
 
   if (isatty(fileno(ret.input))) {

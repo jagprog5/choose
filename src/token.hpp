@@ -182,7 +182,7 @@ struct TokenOutputStream {
   }
 };
 
-// leads to an exit unless this is a unit test
+// exit unless this is a unit test
 struct termination_request : public std::exception {};
 
 namespace {
@@ -243,14 +243,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   const bool sort = args.sort;
   const Comparison sort_type = args.sort_type;
   const bool sort_reversed = args.sort_reverse;
-
-  // the elements in output are being inserted with any excess being discarded.
-  // this branch is incompatible with uniqueness since the data structures point
-  // within output, and if things are moving around then the iterators' elements
-  // are also moved. this makes sense anyway, since if uniqueness is specified,
-  // then choose needs to keep track of what has been seen before (can't be
-  // bounded). this var also could be named "output_size_is_bounded"
-  const bool output_is_shifting = args.out_end.has_value() && !unique && !args.truncate_no_bound;
+  const bool mem_is_bounded = args.mem_is_bounded();
 
   char subject[args.buf_size]; // match buffer
   size_t subject_size = 0;     // how full is the buffer
@@ -439,7 +432,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
 #ifndef CHOOSE_DISABLE_FIELD
         t.set_field(args.field, field_data);
 #endif
-        if (!output_is_shifting) {
+        if (!mem_is_bounded) {
           // typical case
           output.push_back(std::move(t));
           if (unique) {
@@ -450,24 +443,28 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             }
           }
         } else {
-          // output size is bounded.
-          // precondition here is that unique is false. but everything else should be handled
+          // output size is bounded. from --tail or --out
           if (sort) {
             // note that the sorting is reversed if tail is used. so this
             // handles tail and non tail cases. see UncompiledCodes.
-            // always a stable sort, given insertion position
             auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, sort_comparison);
-            if (likely(output.size() == *args.out_end)) {
-              // a faster branch that avoids any vector realloc logic.
-              // it's basically a fixed length buffer at this point
-              while (insertion_pos < output.end()) {
-                std::swap(*insertion_pos++, t);
+            if (!unique || (insertion_pos == output.begin() || !consecutive_equality_predicate(insertion_pos[-1], t))) {
+              // uniqueness is not used, or t does not yet exist in output
+              if (likely(output.size() == *args.out_end)) {
+                while (insertion_pos < output.end()) {
+                  std::swap(*insertion_pos++, t);
+                }
+                return false;
+              } else {
+                output.insert(insertion_pos, std::move(t));
               }
-              return false;
             } else {
-              output.insert(insertion_pos, std::move(t));
+              // unique is being used and t already exists in the output
+              return false;
             }
           } else {
+            // unsorted memory bounded case.
+            // precondition unique is false (can't be applied in a mem bounded way)
             if (tail && likely(output.size() == *args.out_end)) {
               // same reasoning as above. fixed length buffer being moved around
               auto it = output.rbegin();
@@ -575,7 +572,7 @@ after_direct_apply:
       } else {
         check_unique_then_append(); // result ignored
         // handle the case mentioned in check_unique_then_append
-        if (output_is_shifting && !sort && !tail) {
+        if (mem_is_bounded && !sort && !tail) {
           if (output.size() == *args.out_end) {
             return true;
           }
@@ -877,7 +874,7 @@ skip_read: // do another iteration but don't read in any more bytes
       }
     } else {
       // truncate the ends, leaving only the beginning elements
-      if (output_is_shifting) {
+      if (mem_is_bounded) {
         // sort and end truncation has already been applied
       } else {
         // truncate the end
