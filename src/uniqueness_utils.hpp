@@ -15,9 +15,9 @@ namespace {
 // this manages the least recently used logic and expiry logic
 // if a new element is inserted into a uniqueness set, it should also be inserted here.
 // upon insertion here, the least recently used element will be removed from the uniqueness set if capacity is reached.
-template <typename T>
+template <typename T, typename Clock_T>
 struct ForgetfulManager {
-  using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
+  using time_point_t = std::chrono::time_point<Clock_T>;
   using duration_t = typename time_point_t::duration;
 
   T* obj = 0;
@@ -52,7 +52,7 @@ struct ForgetfulManager {
   void remove_old() {
     if (expiry != duration_t::zero()) {
       while (!elems.empty()) {
-        if (std::chrono::steady_clock::now() - elems.back().t >= expiry) {
+        if (Clock_T::now() - elems.back().t >= expiry) {
           obj->erase(elems.back().it);
           elems.pop_back();
         } else {
@@ -65,7 +65,7 @@ struct ForgetfulManager {
   // if an insertion into the uniqueness set failed because it already existed,
   // call this function to update the recent-ness of that element
   void refresh(refresh_handle it) {
-    it->t = std::chrono::steady_clock::now();
+    it->t = Clock_T::now();
     if (it == elems.begin()) {
       // no splice is needed. refreshed element is already most recent
     } else {
@@ -76,7 +76,7 @@ struct ForgetfulManager {
 
   // call when an insertion into the uniqueness set succeeds
   void insert(typename T::iterator it) {
-    Entry e{it, std::chrono::steady_clock::now()};
+    Entry e{it, Clock_T::now()};
     elems.push_front(e);
     if (likely(elems.size() > n)) {
       obj->erase(elems.back().it);
@@ -93,7 +93,7 @@ struct ForgetfulManager {
 } // namespace
 
 // only remembers last n elements. least recently used forgotten
-template <typename Key, typename Compare>
+template <typename Key, typename Compare, typename Clock_T = std::chrono::steady_clock>
 struct ForgetfulSet {
   struct KeyInternal {
     Key key;
@@ -106,7 +106,7 @@ struct ForgetfulSet {
   };
 
   std::set<KeyInternal, Compare> s;
-  ForgetfulManager<decltype(s)> lru;
+  ForgetfulManager<decltype(s), Clock_T> lru;
 
  public:
   ForgetfulSet(const Compare& comp, //
@@ -157,7 +157,7 @@ struct ForgetfulSet {
 };
 
 // largely copy paste from ForgetfulSet.
-template <typename Key, typename Hash, typename KeyEqual>
+template <typename Key, typename Hash, typename KeyEqual, typename Clock_T = std::chrono::steady_clock>
 struct ForgetfulUnorderedSet {
   struct KeyInternal {
     Key key;
@@ -170,7 +170,7 @@ struct ForgetfulUnorderedSet {
   };
 
   std::unordered_set<KeyInternal, Hash, KeyEqual> s;
-  ForgetfulManager<decltype(s)> lru;
+  ForgetfulManager<decltype(s), Clock_T> lru;
 
  public:
   ForgetfulUnorderedSet(const Hash& hash, //

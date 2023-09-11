@@ -14,7 +14,7 @@ project(choose)
 add_executable(choose src/main.cpp)
 target_include_directories(choose PRIVATE src)
 
-target_compile_options(choose PRIVATE -Wall -Wextra -O3 -fno-rtti)
+target_compile_options(choose PRIVATE -Wall -Wextra -O3)
 
 set(CURSES_NEED_NCURSES TRUE)
 set(CURSES_NEED_WIDE TRUE)
@@ -28,6 +28,11 @@ pkg_check_modules(PCRE REQUIRED libpcre2-8)
 
 target_include_directories(choose PRIVATE ${PCRE_INCLUDEDIR})
 target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES})
+
+# this shouldn't be required most of the time
+# https://stackoverflow.com/a/73572122/15534181
+find_package(TBB REQUIRED)
+target_link_libraries(choose PRIVATE TBB::tbb)
 
 if (NO_SCROLL_BORDER)
   target_compile_definitions(choose PRIVATE
@@ -52,7 +57,7 @@ if(BUILD_TESTING)
   add_executable(unit_tests src/test.cpp)
   target_include_directories(unit_tests PRIVATE src)
   # -O0 gives better coverage info than -Og
-  target_compile_options(unit_tests PRIVATE -Wall -Wextra -O0 -g -fno-rtti)
+  target_compile_options(unit_tests PRIVATE -Wall -Wextra -O0 -g)
 
   target_include_directories(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_HEADER_NAME})
   target_link_libraries(unit_tests PRIVATE ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
@@ -63,6 +68,8 @@ if(BUILD_TESTING)
 
   target_include_directories(unit_tests PRIVATE ${PCRE_INCLUDEDIR})
   target_link_libraries(unit_tests PRIVATE ${PCRE_LIBRARIES})
+
+  target_link_libraries(unit_tests PRIVATE TBB::tbb)
 
   if (DISABLE_FIELD)
     target_compile_definitions(unit_tests PRIVATE

@@ -46,6 +46,7 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
 bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
   float lhs, rhs;
   // if from_chars isn't found, get a newer compiler. e.g.
+  //    add-apt-repository -y ppa:ubuntu-toolchain-r/test
   //    apt-get install g++-11
   //    cd build && cmake .. -DCMAKE_C_COMPILER=gcc-11 -DCMAKE_CXX_COMPILER=g++-11
   std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);

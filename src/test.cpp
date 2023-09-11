@@ -579,6 +579,17 @@ BOOST_AUTO_TEST_CASE(unique_limit_lru) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+// simulate passage of time
+struct FakeClock {
+  using duration = std::chrono::nanoseconds;
+  using rep = duration::rep;
+  using period = duration::period;
+  using time_point = std::chrono::time_point<FakeClock, duration>;
+  static time_point now() { return FakeClock::seconds_since_epoch; }
+
+  inline static time_point seconds_since_epoch; // set this
+};
+
 BOOST_AUTO_TEST_CASE(unique_expiry) {
   // visual inspections also include:
   // (echo "1";echo "2";echo "3";sleep 1;echo "2";sleep 1;echo "1";echo "2";echo "3") | choose --unique-limit 1000 --unique-expiry 2 --flush
@@ -595,80 +606,62 @@ BOOST_AUTO_TEST_CASE(unique_expiry) {
     return lhs.buffer == rhs.buffer;
   };
 
-  auto delay = std::chrono::milliseconds(10);
+  auto delay = FakeClock::duration(64); // time until staleness
 
   choose::Token token_1(to_vec("1"));
   choose::Token token_2(to_vec("2"));
+  choose::Token token_3(to_vec("3"));
 
-  std::atomic_bool has_errors = false;
-  // this test is tempermental for CI / valgrind, where the program is run in an
-  // environment where it can be paused unexpectantly or otherwise take too
-  // long. hence use of local_assert
-  auto local_assert = [&](bool p) {
-    if (!p) {
-      has_errors = true;
-    }
-  };
-
-  // running these tests in parallel since they incur delays.
-  std::thread set_thread([&]() {
-    ForgetfulSet<choose::Token, decltype(cmp)> s(cmp, 2, delay);
+  {
+    FakeClock::seconds_since_epoch = FakeClock::time_point();
+    ForgetfulSet<choose::Token, decltype(cmp), FakeClock> s(cmp, 2, delay);
     s.setup();
     // first insertions are successful
-    local_assert(s.insert(token_2).second);
-    local_assert(s.insert(token_1).second);
-    auto start_time1 = std::chrono::steady_clock::now();
+    BOOST_REQUIRE(s.insert(token_1).second);
+    BOOST_REQUIRE(s.insert(token_2).second);
+    BOOST_REQUIRE(s.insert(token_3).second);
 
-    // spin lock until delay has passed.
-    // deliberately not using sleep_until / sleep_for.
-    // this test is impossible to perfect unless running on a hard real time OS
-    while (start_time1 + delay > std::chrono::steady_clock::now()) {
-      local_assert(!s.insert(token_1).second);
+    // refresh token 1 over a staleness period, until 2 is now stale
+    for (int i = 0; i < 4; ++i) {
+      BOOST_REQUIRE(!s.insert(token_2).second);
+      FakeClock::seconds_since_epoch += delay / 4;
     }
 
     // correct token was being refreshed
-    local_assert(!s.insert(token_1).second);
-    local_assert(s.insert(token_2).second);
-    auto start_time2 = std::chrono::steady_clock::now();
-    // spin lock until delay has passed
-    while (start_time2 + delay > std::chrono::steady_clock::now()) {
-    }
-    local_assert(s.insert(token_1).second);
-    local_assert(s.insert(token_2).second);
-  });
+    BOOST_REQUIRE(s.insert(token_1).second);
+    BOOST_REQUIRE(!s.insert(token_2).second);
+    BOOST_REQUIRE(s.insert(token_3).second);
 
-  std::thread unordered_thread([&]() {
-    ForgetfulUnorderedSet<choose::Token, decltype(hash), decltype(eq)> s(hash, eq, 1, 2, delay);
+    FakeClock::seconds_since_epoch += delay;
+    BOOST_REQUIRE(s.insert(token_1).second);
+    BOOST_REQUIRE(s.insert(token_2).second);
+    BOOST_REQUIRE(s.insert(token_3).second);
+  }
+
+  {
+    FakeClock::seconds_since_epoch = FakeClock::time_point();
+    ForgetfulUnorderedSet<choose::Token, decltype(hash), decltype(eq), FakeClock> s(hash, eq, 1, 2, delay);
     s.setup();
     // first insertions are successful
-    local_assert(s.insert(token_2).second);
-    local_assert(s.insert(token_1).second);
-    auto start_time1 = std::chrono::steady_clock::now();
+    BOOST_REQUIRE(s.insert(token_1).second);
+    BOOST_REQUIRE(s.insert(token_2).second);
+    BOOST_REQUIRE(s.insert(token_3).second);
 
-    // spin lock until delay has passed.
-    // deliberately not using sleep_until / sleep_for.
-    // this test is impossible to perfect unless running on a hard real time OS
-    while (start_time1 + delay > std::chrono::steady_clock::now()) {
-      local_assert(!s.insert(token_1).second);
+    // refresh token 1 over a staleness period, until 2 is now stale
+    for (int i = 0; i < 4; ++i) {
+      BOOST_REQUIRE(!s.insert(token_2).second);
+      FakeClock::seconds_since_epoch += delay / 4;
     }
 
     // correct token was being refreshed
-    local_assert(!s.insert(token_1).second);
-    local_assert(s.insert(token_2).second);
-    auto start_time2 = std::chrono::steady_clock::now();
-    // spin lock until delay has passed
-    while (start_time2 + delay > std::chrono::steady_clock::now()) {
-    }
-    local_assert(s.insert(token_1).second);
-    local_assert(s.insert(token_2).second);
-  });
+    BOOST_REQUIRE(s.insert(token_1).second);
+    BOOST_REQUIRE(!s.insert(token_2).second);
+    BOOST_REQUIRE(s.insert(token_3).second);
 
-  set_thread.join();
-  unordered_thread.join();
-
-  if (has_errors) {
-    std::cerr << boost::unit_test::framework::current_test_case().full_name().c_str();
-    std::cerr << ": test failed due to timing. generally ignore this\n";
+    FakeClock::seconds_since_epoch += delay;
+    BOOST_REQUIRE(s.insert(token_1).second);
+    BOOST_REQUIRE(s.insert(token_2).second);
+    BOOST_REQUIRE(s.insert(token_3).second);
   }
 }
 
