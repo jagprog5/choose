@@ -15,6 +15,10 @@ std::optional<size_t> output_size_bound_testing;
 /*
 valgrind should give a clean bill of health:
 valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt ./unit_tests
+with one exception:
+on some platforms, tbb is used in the backend for std::execution.
+if tbb is used, then valgrind might indicate memory leaks. it uses an arena thread that doesn't clean up in time before termination.
+ - https://github.com/oneapi-src/oneTBB/issues/206
 */
 
 using namespace choose;
