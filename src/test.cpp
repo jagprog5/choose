@@ -18,6 +18,7 @@ valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose -
 with one exception:
 on some platforms, tbb is used in the backend for std::execution.
 if tbb is used, then valgrind might indicate memory leaks. it uses an arena thread that doesn't clean up in time before termination.
+looks like "by 0x48D6B6F: ??? (in /usr/lib/x86_64-linux-gnu/libtbb.so.2)"
  - https://github.com/oneapi-src/oneTBB/issues/206
 */
 

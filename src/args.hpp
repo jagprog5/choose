@@ -408,7 +408,7 @@ void print_help_message() {
       "        --unique-general-numeric\n"
       "                apply uniqueness general numerically. implies -u\n"
       "        --unique-limit <#tokens>\n"
-      "                implies -u. forget least recently used tokens. ignore if memory\n"
+      "                implies -u. forget least recently used tokens. ignored if memory\n"
       "                is bounded due to truncation (see --is-bounded)\n"
       "        --unique-use-set\n"
       "                implies -u. apply uniqueness with a tree instead of a hash table\n"

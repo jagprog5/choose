@@ -20,7 +20,7 @@ Also note the compile time option called `DISABLE_FIELD`. It disables the `--fie
 
 ### Sorting, and Sorting + Uniqueness
 
-In most cases, `choose` is faster than `sort` and `sort -u` at sorting and sorting + uniqueness, respectively. Note however that the c locale isn't used for comparisons, and again it is the task clock that is reported.
+`sort` is using naive byte order (via `LC_ALL=C`), as this is the fairest. `sort` is faster than `choose` at sorting. If truncation is leveraged, or if there are many duplicates (when applying uniqueness as well), then `choose` is faster than `sort`.
 
 ## Input Data
 
@@ -82,80 +82,80 @@ garbage,5,garbage
 
 ### Versions
 ```txt
-choose 0.3.0, ncurses 6.1.20180127, pcre2 10.42
-pcre2grep version 10.42 2022-12-11
-sed (GNU sed) 4.4
-GNU Awk 4.1.4, API: 1.1 (GNU MPFR 4.0.1, GNU MP 6.1.2)
-sort (GNU coreutils) 8.28
+choose 0.3.0, ncurses 6.2.20200212, pcre2 10.43
+pcre2grep version 10.43-DEV 2023-04-14
+sed (GNU sed) 4.7
+GNU Awk 5.0.1, API: 2.0 (GNU MPFR 4.0.2, GNU MP 6.2.0)
+sort (GNU coreutils) 8.30
 ```
 ### Specs
 ```txt
 5.15.90.1-microsoft-standard-WSL2
-Intel(R) Core(TM) i5-8600K CPU @ 3.60GHz
-ram: 8116584 kB
+AMD Ryzen 7 3800X 8-Core Processor
+ram: 16331032 kB
 ```
 
 ### Grepping
 
 | (ms)             | choose | pcre2grep  |
 |------------------|--------|------------|
-| plain_text       | 238.334100 | 246.104400 | 
-| test_repeated    | 1536.390100 | 1446.540000 | 
-| no_duplicates    | 321.083200 | 313.054700 | 
+| plain_text       | 247.17 | 269.69 | 
+| test_repeated    | 1620.34 | 1583.77 | 
+| no_duplicates    | 323.59 | 370.16 | 
 
 ### Stream Editing
 
 | (ms)             | choose | sed  |
 |------------------|--------|------|
-| plain_text       | 173.019600 | 156.455300 | 
-| test_repeated    | 2563.258500 | 1024.358400 | 
-| no_duplicates    | 8.424300 | 46.834200 | 
+| plain_text       | 179.57 | 135.57 | 
+| test_repeated    | 2725.50 | 1157.39 | 
+| no_duplicates    | 5.10 | 44.00 | 
 
 (here is a cherry picked great case for choose compared to sed)
 
 | (ms)             | choose | sed (with newline delimiter) |
 |------------------|--------|------|
-| no_duplicates    | 8.245600 | 437.878300 | 
+| no_duplicates    | 5.13 | 543.93 | 
 
 (a special case, where choose cheats by using a literal replacement string)
 
 | (ms)             | choose (delimiter sub) | sed |
 |------------------|------------------------|-----|
-| test_repeated    | 1457.271000 | 1010.783600 | 
+| test_repeated    | 1521.93 | 1156.64 | 
 
 ### Sorting 
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 694.556000 | 1905.257700 | 
-| test_repeated    | 2226.087400 | 1987.113500 | 
-| no_duplicates    | 2120.992700 | 5092.179100 | 
+| plain_text       | 1628.88 | 448.06 | 
+| test_repeated    | 1850.89 | 1616.13 | 
+| no_duplicates    | 3714.94 | 1036.93 | 
 
 (a special case that leverages truncation)
 
 | (ms)             | choose -s --out 5 | sort \| head -n 5 |
 |------------------|--------|------|
-| no_duplicates    | 251.069600 | 5063.083100 | 
+| no_duplicates    | 354.20 | 1059.81 | 
 
 ### Uniqueness 
 
 | (ms)             | choose | awk |
 |------------------|--------|-----|
-| plain_text       | 114.649800 | 208.971700 | 
-| test_repeated    | 578.412600 | 972.325200 | 
-| no_duplicates    | 2480.435700 | 1477.912300 | 
+| plain_text       | 111.95 | 214.41 | 
+| test_repeated    | 565.31 | 1147.75 | 
+| no_duplicates    | 2340.37 | 1496.42 | 
 
 ### Sorting and Uniqueness   -u
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| plain_text       | 106.970100 | 1906.801600 | 
-| test_repeated    | 574.516000 | 1961.279100 | 
-| no_duplicates    | 4165.485200 | 5670.807600 | 
+| plain_text       | 122.80 | 440.57 | 
+| test_repeated    | 558.86 | 1640.79 | 
+| no_duplicates    | 5742.11 | 1168.84 | 
 
 
 ### Sorting and Uniqueness based on field   -u
 
 | (ms)             | choose | sort |
 |------------------|--------|------|
-| csv_field        | 1779.289000 | 1987.503500 | 
+| csv_field        | 2770.27 | 474.02 | 
