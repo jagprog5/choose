@@ -31,7 +31,7 @@ target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES})
 
 # https://stackoverflow.com/a/74755391/15534181
 # optional link here since sometimes it's ok not to have. this is the least invasive
-find_package(TBB)
+find_package(TBB QUIET)
 if(TBB_FOUND)
   target_link_libraries(choose PRIVATE TBB::tbb)
 endif()
