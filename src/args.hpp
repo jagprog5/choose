@@ -107,8 +107,6 @@ struct Arguments {
   // disable or allow warning
   bool can_drop_warn = true;
 
-  bool is_bounded_query = false;
-
   // a special case where the tokens can be sent directly to the output as they are received
   bool is_direct_output() const { //
     return !tui && !sort && !flip && !tail;
@@ -143,8 +141,9 @@ struct Arguments {
 namespace {
 
 struct UncompiledCodes {
-  // all args must be parsed before the args are compiled
-  // the uncompiled args are stored here before transfer to the Arguments output.
+  // all args must be parsed before the args are compiled. the uncompiled args
+  // are stored here before transfer to the Arguments output. this also contains
+  // fields that aren't needed in the rest of the program, past the arg parsing
   uint32_t re_options = PCRE2_LITERAL;
   std::vector<uncompiled::UncompiledOrderedOp> ordered_ops;
 
@@ -160,6 +159,8 @@ struct UncompiledCodes {
   // needed since they take default values
   bool bout_delimiter_set = false;
   bool primary_set = false;
+
+  bool is_bounded_query = false;
 
   void compile(Arguments& output) const {
     for (const uncompiled::UncompiledOrderedOp& op : ordered_ops) {
@@ -790,7 +791,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             ret.unique = true;
             ret.unique_type = general_numeric;
           } else if (strcmp("is-bounded", name) == 0) {
-            ret.is_bounded_query = true;
+            uncompiled_output.is_bounded_query = true;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -1013,7 +1014,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
     }
   }
 
-  if (ret.is_bounded_query) {
+  if (uncompiled_output.is_bounded_query) {
     int exit_code = puts(ret.mem_is_bounded() ? "yes" : "no") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     exit(exit_code);
   }
