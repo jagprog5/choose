@@ -18,7 +18,7 @@ Also it's fast. See benchmarks [here](./perf/perf.md) comparing choose to other 
 
 ## Install
 ```bash
-sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev
+sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev libtbb-dev
 git clone https://github.com/jagprog5/choose.git && cd choose
 make install
 source ~/.bashrc

@@ -29,10 +29,12 @@ pkg_check_modules(PCRE REQUIRED libpcre2-8)
 target_include_directories(choose PRIVATE ${PCRE_INCLUDEDIR})
 target_link_libraries(choose PRIVATE ${PCRE_LIBRARIES})
 
-# this shouldn't be required most of the time
-# https://stackoverflow.com/a/73572122/15534181
-find_package(TBB REQUIRED)
-target_link_libraries(choose PRIVATE TBB::tbb)
+# https://stackoverflow.com/a/74755391/15534181
+# optional link here since sometimes it's ok not to have. this is the least invasive
+find_package(TBB)
+if(TBB_FOUND)
+  target_link_libraries(choose PRIVATE TBB::tbb)
+endif()
 
 if (NO_SCROLL_BORDER)
   target_compile_definitions(choose PRIVATE
@@ -69,7 +71,9 @@ if(BUILD_TESTING)
   target_include_directories(unit_tests PRIVATE ${PCRE_INCLUDEDIR})
   target_link_libraries(unit_tests PRIVATE ${PCRE_LIBRARIES})
 
-  target_link_libraries(unit_tests PRIVATE TBB::tbb)
+  if(TBB_FOUND)
+    target_link_libraries(unit_tests PRIVATE TBB::tbb)
+  endif()
 
   if (DISABLE_FIELD)
     target_compile_definitions(unit_tests PRIVATE
