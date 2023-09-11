@@ -920,30 +920,34 @@ BOOST_AUTO_TEST_CASE(out_tail) {
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_out) {
-  // entirety of the input is read, but the mem size should not exceed the number of
-  // unique elements from the input
-  OutputSizeBoundFixture f(4);
+  OutputSizeBoundFixture f(2);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=2"});
   choose_output correct_output{to_vec("a\nis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(sort_unique_out_diff) {
+  choose_output out = run_choose("5\n-5\n-5\n-10\n-10\n0", {"--sort", "--unique-numeric", "--out=2"});
+  choose_output correct_output{to_vec("-10\n-5\n")};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(sort_unique_out_min) {
-  OutputSizeBoundFixture f(4);
+  OutputSizeBoundFixture f(2);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--out=1,2"});
   choose_output correct_output{to_vec("is\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_tail) {
-  OutputSizeBoundFixture f(4);
+  OutputSizeBoundFixture f(2);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=2"});
   choose_output correct_output{to_vec("test\nthis\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
 BOOST_AUTO_TEST_CASE(sort_unique_tail_min) {
-  OutputSizeBoundFixture f(4);
+  OutputSizeBoundFixture f(2);
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique", "--tail=1,2"});
   choose_output correct_output{to_vec("test\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);

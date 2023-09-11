@@ -107,6 +107,8 @@ struct Arguments {
   // disable or allow warning
   bool can_drop_warn = true;
 
+  bool is_bounded_query = false;
+
   // a special case where the tokens can be sent directly to the output as they are received
   bool is_direct_output() const { //
     return !tui && !sort && !flip && !tail;
@@ -115,6 +117,13 @@ struct Arguments {
   // a subset of is_direct_output where the tokens don't need to be stored at all
   bool tokens_not_stored() const { //
     return is_direct_output() && !unique;
+  }
+
+  // the elements in output vector are being inserted with any excess being discarded
+  bool mem_is_bounded() const {
+    return out_end.has_value()   //
+           && !truncate_no_bound //
+           && (unique ? sort && unique_type == sort_type : true);
   }
 
   void drop_warning() {
@@ -315,6 +324,9 @@ void print_help_message() {
       "                must have at least one digit. parse failures are smallest\n"
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
+      "        --is-bounded\n"
+      "                prints a line indicating if the memory usage is bounded due to\n"
+      "                truncation, then exits. not related to --unique-limit\n"
       "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
       "                if a hash table is used for uniqueness, set the max load factor\n"
       "        --locale <locale>\n"
@@ -375,12 +387,11 @@ void print_help_message() {
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
       "        --truncate-no-bound\n"
-      "                if truncation is specified (--out/--tail) and uniqueness is not\n"
-      "                specified, then choose only retains the relevant n values in\n"
-      "                memory. This is only faster for small values of n, as elements\n"
-      "                are shifted within this storage space. If n is large, this\n"
-      "                option should be used to disable this optimization, leading to\n"
-      "                faster speed but more space used\n"
+      "                if truncation is specified (--out/--tail) then choose may retain\n"
+      "                only the relevant n values in memory. see --is-bounded. this is\n"
+      "                faster for small values of n, as elements are shifted within\n"
+      "                this storage space. If n is large, this option should be used to\n"
+      "                disable this optimization\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences. applied\n"
       "                before sorting\n"
@@ -396,7 +407,8 @@ void print_help_message() {
       "        --unique-general-numeric\n"
       "                apply uniqueness general numerically. implies -u\n"
       "        --unique-limit <#tokens>\n"
-      "                implies -u. forget least recently used tokens\n"
+      "                implies -u. forget least recently used tokens. ignore if memory\n"
+      "                is bounded due to truncation (see --is-bounded)\n"
       "        --unique-use-set\n"
       "                implies -u. apply uniqueness with a tree instead of a hash table\n"
       "        --use-delimiter\n"
@@ -527,6 +539,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"flip", no_argument, NULL, 0},
         {"flush", no_argument, NULL, 0},
         {"ignore-case", no_argument, NULL, 'i'},
+        {"is-bounded", no_argument, NULL, 0},
         {"multi", no_argument, NULL, 'm'},
         {"multiline", no_argument, NULL, 0},
         {"match", no_argument, NULL, 0},
@@ -776,6 +789,8 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("unique-general-numeric", name) == 0) {
             ret.unique = true;
             ret.unique_type = general_numeric;
+          } else if (strcmp("is-bounded", name) == 0) {
+            ret.is_bounded_query = true;
           } else if (strcmp("multiline", name) == 0) {
             uncompiled_output.re_options &= ~PCRE2_LITERAL;
             uncompiled_output.re_options |= PCRE2_MULTILINE;
@@ -996,6 +1011,11 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       fputs("--sed is incompatible with options that prevents direct output, including: sorting, reverse, and tui.\n", stderr);
       exit(EXIT_FAILURE);
     }
+  }
+
+  if (ret.is_bounded_query) {
+    int exit_code = puts(ret.mem_is_bounded() ? "yes" : "no") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    exit(exit_code);
   }
 
   if (isatty(fileno(ret.input))) {
