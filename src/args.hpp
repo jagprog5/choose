@@ -326,8 +326,8 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --is-bounded\n"
-      "                prints a line indicating if the memory usage is bounded from\n"
-      "                truncation (--out/--tail), then exits\n"
+      "                prints line \"yes\" iff memory usage is bounded from truncation\n"
+      "                (--out/--tail), then exits. disable with --truncate-no-bound\n"
       "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
       "                if a hash table is used for uniqueness, set the max load factor\n"
       "        --locale <locale>\n"
@@ -378,21 +378,19 @@ void print_help_message() {
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
       "        -t, --tui\n"
-      "                display the tokens in a selection tui. ignores --out\n"
+      "                display the tokens in a selection tui\n"
       "        --tail [<# tokens, default: 10>]\n"
       "                truncate the output, leaving the last n tokens. ignores --out\n"
-      "        --take [<# tokens>|<start from end>,<stop from end>|<default: 10>]\n"
-      "                sets --out, and a --head at the beginning. this places a limit\n"
-      "                on the input and the output\n"
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
       "        --truncate-no-bound\n"
-      "                if truncation is specified (--out/--tail) then choose may retain\n"
-      "                only the relevant n values in memory. see --is-bounded. this is\n"
-      "                faster for small values of n, as elements are shifted within\n"
-      "                this storage space. If n is large, this option should be used to\n"
-      "                disable this optimization\n"
+      "                if truncation is specified (--out/--tail), choose may retain\n"
+      "                only the relevant m tokens in memory, regardless of the number\n"
+      "                of tokens in the input, n. see --is-bounded. in these cases the\n"
+      "                time complexity is O(mn). if n is large, this gives quadratic\n"
+      "                scaling, in which case this option can be used to disable the\n"
+      "                bound, leading to more memory used but better speed\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences. applied\n"
       "                before sorting\n"
@@ -532,7 +530,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"index", optional_argument, NULL, 0},
         {"out", optional_argument, NULL, 0},
         {"tail", optional_argument, NULL, 0},
-        {"take", optional_argument, NULL, 0},
         // options
         {"auto-completion-strings", no_argument, NULL, 0},
         {"delimit-same", no_argument, NULL, 'd'},
@@ -619,28 +616,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
           } else {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(10));
-          }
-        };
-
-        auto take_handler = [&](bool has_arg) {
-          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
-            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
-            InLimitOp::T first = std::get<0>(val);
-            std::optional<InLimitOp::T> second = std::get<1>(val);
-            if (second) {
-              ret.out_start = first;
-              ret.out_end = second;
-              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                   uncompiled::UncompiledInLimitOp(first, *second));
-            } else {
-              ret.out_end = first;
-              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                   uncompiled::UncompiledInLimitOp(first));
-            }
-          } else {
-            ret.out_end = 10;
-            uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                 uncompiled::UncompiledInLimitOp(10));
           }
         };
 
@@ -741,8 +716,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             }
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
-          } else if (strcmp("take", name) == 0) {
-            take_handler(true);
           } else if (strcmp("tail", name) == 0) {
             tail_handler(true);
           } else {
@@ -767,8 +740,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             head_handler(false);
           } else if (strcmp("out", name) == 0) {
             out_handler(false);
-          } else if (strcmp("take", name) == 0) {
-            take_handler(false);
           } else if (strcmp("tail", name) == 0) {
             tail_handler(false);
           } else if (strcmp("match", name) == 0) {
@@ -1017,7 +988,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (uncompiled_output.is_bounded_query) {
-    int exit_code = puts(ret.mem_is_bounded() ? "yes" : "no") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    int exit_code = EXIT_SUCCESS;
+    if (ret.mem_is_bounded()) {
+      exit_code = puts("yes") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    }
     exit(exit_code);
   }
 
