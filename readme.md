@@ -4,17 +4,13 @@
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-choose is a tool for performing transformations with regular expressions. It also applies sorting and uniqueness, and creates selection dialogs.
+choose is tool for creating selection dialogs. It can also:
 
-# Why?
+ - grep using pcre2 syntax with arbitrary delimiters
+ - [stream edit](https://stackoverflow.com/a/77025816/15534181)
+ - apply [uniqueness](https://stackoverflow.com/a/77034520/15534181) and (limited) [sorting](https://stackoverflow.com/a/77025562/15534181)
 
-Here's a few use cases that other tools have trouble with:
-
- - [sort csv and truncate output](https://stackoverflow.com/a/77025562/15534181)
- - [sort csv with embedded commas](https://stackoverflow.com/a/77034520/15534181)
- - [stream edit with lookarounds](https://stackoverflow.com/a/77025816/15534181)
-
-Also it's fast. See benchmarks [here](./perf/perf.md) comparing choose to other tools with similar functionality.
+See benchmarks [here](./perf/perf.md) comparing it to other tools.
 
 ## Install
 ```bash
@@ -116,6 +112,8 @@ The former is restricted to working with `lines`, whereas the latter works with 
 
 # Sorting and Uniqueness
 
+**PLEASE** read this entire section before sorting large files. When in doubt, just pipe to gnu sort.
+
 choose uses lexicographical, numerical, or general numeric comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
 
 For example, this command sorts the input and leaves only unique entries:
@@ -152,9 +150,11 @@ Sorting is implemented to effectively leverage truncation. For example:
 cat very_large_file | choose --sort --out=5
 ```
 
-That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately, no matter the size of the input. The equivalent: `sort | head -n5` does not do this and will be slower.
+That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately, no matter the size of the input. The equivalent: `sort | head -n5` does not do this and will be slower for large inputs.
 
-## Compared to sort -u
+## Compared to gnu sort
+
+### Uniqueness
 
 gnu sort implements uniqueness in the following way:
 
@@ -167,9 +167,13 @@ choose instead applies uniqueness upfront:
 2. If it hasn't yet been seen, add it to the output.
 3. Sort the output.
 
-A bonus of this implementation is that uniqueness and sorting can use different comparison types. For example, choose can apply uniqueness numerically, but sorting lexicographically. Whereas sort needs to use the same comparison for both.
+This allows choose to be fast for inputs that have many duplicates.
 
-A drawback is that it can use more memory, since a separate data structure is maintained to determine if new elements are unique. But, there's a degree of control since uniqueness related args are provided. choose can also revert back to the way sort does things by doing `choose -s --uniq`.
+### Sorting
+
+gnu sort does an [external sort](https://en.wikipedia.org/wiki/External_sorting); it writes sorted chunks to temporary files which are merged later. This makes it great at sorting large files, where the size is comparable to available memory.
+
+In contrast, choose reads the input into memory before sorting. This means it's not suited for sorting large files, unless the memory usage is bounded due to truncation (`--out/--tail`, see `--is-bounded`), or if the input is expected to contain many duplicates (upfront uniqueness, via `-u`). An external sort would not allow for either of those features.
 
 # Matching
 
@@ -184,32 +188,6 @@ echo "aaabbbccc"\
 bbbccc
 ccc
 </pre>
-
-# Monitoring
-
-Suppose there's an input that's running for a _long_ time. For example, a python http server, with an output like:
-
-```txt
-127.0.0.1 - - [08/Sep/2023 22:11:48] "GET /tester.txt HTTP/1.1" 200 -
-192.168.1.42 - - [08/Sep/2023 22:11:58] "GET /tester.txt HTTP/1.1" 200 -
-...
-```
-
-The goal is to monitor the output and print unique IPs:
-
-```bash
-# serves current dir on 8080
-python3 -u -m http.server --directory . 8080 2>&1 >/dev/null\
-  | choose --match --multiline -r '^(?:\d++\.){3}\d++' \
-      --unique-limit 1000\
-      --unique-expiry 900\
-      --flush
-```
-
-This applies a form of bounded uniqueness in the face of an infinite input; tokens can be forgotten based on space and time constraints, meaning they can pass to the output again:
-
- - There is a restriction in the number of tokens that can be remembered (`unique-limit`); least recently received tokens are forgotten.
- - There is a limit on the recentness of tokens (`unique-expiry`); if a token hasn't been seen in a while then it is also forgotten.
 
 # Stream Editing
 
@@ -239,7 +217,9 @@ choose uses [PCRE2](https://www.pcre.org/current/doc/html/pcre2syntax.html), whi
 echo "banana test test" | choose -r --sed '(?<!banana )test' --replace hello
 ```
 
-sed works per line of the input. choose doesn't assume the distinction of lines. To emphasize a point, here is a tricky substitution which has a target that includes a newline and null character:
+sed works per line of the input. choose doesn't assume the distinction of lines. suppose there is a file that consists of the newline character repeatedly. sed will apply the entire throughput of its logic on each empty line even though its not necessary to do so when apply the subsitution. choose is faster in these cases.
+
+To emphasize a point, here is a tricky substitution which has a target that includes a newline and null character:
 
 ```bash
 echo -e "this\n\0is\na\ntest" | choose -r --sed 'is\n\0is' --replace something

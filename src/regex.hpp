@@ -33,15 +33,15 @@ void apply_null_guard(const char*& pattern, PCRE2_SIZE size) {
   // https://github.com/PCRE2Project/pcre2/issues/270
   // https://github.com/PCRE2Project/pcre2/commit/044408710f86dc3d05ff3050373d477b6782164e
   if (pattern == NULL && size == 0) {
-    pattern = (const char*)1;
+    pattern = (const char*)1; // NOLINT
   }
 }
 
 code compile(const char* pattern, uint32_t options, const char* identification, uint32_t jit_options = PCRE2_JIT_COMPLETE, PCRE2_SIZE size = PCRE2_ZERO_TERMINATED) {
   apply_null_guard(pattern, size);
-  int error_number;        // NOLINT
-  PCRE2_SIZE error_offset; // NOLINT
-  pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, size, options, &error_number, &error_offset, NULL);
+  int error_number;                                                                                       // NOLINT
+  PCRE2_SIZE error_offset;                                                                                // NOLINT
+  pcre2_code* re = pcre2_compile((PCRE2_SPTR)pattern, size, options, &error_number, &error_offset, NULL); // NOLINT
   if (re == NULL) {
     PCRE2_UCHAR buffer[256];
     pcre2_get_error_message(error_number, buffer, sizeof(buffer));
@@ -76,7 +76,7 @@ int match(const code& re, //
           PCRE2_SIZE start_offset = 0,
           uint32_t match_options = 0) {
   apply_null_guard(subject, subject_length);
-  int rc = pcre2_match(re.get(), (PCRE2_SPTR)subject, subject_length, start_offset, match_options, match_data.get(), NULL);
+  int rc = pcre2_match(re.get(), (PCRE2_SPTR)subject, subject_length, start_offset, match_options, match_data.get(), NULL); // NOLINT
   if (rc == PCRE2_ERROR_PARTIAL) {
     return -1;
   } else if (rc == PCRE2_ERROR_NOMATCH) {
@@ -153,15 +153,15 @@ std::vector<char> substitute_global(const code& re, //
   PCRE2_SIZE output_size = context.max_replacement;
 
   int sub_rc = pcre2_substitute(re.get(),                  //
-                                (PCRE2_SPTR)subject,       //
+                                (PCRE2_SPTR)subject,       // NOLINT
                                 subject_length,            //
                                 0,                         //
                                 sub_flags,                 //
                                 NULL,                      //
                                 NULL,                      //
-                                (PCRE2_SPTR)replacement,   //
+                                (PCRE2_SPTR)replacement,   // NOLINT
                                 PCRE2_ZERO_TERMINATED,     //
-                                (PCRE2_UCHAR8*)ret.data(), //
+                                (PCRE2_UCHAR8*)ret.data(), // NOLINT
                                 &output_size);
 
   if (sub_rc >= 0) {
@@ -173,15 +173,15 @@ std::vector<char> substitute_global(const code& re, //
     context.max_replacement = output_size;
     ret.resize(context.max_replacement);
     sub_rc = pcre2_substitute(re.get(),                  //
-                              (PCRE2_SPTR)subject,       //
+                              (PCRE2_SPTR)subject,       // NOLINT
                               subject_length,            //
                               0,                         //
                               sub_flags,                 //
                               NULL,                      //
                               NULL,                      //
-                              (PCRE2_SPTR)replacement,   //
+                              (PCRE2_SPTR)replacement,   // NOLINT
                               PCRE2_ZERO_TERMINATED,     //
-                              (PCRE2_UCHAR8*)ret.data(), //
+                              (PCRE2_UCHAR8*)ret.data(), // NOLINT
                               &output_size);
     if (sub_rc >= 0) {
       ret.resize(output_size);
@@ -217,15 +217,15 @@ std::vector<char> substitute_on_match(const match_data& data, //
   ret.resize(context.max_replacement);
   PCRE2_SIZE output_size = context.max_replacement;
   int sub_rc = pcre2_substitute(re.get(),                  //
-                                (PCRE2_SPTR)subject,       //
+                                (PCRE2_SPTR)subject,       // NOLINT
                                 subject_length,            //
                                 0,                         //
                                 sub_flags,                 //
                                 data.get(),                //
                                 NULL,                      //
-                                (PCRE2_SPTR)replacement,   //
+                                (PCRE2_SPTR)replacement,   // NOLINT
                                 PCRE2_ZERO_TERMINATED,     //
-                                (PCRE2_UCHAR8*)ret.data(), //
+                                (PCRE2_UCHAR8*)ret.data(), // NOLINT
                                 &output_size);
 
   if (sub_rc >= 0) {
@@ -237,15 +237,15 @@ std::vector<char> substitute_on_match(const match_data& data, //
     context.max_replacement = output_size;
     ret.resize(context.max_replacement);
     sub_rc = pcre2_substitute(re.get(),                  //
-                              (PCRE2_SPTR)subject,       //
+                              (PCRE2_SPTR)subject,       // NOLINT
                               subject_length,            //
                               0,                         //
                               sub_flags,                 //
                               data.get(),                //
                               NULL,                      //
-                              (PCRE2_SPTR)replacement,   //
+                              (PCRE2_SPTR)replacement,   // NOLINT
                               PCRE2_ZERO_TERMINATED,     //
-                              (PCRE2_UCHAR8*)ret.data(), //
+                              (PCRE2_UCHAR8*)ret.data(), // NOLINT
                               &output_size);
     if (sub_rc >= 0) {
       ret.resize(output_size);

@@ -11,7 +11,6 @@
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
-#include "uniqueness_utils.hpp"
 
 /*
 There's a lot going on in this file. It should have complete code coverage. View with:
@@ -22,13 +21,13 @@ make cov-clean && make cov-show
 */
 
 #ifdef OUTPUT_SIZE_BOUND_TESTING
-extern std::optional<size_t> output_size_bound_testing;
+extern std::optional<size_t> output_size_bound_testing; // NOLINT
 #endif
 
 namespace choose {
 
 struct Token {
-  std::vector<char> buffer;
+  std::vector<char> buffer; // NOLINT
 
   // ctor for testing
   Token(const char* in)
@@ -309,9 +308,7 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
-      const Token& lhs = output[lhs_arg];
-      const Token& rhs = output[rhs_arg];
+    auto equality_predicate = [&](const Token& lhs, const Token& rhs) -> bool { //
       switch (unique_type) {
         default:
           return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
@@ -325,71 +322,34 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       }
     };
 
-    auto consecutive_equality_predicate = [&](const Token& lhs, const Token& rhs) -> bool { //
-      switch (sort_type) {
-        default:
-          return std::equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-          break;
-        case numeric:
-          return numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-          break;
-        case general_numeric:
-          return general_numeric_equal(lhs.cbegin(), lhs.cend(), rhs.cbegin(), rhs.cend());
-          break;
-      }
+    auto unordered_set_equals = [&](indirect lhs_arg, indirect rhs_arg) -> bool { //
+      return equality_predicate(output[lhs_arg], output[rhs_arg]);
     };
 
     using unordered_uniqueness_set_T = std::unordered_set<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
-    using unordered_uniqueness_limit_set_T = ForgetfulUnorderedSet<indirect, decltype(unordered_set_hash), decltype(unordered_set_equals)>;
     using uniqueness_set_T = std::set<indirect, decltype(uniqueness_set_comparison)>;
-    using uniqueness_limit_set_T = ForgetfulSet<indirect, decltype(uniqueness_set_comparison)>;
-    using unique_checker_T = std::variant<std::monostate, unordered_uniqueness_set_T, unordered_uniqueness_limit_set_T, uniqueness_set_T, uniqueness_limit_set_T>;
+    using unique_checker_T = std::variant<std::monostate, unordered_uniqueness_set_T, uniqueness_set_T>;
 
     unique_checker_T unique_checker = [&]() -> unique_checker_T {
       if (unique) {
         if (args.unique_use_set) {
-          if (args.unique_limit == 0) {
-            return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
-          } else {
-            return unique_checker_T(uniqueness_limit_set_T(uniqueness_set_comparison, args.unique_limit, args.unique_expiry));
-          }
+          return unique_checker_T(uniqueness_set_T(uniqueness_set_comparison));
         } else {
-          if (args.unique_limit == 0) {
-            auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
-            s.max_load_factor(args.unique_load_factor);
-            return unique_checker_T(std::move(s));
-          } else {
-            return unique_checker_T(unordered_uniqueness_limit_set_T(unordered_set_hash,      //
-                                                                     unordered_set_equals,    //
-                                                                     args.unique_load_factor, //
-                                                                     args.unique_limit,       //
-                                                                     args.unique_expiry));
-          }
+          auto s = unordered_uniqueness_set_T(8, unordered_set_hash, unordered_set_equals);
+          s.max_load_factor(args.unique_load_factor);
+          return unique_checker_T(std::move(s));
         }
       } else {
         return unique_checker_T();
       }
     }();
 
-    // annoying implementation detail, since moves or copies on construction
-    // can't be elided thru std::variant ctor. in a perfect world setup() would
-    // be folded into the ctor, but it can't
-    if (uniqueness_limit_set_T* set = std::get_if<uniqueness_limit_set_T>(&unique_checker)) {
-      set->setup();
-    } else if (unordered_uniqueness_limit_set_T* unordered_set = std::get_if<unordered_uniqueness_limit_set_T>(&unique_checker)) {
-      unordered_set->setup();
-    }
-
     // returns true if output[elem] is unique. requires unique == true
     auto uniqueness_check = [&](indirect elem) -> bool { //
-      if (unordered_uniqueness_set_T* unordered_set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
-        return unordered_set->insert(elem).second;
-      } else if (unordered_uniqueness_limit_set_T* unordered_set_limit = std::get_if<unordered_uniqueness_limit_set_T>(&unique_checker)) {
-        return unordered_set_limit->insert(elem).second;
-      } else if (uniqueness_set_T* set = std::get_if<uniqueness_set_T>(&unique_checker)) {
+      if (unordered_uniqueness_set_T* set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
         return set->insert(elem).second;
       } else {
-        return std::get<uniqueness_limit_set_T>(unique_checker).insert(elem).second;
+        return std::get<uniqueness_set_T>(unique_checker).insert(elem).second;
       }
     };
 
@@ -447,8 +407,12 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
           if (sort) {
             // note that the sorting is reversed if tail is used. so this
             // handles tail and non tail cases. see UncompiledCodes.
+
+            // note also that mem_is_bounded means sort_comparison and equality_predicate
+            // are using the same sort / unique comparison type (otherwise the next lines are confusing).
+            // see Arguments::mem_is_bounded
             auto insertion_pos = std::upper_bound(output.begin(), output.end(), t, sort_comparison);
-            if (!unique || (insertion_pos == output.begin() || !consecutive_equality_predicate(insertion_pos[-1], t))) {
+            if (!unique || (insertion_pos == output.begin() || !equality_predicate(insertion_pos[-1], t))) {
               // uniqueness is not used, or t does not yet exist in output
               if (likely(output.size() == *args.out_end)) {
                 while (insertion_pos < output.end()) {
@@ -830,12 +794,8 @@ skip_read: // do another iteration but don't read in any more bytes
 
     if (unordered_uniqueness_set_T* uniqueness_unordered_set = std::get_if<unordered_uniqueness_set_T>(&unique_checker)) {
       uniqueness_unordered_set->clear();
-    } else if (unordered_uniqueness_limit_set_T* uniqueness_limit_unordered_set = std::get_if<unordered_uniqueness_limit_set_T>(&unique_checker)) {
-      uniqueness_limit_unordered_set->clear();
     } else if (uniqueness_set_T* set = std::get_if<uniqueness_set_T>(&unique_checker)) {
       set->clear();
-    } else if (uniqueness_limit_set_T* set_limit = std::get_if<uniqueness_limit_set_T>(&unique_checker)) {
-      set_limit->clear();
     }
 
     if (!args.out_start && !args.out_end) {
@@ -845,31 +805,6 @@ skip_read: // do another iteration but don't read in any more bytes
           std::stable_sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
         } else {
           std::sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
-        }
-        if (args.unique_consecutive) {
-          if (!args.tui && !args.flip) {
-            // don't bother moving memory around. just write to the output.
-            // !args.flip since that step can't be skipped (below)
-
-            if (!output.empty()) {
-              // unconditionally write the first element
-              auto last_written = output.cbegin();
-              direct_output.write_output(*last_written);
-
-              auto cursor = last_written;
-              while (++cursor != output.cend()) {
-                if (!consecutive_equality_predicate(*cursor, *last_written)) {
-                  last_written = cursor;
-                  direct_output.write_output(*last_written);
-                }
-              }
-            }
-            direct_output.finish_output();
-            throw termination_request();
-          } else {
-            auto new_end = std::unique(std::execution::par_unseq, output.begin(), output.end(), consecutive_equality_predicate);
-            output.resize(new_end - output.begin());
-          }
         }
       }
     } else {
@@ -882,11 +817,11 @@ skip_read: // do another iteration but don't read in any more bytes
           // !sort since tail reversed the sorting order. see UncompiledCodes
           // truncate based on tail
           if (*args.out_end < output.size()) {
-            output.erase(output.begin(), output.end() - *args.out_end);
+            output.erase(output.begin(), output.end() - *args.out_end); // NOLINT
           }
         } else {
           typename std::vector<Token>::iterator middle;
-          middle = output.begin() + *args.out_end;
+          middle = output.begin() + *args.out_end; // NOLINT
           if (middle > output.end()) {
             middle = output.end();
           }
@@ -904,13 +839,13 @@ skip_read: // do another iteration but don't read in any more bytes
       if (args.out_start) {
         if (tail && !sort) {
           if (*args.out_start < output.size()) {
-            output.erase(output.end() - *args.out_start, output.end());
+            output.erase(output.end() - *args.out_start, output.end()); // NOLINT
           } else {
             output.clear();
           }
         } else {
           if (*args.out_start < output.size()) {
-            output.erase(output.begin(), output.begin() + *args.out_start);
+            output.erase(output.begin(), output.begin() + *args.out_start); // NOLINT
           } else {
             output.clear();
           }

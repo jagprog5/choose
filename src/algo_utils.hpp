@@ -22,10 +22,12 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
   auto n = middle - begin;
   std::partial_sort(std::forward<ExecutionPolicy>(policy), sorted.begin(), sorted.begin() + n, sorted.end(), [&](const it& lhs, const it& rhs) {
     // First see if the underlying elements differ.
-    if (comp(*lhs, *rhs))
+    if (comp(*lhs, *rhs)) {
       return true;
-    if (comp(*rhs, *lhs))
+    }
+    if (comp(*rhs, *lhs)) {
       return false;
+    }
     // Underlying elements are the same, so compare iterators; these represent
     // position in original vector.
     return lhs < rhs;
@@ -44,7 +46,8 @@ void stable_partial_sort(ExecutionPolicy&& policy, it begin, it middle, it end, 
 }
 
 bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) { //
-  float lhs, rhs;
+  float lhs = 0;
+  float rhs = 0;
   // if from_chars isn't found, get a newer compiler. e.g.
   //    add-apt-repository -y ppa:ubuntu-toolchain-r/test
   //    apt-get install g++-11
@@ -65,7 +68,8 @@ bool general_numeric_compare(const char* lhs_begin, const char* lhs_end, const c
 }
 
 bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  float lhs, rhs;
+  float lhs = 0;
+  float rhs = 0;
   std::from_chars_result lhs_ret = std::from_chars(lhs_begin, lhs_end, lhs, std::chars_format::general);
   std::from_chars_result rhs_ret = std::from_chars(rhs_begin, rhs_end, rhs, std::chars_format::general);
 
@@ -79,7 +83,7 @@ bool general_numeric_equal(const char* lhs_begin, const char* lhs_end, const cha
 }
 
 size_t general_numeric_hash(const char* begin, const char* end) {
-  float val;
+  float val = 0;
   std::from_chars_result ret = std::from_chars(begin, end, val, std::chars_format::general);
 
   if (ret.ec != std::errc()) {
@@ -168,8 +172,8 @@ bool fraction_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_
 }
 
 // similar bit pattern to decimal point, for convenience
-static constexpr char STR_END = '.' | (char)0b10000000;
-static constexpr char END_MASK = 0b01111111;
+constexpr char STR_END = '.' | (char)0b10000000;
+constexpr char END_MASK = 0b01111111;
 
 // is_negative is set to true or false, depending on if the string begins with a negative sign
 // pos points to the first position that is not the negative sign, or to the end.
@@ -241,8 +245,10 @@ char get_next(const char*& pos, const char* end) {
 // compare two numbers, like -123,456,789.99912134000
 // numeric strings match this: ^-?[0-9,]*(?:\.[0-9]*)?$
 bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  char lhs_ch, rhs_ch;
-  bool lhs_negative, rhs_negative;
+  char lhs_ch = 0;
+  char rhs_ch = 0;
+  bool lhs_negative = false;
+  bool rhs_negative = false;
   trim_leading_sign(lhs_negative, lhs_ch, lhs_begin, lhs_end);
   trim_leading_sign(rhs_negative, rhs_ch, rhs_begin, rhs_end);
 
@@ -254,11 +260,7 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
     bool lhs_non_zero = non_zero(lhs_begin, lhs_end);
     bool rhs_non_zero = non_zero(rhs_begin, rhs_end);
     bool both_zero = !lhs_non_zero && !rhs_non_zero;
-    if (unlikely(both_zero)) {
-      return false;
-    } else {
-      return true;
-    }
+    return !both_zero;
   }
 
   // precondition lhs_negative == rhs_negative
@@ -341,8 +343,10 @@ bool numeric_compare(const char* lhs_begin, const char* lhs_end, const char* rhs
 }
 
 bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_begin, const char* rhs_end) {
-  char lhs_ch, rhs_ch;
-  bool lhs_negative, rhs_negative;
+  char lhs_ch = 0;
+  char rhs_ch = 0;
+  bool lhs_negative = false;
+  bool rhs_negative = false;
   trim_leading_sign(lhs_negative, lhs_ch, lhs_begin, lhs_end);
   trim_leading_sign(rhs_negative, rhs_ch, rhs_begin, rhs_end);
 
@@ -350,11 +354,7 @@ bool numeric_equal(const char* lhs_begin, const char* lhs_end, const char* rhs_b
     bool lhs_non_zero = non_zero(lhs_begin, lhs_end);
     bool rhs_non_zero = non_zero(rhs_begin, rhs_end);
     bool both_zero = !lhs_non_zero && !rhs_non_zero;
-    if (unlikely(both_zero)) {
-      return true;
-    } else {
-      return false;
-    }
+    return both_zero;
   }
 
   trim_leading_zeros(lhs_ch, lhs_begin, lhs_end);
@@ -429,7 +429,7 @@ size_t numeric_hash(const char* begin, const char* end) {
     // https://github.com/HowardHinnant/hash_append/issues/7#issuecomment-371758166
     // extend boost implementation from just 32 bit to 64 bit as well
     // this probably isn't a good idea though, since better hashes exist
-    static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8);
+    // static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8);
     if constexpr (sizeof(size_t) == 4) {
       ret ^= ch + 0x9e3779b9U + (ret << 6) + (ret >> 2);
     } else {
@@ -437,8 +437,8 @@ size_t numeric_hash(const char* begin, const char* end) {
     }
   };
 
-  char ch;
-  bool is_negative;
+  char ch = 0;
+  bool is_negative = false;
   trim_leading_sign(is_negative, ch, begin, end);
   trim_leading_zeros(ch, begin, end);
 
@@ -500,8 +500,34 @@ size_t numeric_hash(const char* begin, const char* end) {
 /*
 // a fuzzy checker for the numeric functions
 #include <stdlib.h>
-#include <time.h>
 #include <cassert>
+
+// numeric = true, general_numeric = false
+constexpr bool use_numeric = false;
+
+bool cmp(const std::vector<char>& lhs, const std::vector<char>& rhs) {
+  if (use_numeric) {
+    return choose::numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+  } else {
+    return choose::general_numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+  }
+}
+
+bool eq(const std::vector<char>& lhs, const std::vector<char>& rhs) {
+  if (use_numeric) {
+    return choose::numeric_equal(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+  } else {
+    return choose::general_numeric_equal(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+  }
+}
+
+size_t hash(const std::vector<char>& v) {
+  if (use_numeric) {
+    return choose::numeric_hash(&*v.cbegin(), &*v.cend());
+  } else {
+    return choose::general_numeric_hash(&*v.cbegin(), &*v.cend());
+  }
+}
 
 int main() {
   srand(10);
@@ -520,7 +546,7 @@ int main() {
 
   for (int i = 0; i < 100000000; ++i) {
     if (i % 100000 == 0) {
-      printf("%d\n", i);
+      printf("iters: %d\n", i);
     }
     auto lhs = get_rand_vec();
     auto rhs = get_rand_vec();
@@ -540,32 +566,57 @@ int main() {
       assert(false);
     };
 
-    bool lhs_lt_rhs = choose::numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
-    bool rhs_lt_lhs = choose::numeric_compare(&*rhs.cbegin(), &*rhs.cend(), &*lhs.cbegin(), &*lhs.cend());
-    if (lhs_lt_rhs && rhs_lt_lhs) {
-      on_failure("comparison ill formed");
+    {
+      bool lhs_lt_lhs = cmp(lhs, lhs);
+      if (lhs_lt_lhs) {
+        on_failure("irreflexivity failure");
+      }
     }
-    bool equal = choose::numeric_equal(&*lhs.cbegin(), &*lhs.cend(), &*rhs.cbegin(), &*rhs.cend());
+
+    bool lhs_lt_rhs = cmp(lhs, rhs);
+    bool rhs_lt_lhs = cmp(rhs, lhs);
+    if (lhs_lt_rhs && rhs_lt_lhs) {
+      on_failure("asymmetry failure");
+    }
+    bool equal = eq(lhs, rhs);
     if (equal != (!lhs_lt_rhs && !rhs_lt_lhs)) {
       on_failure("equality and comparison disagree");
     }
 
-    auto lhs_hash = choose::numeric_hash(&*lhs.cbegin(), &*lhs.cend());
-    auto rhs_hash = choose::numeric_hash(&*rhs.cbegin(), &*rhs.cend());
+    auto lhs_hash = hash(lhs);
+    auto rhs_hash = hash(rhs);
 
     bool hash_equal = lhs_hash == rhs_hash;
     if (equal != hash_equal) {
-      printf("equal %d, hash equal %d\n", equal, hash_equal);
-      // will eventually happen due to hash collisions
-      on_failure("hash equality and equality disagree");
+      bool skip = false;
+      if constexpr (!use_numeric) {
+        // general_numeric has high collision from 0 hash for parse failures - skip
+        if (lhs_hash == 0 && rhs_hash == 0) {
+          skip = true;
+        }
+      }
+      if (!skip) {
+        printf("equal %d, hash equal %d\n", equal, hash_equal);
+        // will eventually happen due to hash collisions
+        on_failure("hash equality and equality disagree");
+      }
     }
 
     auto middle = get_rand_vec();
-    bool lhs_lt_middle = choose::numeric_compare(&*lhs.cbegin(), &*lhs.cend(), &*middle.cbegin(), &*middle.cend());
-    bool middle_lt_rhs = choose::numeric_compare(&*middle.cbegin(), &*middle.cend(), &*rhs.cbegin(), &*rhs.cend());
+    bool lhs_lt_middle = cmp(lhs, middle);
+    bool middle_lt_rhs = cmp(middle, rhs);
     if (lhs_lt_middle && middle_lt_rhs) {
       if (!lhs_lt_rhs) {
-        on_failure("transitive fail");
+        on_failure("transitivity failure");
+      }
+    }
+
+    bool lhs_eq_rhs = equal;
+    bool lhs_eq_middle = eq(lhs, middle);
+    bool middle_eq_rhs = eq(middle, rhs);
+    if (lhs_eq_rhs && lhs_eq_middle) {
+      if (!middle_eq_rhs) {
+        on_failure("transitivity of incomparability failure");
       }
     }
   }
