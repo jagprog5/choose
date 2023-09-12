@@ -47,10 +47,6 @@ struct Arguments {
   // if unordered_map is used, this is the max load factor
   // this default value seems to work well
   float unique_load_factor = UNIQUE_LOAD_FACTOR_DEFAULT;
-  bool unique_consecutive = false; // after sorting uniqueness
-
-  size_t unique_limit = 0; // 0 indicates unused
-  std::chrono::seconds unique_expiry = std::chrono::seconds::zero();
 
   bool flip = false;
   bool flush = false;
@@ -326,8 +322,8 @@ void print_help_message() {
       "        -i, --ignore-case\n"
       "                make the positional argument case-insensitive\n"
       "        --is-bounded\n"
-      "                prints a line indicating if the memory usage is bounded from\n"
-      "                truncation (--out/--tail), then exits\n"
+      "                prints line \"yes\" iff memory usage is bounded from truncation\n"
+      "                (--out/--tail), then exits. disable with --truncate-no-bound\n"
       "        --load-factor <positive float, default: " choose_xstr(UNIQUE_LOAD_FACTOR_DEFAULT) ">\n"
       "                if a hash table is used for uniqueness, set the max load factor\n"
       "        --locale <locale>\n"
@@ -378,39 +374,26 @@ void print_help_message() {
       "                sort the token output based on tui selection order instead of\n"
       "                the input order. an indicator displays the order\n"
       "        -t, --tui\n"
-      "                display the tokens in a selection tui. ignores --out\n"
+      "                display the tokens in a selection tui\n"
       "        --tail [<# tokens, default: 10>]\n"
       "                truncate the output, leaving the last n tokens. ignores --out\n"
-      "        --take [<# tokens>|<start from end>,<stop from end>|<default: 10>]\n"
-      "                sets --out, and a --head at the beginning. this places a limit\n"
-      "                on the input and the output\n"
       "        --tenacious\n"
       "                on tui confirmed selection, do not exit; but still flush the\n"
       "                current selection to the output as a batch\n"
       "        --truncate-no-bound\n"
-      "                if truncation is specified (--out/--tail) then choose may retain\n"
-      "                only the relevant n values in memory. see --is-bounded. this is\n"
-      "                faster for small values of n, as elements are shifted within\n"
-      "                this storage space. If n is large, this option should be used to\n"
-      "                disable this optimization\n"
+      "                if truncation is specified (--out/--tail), choose may retain\n"
+      "                only the relevant m tokens in memory, regardless of the number\n"
+      "                of tokens in the input, n. see --is-bounded. in these cases the\n"
+      "                time complexity is O(mn). if n is large, this gives quadratic\n"
+      "                scaling, in which case this option can be used to disable the\n"
+      "                bound, leading to more memory used but better speed\n"
       "        -u, --unique\n"
       "                remove duplicate input tokens. leaves first occurrences. applied\n"
       "                before sorting\n"
-      "        --uniq\n"
-      "                unrelated to any other uniqueness options. after sorting, remove\n"
-      "                consecutive duplicate elements. requires --sort. ignored if\n"
-      "                memory is bounded from truncation (see --is-bounded. use normal\n"
-      "                -u in these cases instead)\n"
       "        --unique-numeric\n"
       "                apply uniqueness numerically. implies -u\n"
-      "        --unique-expiry <# seconds>\n"
-      "                requires --unique-limit. tokens not received again over a\n"
-      "                specified duration are forgotten\n"
       "        --unique-general-numeric\n"
       "                apply uniqueness general numerically. implies -u\n"
-      "        --unique-limit <#tokens>\n"
-      "                implies -u. forget least recently used tokens. ignored if memory\n"
-      "                is bounded from truncation (see --is-bounded)\n"
       "        --unique-use-set\n"
       "                implies -u. apply uniqueness with a tree instead of a hash table\n"
       "                ignored if memory is bounded from truncation (see --is-bounded)\n"
@@ -462,8 +445,8 @@ void print_help_message() {
   }
 
   // signal sent to child process. wait for pclose to finish
-  if (signal(SIGINT, [](int) {}) == SIG_IGN) {
-    signal(SIGINT, SIG_IGN);
+  if (signal(SIGINT, [](int) {}) == SIG_IGN) { // NOLINT
+    signal(SIGINT, SIG_IGN);                   // NOLINT
   }
 
   if (fputs(help_text, fp) < 0) {
@@ -526,13 +509,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"load-factor", required_argument, NULL, 0},
         {"locale", required_argument, NULL, 0},
         {"replace", required_argument, NULL, 0},
-        {"unique-expiry", required_argument, NULL, 0},
-        {"unique-limit", required_argument, NULL, 0},
         {"head", optional_argument, NULL, 0},
         {"index", optional_argument, NULL, 0},
         {"out", optional_argument, NULL, 0},
         {"tail", optional_argument, NULL, 0},
-        {"take", optional_argument, NULL, 0},
         // options
         {"auto-completion-strings", no_argument, NULL, 0},
         {"delimit-same", no_argument, NULL, 'd'},
@@ -553,7 +533,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"sort-reverse", no_argument, NULL, 0},
         {"sort-numeric", no_argument, NULL, 0},
         {"sort-general-numeric", no_argument, NULL, 0},
-        {"uniq", no_argument, NULL, 0},
         {"unique-numeric", no_argument, NULL, 0},
         {"unique-general-numeric", no_argument, NULL, 0},
         {"no-warn", no_argument, NULL, 0},
@@ -619,28 +598,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(val));
           } else {
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledInLimitOp(10));
-          }
-        };
-
-        auto take_handler = [&](bool has_arg) {
-          if (has_arg || OPTIONAL_ARGUMENT_IS_PRESENT) {
-            auto val = num::parse_number_pair<InLimitOp::T>(on_num_err, optarg);
-            InLimitOp::T first = std::get<0>(val);
-            std::optional<InLimitOp::T> second = std::get<1>(val);
-            if (second) {
-              ret.out_start = first;
-              ret.out_end = second;
-              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                   uncompiled::UncompiledInLimitOp(first, *second));
-            } else {
-              ret.out_end = first;
-              uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                   uncompiled::UncompiledInLimitOp(first));
-            }
-          } else {
-            ret.out_end = 10;
-            uncompiled_output.ordered_ops.insert(uncompiled_output.ordered_ops.begin(), //
-                                                 uncompiled::UncompiledInLimitOp(10));
           }
         };
 
@@ -712,16 +669,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               }
             }
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledReplaceOp(optarg));
-          } else if (strcmp("unique-expiry", name) == 0) {
-            using T = decltype(ret.unique_expiry)::rep;
-            T t = num::parse_number<T>(on_num_err, optarg);
-            if (t <= 0) {
-              on_num_err(); // only positive expiry is allowed
-            }
-            ret.unique_expiry = std::chrono::seconds(t);
-          } else if (strcmp("unique-limit", name) == 0) {
-            ret.unique_limit = num::parse_number<decltype(ret.unique_limit)>(on_num_err, optarg, false);
-            ret.unique = true;
           } else if (strcmp("sub", name) == 0 || strcmp("substitute", name) == 0) {
             // special handing here since getopt doesn't normally support multiple arguments
             if (optind >= argc) {
@@ -741,8 +688,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             }
           } else if (strcmp("locale", name) == 0) {
             ret.locale = optarg;
-          } else if (strcmp("take", name) == 0) {
-            take_handler(true);
           } else if (strcmp("tail", name) == 0) {
             tail_handler(true);
           } else {
@@ -767,8 +712,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             head_handler(false);
           } else if (strcmp("out", name) == 0) {
             out_handler(false);
-          } else if (strcmp("take", name) == 0) {
-            take_handler(false);
           } else if (strcmp("tail", name) == 0) {
             tail_handler(false);
           } else if (strcmp("match", name) == 0) {
@@ -784,8 +727,6 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("sort-general-numeric", name) == 0) {
             ret.sort = true;
             ret.sort_type = general_numeric;
-          } else if (strcmp("uniq", name) == 0) {
-            ret.unique_consecutive = true;
           } else if (strcmp("unique-numeric", name) == 0) {
             ret.unique = true;
             ret.unique_type = numeric;
@@ -1017,7 +958,10 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (uncompiled_output.is_bounded_query) {
-    int exit_code = puts(ret.mem_is_bounded() ? "yes" : "no") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    int exit_code = EXIT_SUCCESS;
+    if (ret.mem_is_bounded()) {
+      exit_code = puts("yes") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    }
     exit(exit_code);
   }
 

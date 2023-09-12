@@ -60,13 +60,11 @@ struct InLimitOp {
   InLimitOp(T high) : low(std::nullopt), high(high) {}
 
   Result apply() {
-    Result ret;
+    Result ret = DONE;
     if (low && in_count < *low) {
       ret = REMOVE;
     } else if (in_count < high) {
       ret = ALLOW;
-    } else {
-      ret = DONE;
     }
     ++in_count;
     return ret;

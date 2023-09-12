@@ -20,7 +20,7 @@ Also note the compile time option called `DISABLE_FIELD`. It disables the `--fie
 
 ### Sorting, and Sorting + Uniqueness
 
-`sort` is using naive byte order (via `LC_ALL=C`), as this is the fairest. `sort` is faster than `choose` at sorting. If truncation is leveraged, or if there are many duplicates (when applying uniqueness as well), then `choose` is faster than `sort`.
+`sort` is using naive byte order (via `LC_ALL=C`), as this is the fastest. `sort` is faster than `choose` at sorting. If truncation is leveraged, or if there are many duplicates (when applying uniqueness as well), then `choose` is faster than `sort`.
 
 ## Input Data
 

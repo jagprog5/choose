@@ -456,8 +456,8 @@ int main(int argc, char* const* argv) {
     return EXIT_SUCCESS;
   }
 
-  if (signal(SIGINT, sigint_handler) == SIG_IGN) {
-    signal(SIGINT, SIG_IGN);
+  if (signal(SIGINT, sigint_handler) == SIG_IGN) { // NOLINT
+    signal(SIGINT, SIG_IGN);                       // NOLINT
   }
 
   // https://stackoverflow.com/a/44884859/15534181

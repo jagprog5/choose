@@ -20,6 +20,7 @@ SORT_UNIQUE_FLAGS=-u
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # point to different perf paths for issues like this: https://github.com/microsoft/WSL/issues/9917
+# invoke like: PERF_TOOL=/usr/lib/linux-tools/5.4.0-155-generic/perf ./gen_perf_stats.bash
 PERF_TOOL="${PERF_TOOL:-perf}" 
 
 if ! command -v "$PERF_TOOL" &> /dev/null ; then

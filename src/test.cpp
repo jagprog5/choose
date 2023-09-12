@@ -20,6 +20,8 @@ on some platforms, tbb is used in the backend for std::execution.
 if tbb is used, then valgrind might indicate memory leaks. it uses an arena thread that doesn't clean up in time before termination.
 looks like "by 0x48D6B6F: ??? (in /usr/lib/x86_64-linux-gnu/libtbb.so.2)"
  - https://github.com/oneapi-src/oneTBB/issues/206
+or from: rtld-malloc
+if there's any uncertainty, remove any instance of std::execution::par_unseq and run again
 */
 
 using namespace choose;
@@ -34,7 +36,7 @@ struct GlobalInit {
   GlobalInit() {
     setlocale(LC_ALL, "");
     // if choose fails in run_choose
-    signal(SIGPIPE, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN); // NOLINT
   }
 };
 
@@ -460,7 +462,7 @@ choose_output run_choose(const char* null_terminating_input, const std::vector<c
   return run_choose(to_vec(null_terminating_input), argv);
 }
 
-struct OutputSizeBoundFixture {
+struct OutputSizeBoundFixture { // NOLINT
   OutputSizeBoundFixture(size_t max) { output_size_bound_testing = max; }
   ~OutputSizeBoundFixture() { output_size_bound_testing = std::nullopt; }
 };
@@ -558,116 +560,6 @@ BOOST_AUTO_TEST_CASE(general_numeric_unique_with_parse_failure) {
   choose_output out = run_choose("1\n10\n\n \n+\n", {"--unique-general-numeric"});
   choose_output correct_output{to_vec("1\n10\n\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(unique_limit_set_simple) {
-  choose_output out = run_choose("1\n1\n2\n2\n3\n3\n4\n4\n3\n2\n1", {"--tui", "--unique-use-set", "--unique-limit", "3"});
-  choose_output correct_output{std::vector<choose::Token>{"1", "2", "3", "4", "1"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(unique_limit_set_lru) {
-  choose_output out = run_choose("1\n1\n2\n2\n3\n3\n1\n4\n4\n1\n2\n3\n4", {"--tui", "--unique-use-set", "--unique-limit", "3"});
-  choose_output correct_output{std::vector<choose::Token>{"1", "2", "3", "4", "2", "3", "4"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(unique_limit_simple) {
-  choose_output out = run_choose("1\n1\n2\n2\n3\n3\n4\n4\n3\n2\n1", {"--tui", "--unique-limit", "3"});
-  choose_output correct_output{std::vector<choose::Token>{"1", "2", "3", "4", "1"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(unique_limit_lru) {
-  choose_output out = run_choose("1\n1\n2\n2\n3\n3\n1\n4\n4\n1\n2\n3\n4", {"--tui", "--unique-limit", "3"});
-  choose_output correct_output{std::vector<choose::Token>{"1", "2", "3", "4", "2", "3", "4"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-// simulate passage of time
-struct FakeClock {
-  using duration = std::chrono::nanoseconds;
-  using rep = duration::rep;
-  using period = duration::period;
-  using time_point = std::chrono::time_point<FakeClock, duration>;
-  static time_point now() { return FakeClock::seconds_since_epoch; }
-
-  inline static time_point seconds_since_epoch; // set this
-};
-
-BOOST_AUTO_TEST_CASE(unique_expiry) {
-  // visual inspections also include:
-  // (echo "1";echo "2";echo "3";sleep 1;echo "2";sleep 1;echo "1";echo "2";echo "3") | choose --unique-limit 1000 --unique-expiry 2 --flush
-  // # 12313
-  auto cmp = [](const choose::Token& lhs, const choose::Token& rhs) { //
-    return std::lexicographical_compare(lhs.buffer.cbegin(), lhs.buffer.cend(), rhs.buffer.cbegin(), rhs.buffer.cend());
-  };
-
-  auto hash = [](const choose::Token&) {
-    return 0; // lazy, doesn't matter
-  };
-
-  auto eq = [](const choose::Token& lhs, const choose::Token& rhs) { //
-    return lhs.buffer == rhs.buffer;
-  };
-
-  auto delay = FakeClock::duration(64); // time until staleness
-
-  choose::Token token_1(to_vec("1"));
-  choose::Token token_2(to_vec("2"));
-  choose::Token token_3(to_vec("3"));
-
-  {
-    FakeClock::seconds_since_epoch = FakeClock::time_point();
-    ForgetfulSet<choose::Token, decltype(cmp), FakeClock> s(cmp, 2, delay);
-    s.setup();
-    // first insertions are successful
-    BOOST_REQUIRE(s.insert(token_1).second);
-    BOOST_REQUIRE(s.insert(token_2).second);
-    BOOST_REQUIRE(s.insert(token_3).second);
-
-    // refresh token 1 over a staleness period, until 2 is now stale
-    for (int i = 0; i < 4; ++i) {
-      BOOST_REQUIRE(!s.insert(token_2).second);
-      FakeClock::seconds_since_epoch += delay / 4;
-    }
-
-    // correct token was being refreshed
-    BOOST_REQUIRE(s.insert(token_1).second);
-    BOOST_REQUIRE(!s.insert(token_2).second);
-    BOOST_REQUIRE(s.insert(token_3).second);
-
-    FakeClock::seconds_since_epoch += delay;
-    BOOST_REQUIRE(s.insert(token_1).second);
-    BOOST_REQUIRE(s.insert(token_2).second);
-    BOOST_REQUIRE(s.insert(token_3).second);
-  }
-
-  {
-    FakeClock::seconds_since_epoch = FakeClock::time_point();
-    ForgetfulUnorderedSet<choose::Token, decltype(hash), decltype(eq), FakeClock> s(hash, eq, 1, 2, delay);
-    s.setup();
-    // first insertions are successful
-    BOOST_REQUIRE(s.insert(token_1).second);
-    BOOST_REQUIRE(s.insert(token_2).second);
-    BOOST_REQUIRE(s.insert(token_3).second);
-
-    // refresh token 1 over a staleness period, until 2 is now stale
-    for (int i = 0; i < 4; ++i) {
-      BOOST_REQUIRE(!s.insert(token_2).second);
-      FakeClock::seconds_since_epoch += delay / 4;
-    }
-
-    // correct token was being refreshed
-    BOOST_REQUIRE(s.insert(token_1).second);
-    BOOST_REQUIRE(!s.insert(token_2).second);
-    BOOST_REQUIRE(s.insert(token_3).second);
-
-    FakeClock::seconds_since_epoch += delay;
-    BOOST_REQUIRE(s.insert(token_1).second);
-    BOOST_REQUIRE(s.insert(token_2).second);
-    BOOST_REQUIRE(s.insert(token_3).second);
-  }
 }
 
 BOOST_AUTO_TEST_CASE(numeric_unique_use_set) {
@@ -776,42 +668,6 @@ BOOST_AUTO_TEST_CASE(tail_min) {
 BOOST_AUTO_TEST_CASE(sort_unique) {
   choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--unique"});
   choose_output correct_output{to_vec("a\nis\ntest\nthis\n")};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_uniq) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq"});
-  choose_output correct_output{to_vec("a\nis\ntest\nthis\n")};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_uniq_numeric) {
-  choose_output out = run_choose("3\n2\n1\n3.0\n2.0\n1.0", {"-n", "--sort", "--stable", "--uniq"});
-  choose_output correct_output{to_vec("1\n2\n3\n")};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_uniq_general_numeric) {
-  choose_output out = run_choose("3\n2\n1\n3e0\n2e0\n1e0", {"-g", "--sort", "--stable", "--uniq"});
-  choose_output correct_output{to_vec("1\n2\n3\n")};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_uniq_empty) {
-  choose_output out = run_choose("", {"--sort", "--uniq"});
-  choose_output correct_output{to_vec("")};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_uniq_tui) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq", "-t"});
-  choose_output correct_output{std::vector<choose::Token>{"a", "is", "test", "this"}};
-  BOOST_REQUIRE_EQUAL(out, correct_output);
-}
-
-BOOST_AUTO_TEST_CASE(sort_uniq_flip) {
-  choose_output out = run_choose("this\nis\nis\na\na\ntest", {"--sort", "--uniq", "--flip"});
-  choose_output correct_output{to_vec("this\ntest\nis\na\n")};
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
