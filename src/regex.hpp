@@ -11,6 +11,10 @@ namespace choose {
 
 namespace regex {
 
+struct regex_failure : public std::runtime_error {
+  regex_failure(const char* message) : std::runtime_error(message) {}
+};
+
 struct code_destroyer {
   void operator()(pcre2_code* code) {
     pcre2_code_free(code); // library does null check
@@ -47,7 +51,7 @@ code compile(const char* pattern, uint32_t options, const char* identification, 
     pcre2_get_error_message(error_number, buffer, sizeof(buffer));
     char msg[512];
     snprintf(msg, 512, "PCRE2 compilation in %s failed at offset %d: %s", identification, (int)error_offset, buffer);
-    throw std::runtime_error(msg);
+    throw regex_failure(msg);
   }
   // ignore the return code here. falls back to normal code
   pcre2_jit_compile(re, jit_options);
@@ -61,7 +65,7 @@ code compile(const std::vector<char>& pattern, uint32_t options, const char* ide
 match_data create_match_data(const code& code) {
   pcre2_match_data* data = pcre2_match_data_create_from_pattern(code.get(), NULL);
   if (data == NULL) {
-    throw std::runtime_error("PCRE2 err");
+    throw regex_failure("PCRE2 err");
   }
   return match_data(data);
 }
@@ -88,7 +92,7 @@ int match(const code& re, //
     pcre2_get_error_message(rc, buffer, sizeof(buffer));
     char msg[512];
     snprintf(msg, 512, "Matching error in %s: %s", identification, buffer);
-    throw std::runtime_error(msg);
+    throw regex_failure(msg);
   }
   return rc;
 }
@@ -121,12 +125,12 @@ struct SubstitutionContext {
 
 namespace {
 
-std::runtime_error get_sub_err(int sub_rc) {
+regex_failure get_sub_err(int sub_rc) {
   PCRE2_UCHAR buffer[256];
   pcre2_get_error_message(sub_rc, buffer, sizeof(buffer));
   char msg[512];
   snprintf(msg, 512, "PCRE2 substitution error: %s", buffer);
-  return std::runtime_error(msg);
+  return regex_failure(msg);
 }
 
 } // namespace
@@ -278,7 +282,7 @@ struct Match {
                "In %s, \\K was used in an assertion to set the match start after its end.\n"
                "From end to start the match was: %.*s",
                identification, (int)(begin - end), end);
-      throw std::runtime_error(msg);
+      throw regex_failure(msg);
     }
   }
 };

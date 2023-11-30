@@ -11,6 +11,7 @@
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
+#include "termination_request.hpp"
 
 /*
 There's a lot going on in this file. It should have complete code coverage. View with:
@@ -180,9 +181,6 @@ struct TokenOutputStream {
     out_count = 0;
   }
 };
-
-// exit unless this is a unit test
-struct termination_request : public std::exception {};
 
 namespace {
 
