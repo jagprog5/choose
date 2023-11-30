@@ -31,7 +31,7 @@ using code = std::unique_ptr<pcre2_code, code_destroyer>;
 using match_data = std::unique_ptr<pcre2_match_data, match_data_destroyer>;
 
 void apply_null_guard(const char*& pattern, PCRE2_SIZE size) {
-  if (PCRE2_MAJOR > 10 || (PCRE2_MAJOR == 10 && PCRE2_MINOR > 42)) {
+  if (PCRE2_MAJOR > 10 || (PCRE2_MAJOR == 10 && PCRE2_MINOR > 43)) {
     return; // I requested a change; new version fixes this
   }
   // https://github.com/PCRE2Project/pcre2/issues/270
