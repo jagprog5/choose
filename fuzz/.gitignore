@@ -1,5 +1,9 @@
-*
-!.gitignore
-!main.cpp
-!makefile
-!README.md
+a.out
+coverage.info
+main.gcda
+main.gcno
+*.png
+*.html
+*.css
+crash-*
+leak-*

@@ -6,7 +6,24 @@
 
 extern int optreset;
 
+#ifdef CHOOSE_FUZZ_DOING_COV
+extern "C" void __gcov_flush();
+
+void sigint_handler(int signo) {
+  __gcov_flush();
+  exit(0);
+}
+
+#endif
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+#ifdef CHOOSE_FUZZ_DOING_COV
+  if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+    perror("Error setting up SIGINT handler");
+    return 1;
+  }
+#endif
+
   // generate arguments and stdin from the fuzz data
   std::vector<std::string> arg_strs;
   arg_strs.emplace_back();
