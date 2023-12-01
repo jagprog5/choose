@@ -1,0 +1,9 @@
+a.out
+coverage.info
+main.gcda
+main.gcno
+*.png
+*.html
+*.css
+crash-*
+leak-*

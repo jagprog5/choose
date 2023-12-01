@@ -204,6 +204,9 @@ struct UncompiledCodes {
 
 // prefixes error message with the path of this executable
 void arg_error_preamble(int argc, const char* const* argv) {
+#ifdef CHOOSE_FUZZING_APPLIED
+  throw termination_request();
+#endif
   const char* me; // NOLINT initialized below
   if (argc > 0 && argv && *argv) {
     me = *argv;
@@ -216,6 +219,9 @@ void arg_error_preamble(int argc, const char* const* argv) {
 
 // this function exits
 void print_version_message() {
+#ifdef CHOOSE_FUZZING_APPLIED
+  throw termination_request();
+#endif
   int exit_code = puts("choose 0.3.0, "
     "ncurses " choose_xstr(NCURSES_VERSION_MAJOR) "." choose_xstr(NCURSES_VERSION_MINOR) "." choose_xstr(NCURSES_VERSION_PATCH) ", "
     "pcre2 " choose_xstr(PCRE2_MAJOR) "." choose_xstr(PCRE2_MINOR)) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
@@ -224,6 +230,9 @@ void print_version_message() {
 
 // this function exits
 void print_help_message() {
+#ifdef CHOOSE_FUZZING_APPLIED
+  throw termination_request();
+#endif
   // respects 80 char width, and pipes the text to less to accommodate terminal height
   const char* const help_text =
       "                             .     /======\\                                .    \n"
@@ -247,8 +256,8 @@ void print_help_message() {
       "                remove tokens that don't match. inherits the same match options\n"
       "                as the positional argument\n"
       "        --index [b[efore]|a[fter]|<default: b>]\n"
-      "                on each token, concatenate the ascii representation of it's\n"
-      "                arrival order.\n"
+      "                on each token, concatenate the base 10 ascii representation of\n"
+      "                it's arrival order.\n"
       "        --head [<# tokens>|<start inclusive>,<stop exclusive>|<default: 10>]\n"
       "                stop reading the input once n tokens have reached this point\n"
       "        --replace <replacement>\n"
@@ -554,14 +563,25 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {NULL, 0, NULL, 0}
 
     };
-    int c = getopt_long(argc, argv, "-vho:b:p:f:trdegimnrsuyz", long_options, &option_index);
+    int c = getopt_long(argc, argv, "-:vho:b:p:f:trdegimnrsuyz", long_options, &option_index);
     if (c == -1) {
       break; // end of args
     }
 
     switch (c) {
-      default:
+      case '?':
         arg_has_errors = true;
+#ifndef CHOOSE_FUZZING_APPLIED
+        printf("Unknown option: %c\n", optopt);
+#endif
+        break;
+      case ':':
+        arg_has_errors = true;
+#ifndef CHOOSE_FUZZING_APPLIED
+        printf("Mising arg for: %c\n", optopt);
+#endif
+        break;
+      default:
         break;
       case 0: {
         // long option
@@ -639,6 +659,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
             uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledRmOrFilterOp{RmOrFilterOp::REMOVE, optarg});
           } else if (strcmp("field", name) == 0) {
 #ifdef CHOOSE_DISABLE_FIELD
+#ifdef CHOOSE_FUZZING_APPLIED
+            throw termination_request();
+#endif
             arg_error_preamble(argc, argv);
             fputs("--field is disabled\n", stderr);
             arg_has_errors = true;
@@ -647,6 +670,14 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
 #endif
           } else if (strcmp("buf-size", name) == 0) {
             ret.buf_size = num::parse_number<decltype(ret.buf_size)>(on_num_err, optarg, false);
+            if (ret.buf_size > 2048) {
+#ifdef CHOOSE_FUZZING_APPLIED
+              throw termination_request();
+#endif
+              arg_error_preamble(argc, argv);
+              fputs("a very large buffer size is not allowed. max is 2048\n", stderr);
+              arg_has_errors = true; // will never happen
+            }
           } else if (strcmp("buf-size-frag", name) == 0) {
             ret.buf_size_frag = num::parse_number<decltype(ret.buf_size_frag)>(on_num_err, optarg, true, false);
           } else if (strcmp("head", name) == 0) {
@@ -762,6 +793,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
           } else if (strcmp("utf-allow-invalid", name) == 0) {
             uncompiled_output.re_options |= PCRE2_MATCH_INVALID_UTF;
           } else if (strcmp("auto-completion-strings", name) == 0) {
+#ifdef CHOOSE_FUZZING_APPLIED
+            throw termination_request();
+#endif
             const option* pos = long_options;
             while (pos->name) {
               fputs("--", stdout);
@@ -889,6 +923,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (arg_has_errors) {
+#ifdef CHOOSE_FUZZING_APPLIED
+    throw termination_request();
+#endif
     exit(EXIT_FAILURE);
   }
 
@@ -958,6 +995,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (uncompiled_output.is_bounded_query) {
+#ifdef CHOOSE_FUZZING_APPLIED
+    throw termination_request();
+#endif
     int exit_code = EXIT_SUCCESS;
     if (ret.mem_is_bounded()) {
       exit_code = puts("yes") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
@@ -966,6 +1006,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
   }
 
   if (isatty(fileno(ret.input))) {
+#ifdef CHOOSE_FUZZING_APPLIED
+    throw termination_request();
+#endif
     int exit_code = puts("Try 'choose --help' for more information.") < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     exit(exit_code);
   }

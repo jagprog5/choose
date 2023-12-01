@@ -11,6 +11,7 @@
 #include "args.hpp"
 #include "regex.hpp"
 #include "string_utils.hpp"
+#include "termination_request.hpp"
 
 /*
 There's a lot going on in this file. It should have complete code coverage. View with:
@@ -180,9 +181,6 @@ struct TokenOutputStream {
     out_count = 0;
   }
 };
-
-// exit unless this is a unit test
-struct termination_request : public std::exception {};
 
 namespace {
 
@@ -571,7 +569,8 @@ after_direct_apply:
           if (is_invalid_utf) {
             subject_effective_end = subject + subject_size;
           } else {
-            throw std::runtime_error("utf8 decoding error");
+            // counting this as a regex failure for the fuzzer to catch
+            throw regex::regex_failure("utf8 decoding error");
           }
         }
       } else {
@@ -798,13 +797,19 @@ skip_read: // do another iteration but don't read in any more bytes
       set->clear();
     }
 
+#ifdef CHOOSE_FUZZING_APPLIED
+    auto policy = std::execution::seq; // tbb false positive
+#else
+    auto policy = std::execution::par_unseq;
+#endif
+
     if (!args.out_start && !args.out_end) {
       // no truncation needed. this is the simplest case
       if (args.sort) {
         if (args.sort_stable) {
-          std::stable_sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
+          std::stable_sort(policy, output.begin(), output.end(), sort_comparison);
         } else {
-          std::sort(std::execution::par_unseq, output.begin(), output.end(), sort_comparison);
+          std::sort(policy, output.begin(), output.end(), sort_comparison);
         }
       }
     } else {
@@ -827,9 +832,9 @@ skip_read: // do another iteration but don't read in any more bytes
           }
           if (args.sort) {
             if (args.sort_stable) {
-              stable_partial_sort(std::execution::par_unseq, output.begin(), middle, output.end(), sort_comparison);
+              stable_partial_sort(policy, output.begin(), middle, output.end(), sort_comparison);
             } else {
-              std::partial_sort(std::execution::par_unseq, output.begin(), middle, output.end(), sort_comparison);
+              std::partial_sort(policy, output.begin(), middle, output.end(), sort_comparison);
             }
           }
           output.resize(middle - output.begin());

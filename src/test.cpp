@@ -14,15 +14,46 @@ std::optional<size_t> output_size_bound_testing;
 
 /*
 valgrind should give a clean bill of health:
-valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt ./unit_tests
-with one exception:
-on some platforms, tbb is used in the backend for std::execution.
-if tbb is used, then valgrind might indicate memory leaks. it uses an arena thread that doesn't clean up in time before termination.
-looks like "by 0x48D6B6F: ??? (in /usr/lib/x86_64-linux-gnu/libtbb.so.2)"
- - https://github.com/oneapi-src/oneTBB/issues/206
-or from: rtld-malloc
-if there's any uncertainty, remove any instance of std::execution::par_unseq and run again
+valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt --suppressions=../path/to/valgrind_tbb.sup  ./unit_tests
+
+if there is mis-match in the header and library version of pcre2, then this can gives errors. to make sure everything is clean,
+uninstall existing pcre2: apt-get remove libpcre2-dev,
+install pcre2 from source, preferrably >=10.42
+
+note this supression file:
 */
+
+// { # valgrind_tbb.sup
+//    tbb_malloc
+//    Memcheck:Leak
+//    match-leak-kinds: reachable
+//    fun:malloc
+//    ...
+//    obj:*/libtbb.so.*
+// }
+// {
+//    tbb_calloc
+//    Memcheck:Leak
+//    match-leak-kinds: reachable
+//    fun:calloc
+//    obj:*/libtbb.so.*
+// }
+// {
+//    tbb_dl_malloc
+//    Memcheck:Leak
+//    match-leak-kinds: reachable
+//    fun:malloc
+//    ...
+//    fun:dlopen*
+// }
+// {
+//    tbb_dl_calloc
+//    Memcheck:Leak
+//    match-leak-kinds: reachable
+//    fun:calloc
+//    ...
+//    fun:dlopen*
+// }
 
 using namespace choose;
 
