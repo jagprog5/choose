@@ -4,13 +4,13 @@ Following [this guide](https://github.com/google/fuzzing/blob/master/tutorial/li
 
 ## without coverage
 ```bash
-make && ./a.out -max_total_time=28800 # 8 hours or ctrl c when desired
+make && ./a.out -dict=dict.txt -timeout=20  -max_total_time=10800 # 3 hours or ctrl c when desired
 ```
 
 ## with coverage
 ```bash
 make clean
 make cov
-./a.out -timeout=10 -max_total_time=28800
+./a.out -dict=dict.txt -timeout=20 -max_total_time=10800
 make cov-show
 ```

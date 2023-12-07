@@ -4,7 +4,7 @@
 [![Linter](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml/badge.svg)](https://github.com/jagprog5/choose/actions/workflows/cpp-linter.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-choose is tool for creating selection dialogs. It can also:
+choose is a tool for creating selection dialogs. It can also:
 
  - grep using pcre2 syntax with arbitrary delimiters
  - [stream edit](https://stackoverflow.com/a/77025816/15534181)

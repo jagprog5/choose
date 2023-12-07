@@ -18,7 +18,7 @@ namespace choose {
 #define choose_xstr(a) choose_str(a)
 #define choose_str(a) #a
 
-#define BUF_SIZE_DEFAULT 32768
+#define BUF_SIZE_DEFAULT 8192
 #define UNIQUE_LOAD_FACTOR_DEFAULT 0.125
 
 enum Comparison {
@@ -291,15 +291,23 @@ void print_help_message() {
       "                delimiter is placed after every batch.\n"
       "        --buf-size <# bytes, default: " choose_xstr(BUF_SIZE_DEFAULT) ">\n"
       "                size of match buffer used. patterns that require more room will\n"
-      "                never successfully match\n"
+      "                never successfully match. fixed length.\n"
       "        --buf-size-frag <# bytes, default: <<buf-size> * 8>\n"
       "                this is only applicable if --match and --sed are not specified,\n"
-      "                meaning the input delimiter is being matched. assuming buf-size\n"
-      "                is less than buf-size-frag, then this is the maximum size of a\n"
-      "                token that can be created. if it's size would exceed this arg\n"
-      "                then the content thus far is discarded. this limit is avoided\n"
-      "                in the special case where there is no ordered ops, no sorting,\n"
-      "                no uniqueness, no flip, and no tui used.\n"
+      "                meaning the input delimiter is being matched. suppose the\n"
+      "                delimiter occurs infrequently in the input; this would cause the\n"
+      "                tokens to be long, exceeding the length specified in --buf-size.\n"
+      "                to free space, part or all of the content is moved from the\n"
+      "                match buffer to the \"fragment\" buffer, in which parts of a\n"
+      "                token are accumulated. if its size would exceed this arg then\n"
+      "                the content thus far is discarded; a consequence being that:\n"
+      "                assuming --buf-size is not greater than --buf-size-frag, then\n"
+      "                this is the max size of a token that can be created. the\n"
+      "                fragment buffer is variable length and dynamically allocates.\n"
+      "                can be 0 to disable. this limit is avoided in the special\n"
+      "                case where there is no ordered ops, no sorting, no uniqueness\n"
+      "                no flip, and no tui used (it can be avoided since the token\n"
+      "                parts are instead written directly to the output).\n"
       "        -d, --delimit-same\n"
       "                applies both --delimit-not-at-end and --use-delimiter. this\n"
       "                makes the output end with a delimiter when the input also ends\n"
@@ -355,6 +363,8 @@ void print_help_message() {
       "                additionally, 0xAE is treated as end of string, but ideally this\n"
       "                should never happen since it's not part of the format\n"
       "        --no-warn\n"
+      "                if content is dropped (see --buf-size-frag), do not give a\n"
+      "                warning via stderr\n"
       "        --null, --read0\n"
       "                delimit the input on null chars\n"
       "        -o, --output-delimiter <delimiter, default: '\\n'>\n"

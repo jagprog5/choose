@@ -7,3 +7,4 @@ main.gcno
 *.css
 crash-*
 leak-*
+dict.txt
