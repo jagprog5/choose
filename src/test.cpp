@@ -506,6 +506,12 @@ BOOST_AUTO_TEST_CASE(simple) {
   BOOST_REQUIRE_EQUAL(out, correct_output);
 }
 
+BOOST_AUTO_TEST_CASE(simple_ignore_case) {
+  choose_output out = run_choose("1a2A3", {"-t", "-i", "a"});
+  choose_output correct_output{std::vector<choose::Token>{"1", "2", "3"}};
+  BOOST_REQUIRE_EQUAL(out, correct_output);
+}
+
 BOOST_AUTO_TEST_CASE(delimiters) {
   OutputSizeBoundFixture o(0);
   choose_output out = run_choose("first\nsecond\nthird", {"--output-delimiter", " ", "--batch-delimiter=\n"});

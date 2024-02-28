@@ -165,7 +165,7 @@ struct UncompiledCodes {
     }
 
     // see if single byte delimiter optimization applies
-    if (!output.match && primary.size() == 1) {
+    if (!output.match && primary.size() == 1 && !(re_options & PCRE2_CASELESS)) {
       if (re_options & PCRE2_LITERAL) {
         // if the expression is literal then any single byte works
         output.in_byte_delimiter = primary[0];
@@ -250,7 +250,7 @@ void print_help_message() {
       "        -v, --version\n"
       "ordered operations can be specified multiple times and are applied in the order\n"
       "they are stated. they are applied before any sorting or uniqueness options. if\n"
-      "ops need to be applied after sorting an uniqueness, then multiple instances of\n"
+      "ops need to be applied after sorting and uniqueness, then multiple instances of\n"
       "choose should be chained together via a pipe\n"
       "        -f, --filter <target>\n"
       "                remove tokens that don't match. inherits the same match options\n"
