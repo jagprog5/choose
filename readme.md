@@ -229,7 +229,7 @@ sed can't make a substitution if the target contains the delimiter (a newline ch
 
 # ch_hist
 
-`ch_hist` is a bash function installed with choose. It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
+`ch_hist` is a bash function installed with choose (only if bash is the shell being used). It allows a previous command to be re-run, like [fzf](https://github.com/junegunn/fzf).
 
 ```txt
   cd build

@@ -48,7 +48,12 @@ if (DISABLE_FIELD)
   )
 endif()
 
-install(TARGETS choose DESTINATION ~/.choose)
+install(TARGETS choose DESTINATION bin)
+
+# this should only be invoked by the uninstall script, and not manually
+add_custom_target(remove_exe
+    rm -vf -- "${CMAKE_INSTALL_PREFIX}/bin/choose"
+)
 
 if(BUILD_TESTING)
   set(BOOST_MIN_VERSION "1.63.0")

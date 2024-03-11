@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PATH="$PATH:$HOME/.choose"
+PATH="$PATH:$HOME/.choose/bin"
 
 __choose_script_completion() {
     local curr_arg

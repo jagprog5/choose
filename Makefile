@@ -1,5 +1,10 @@
+.PHONY: no install uninstall
+
+no:
+	echo "instead run 'make install' or 'make uninstall'"
+
 install:
-	scripts/install.bash
+	scripts/install.sh
 
 uninstall:
-	scripts/uninstall.bash
+	scripts/uninstall.sh
