@@ -57,7 +57,6 @@ add_custom_target(remove_exe
 
 if(BUILD_TESTING)
   set(BOOST_MIN_VERSION "1.63.0")
-  # valgrind indicates mem leak within boost when using shared lib
   set(Boost_USE_STATIC_LIBS ON)
   find_package(Boost REQUIRED COMPONENTS unit_test_framework)
   
@@ -90,6 +89,10 @@ if(BUILD_TESTING)
   add_test(COMMAND ./unit_tests)
 
   if (CODE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+      message(FATAL_ERROR "coverage needs clang")
+    endif()
+
     target_compile_options(unit_tests PRIVATE --coverage)
     target_link_libraries(unit_tests PRIVATE --coverage)
 
@@ -110,7 +113,10 @@ if(BUILD_TESTING)
     add_custom_target(cov-proc
       # the tests must be run before the coverage can be processed
       DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/unit_tests.dir/src/test.cpp.gcda
-      COMMAND lcov --capture --directory "${CMAKE_CURRENT_SOURCE_DIR}" --base-directory "${CMAKE_CURRENT_SOURCE_DIR}/src" --no-external --output-file "${CMAKE_CURRENT_BINARY_DIR}/coverage.info"
+      # the use of llvm_gcov.sh is what requires clang.
+      # this project can only be built with newer gcc (>= 11), and when using gcov-11 as the tool,
+      # couldn't fix the gcno version conflicts :(
+      COMMAND lcov --gcov-tool "${CMAKE_CURRENT_SOURCE_DIR}/scripts/llvm_gcov.sh" --capture --directory "${CMAKE_CURRENT_SOURCE_DIR}" --base-directory "${CMAKE_CURRENT_SOURCE_DIR}/src" --no-external --output-file "${CMAKE_CURRENT_BINARY_DIR}/coverage.info"
     )
 
     add_custom_target(cov-show

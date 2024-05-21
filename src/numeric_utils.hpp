@@ -45,10 +45,6 @@ std::enable_if_t<std::is_unsigned<T>::value, T> parse_number(OnErr onErr, const 
   //  - strtol doesn't give a full range
   // reverting to a dumb and slow way to make sure this is correct.
   // its only used in parsing args, so performance isn't a concern.
-  if (str == 0) {
-    onErr();
-    return 0;
-  }
   T out = 0;
 
   while (1) {
@@ -93,10 +89,6 @@ std::enable_if_t<std::is_unsigned<T>::value, T> parse_number(OnErr onErr, const 
 // allows a leading negative sign followed by digits
 template <typename T, typename OnErr>
 std::enable_if_t<std::is_signed<T>::value, T> parse_number(OnErr onErr, const char* str) {
-  if (str == 0) {
-    onErr();
-    return 0;
-  }
   bool has_leading_negative = false;
   if (*str == '-') {
     has_leading_negative = true;
@@ -112,22 +104,19 @@ std::enable_if_t<std::is_signed<T>::value, T> parse_number(OnErr onErr, const ch
       return T(out);
     }
   } else {
-    if (out > unsigned_T{std::numeric_limits<T>::max()} + 1) {
+    if (out <= std::numeric_limits<T>::max()) {
+      return -T(out);
+    } else if (out == unsigned_T{std::numeric_limits<T>::max()} + 1) {
+      return std::numeric_limits<T>::min();
+    } else {
       onErr();
       return 0;
-    } else {
-      return -T(out);
     }
   }
 }
 
 template <typename T, typename OnErr>
 std::tuple<T, std::optional<T>> parse_number_pair(OnErr onErr, const char* str) {
-  if (str == 0) {
-    onErr();
-    return {0, 0};
-  }
-
   bool erred = false; // parse result
   auto local_on_err = [&]() {
     erred = true;

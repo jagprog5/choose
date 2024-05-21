@@ -13,6 +13,14 @@ std::optional<size_t> output_size_bound_testing;
 #include "token.hpp"
 
 /*
+view coverage with:
+
+cd build
+cmake .. -DBUILD_TESTING=true -DCODE_COVERAGE=true -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10
+make cov-show
+*/
+
+/*
 valgrind should give a clean bill of health:
 valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt --suppressions=../path/to/valgrind_tbb.sup  ./unit_tests
 
@@ -1395,12 +1403,11 @@ BOOST_AUTO_TEST_CASE(parse_number_unsigned) {
 
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "-17"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "   123"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, NULL), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "4294967296"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "42949672950"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "4294967295", true, false), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<uint32_t>(must_be_called, "0", false, true), 0);
-  BOOST_REQUIRE_EQUAL(err_count, 7);
+  BOOST_REQUIRE_EQUAL(err_count, 6);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_signed) {
@@ -1416,8 +1423,7 @@ BOOST_AUTO_TEST_CASE(parse_number_signed) {
 
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "-129"), 0);
   BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, "128"), 0);
-  BOOST_REQUIRE_EQUAL(num::parse_number<char>(must_be_called, NULL), 0);
-  BOOST_REQUIRE_EQUAL(err_count, 3);
+  BOOST_REQUIRE_EQUAL(err_count, 2);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_pair) {

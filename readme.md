@@ -17,7 +17,7 @@ See benchmarks [here](./perf/perf.md) comparing it to other tools.
 sudo apt-get install cmake pkg-config libpcre2-dev libncursesw5-dev libtbb-dev
 git clone https://github.com/jagprog5/choose.git && cd choose
 make install
-source ~/.bashrc
+[ -f ~/.bashrc ] && source ~/.bashrc
 ```
 ## Uninstall
 ```bash
@@ -110,71 +110,6 @@ cat some_content | choose -f "test" --head 5
 
 The former is restricted to working with `lines`, whereas the latter works with `tokens`. Tokens are contiguous ranges and can contain newline characters, whereas lines can't. choose is line oriented by default, but doesn't have to be.
 
-# Sorting and Uniqueness
-
-**PLEASE** read this entire section before sorting large files. When in doubt, just pipe to gnu sort.
-
-choose uses lexicographical, numerical, or general numeric comparison between tokens. Using this comparison, it can apply sorting and uniqueness.
-
-For example, this command sorts the input and leaves only unique entries:
-
-```bash
-echo -n "this is is test test "\
-  | choose " " -us
-```
-
-<pre>
-is
-test
-this
-</pre>
-
-And this command sorts based on a specified field:
-
-```bash
-echo "1,gamma,1
-3,alpha,3
-2,beta,2"\
-  | choose -s --field '^[^,]*+.\K[^,]*+'
-```
-
-<pre>
-3,alpha,3
-2,beta,2
-1,gamma,1
-</pre>
-
-Sorting is implemented to effectively leverage truncation. For example:
-
-```bash
-cat very_large_file | choose --sort --out=5
-```
-
-That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately, no matter the size of the input. The equivalent: `sort | head -n5` does not do this and will be slower for large inputs.
-
-## Compared to gnu sort
-
-### Uniqueness
-
-gnu sort implements uniqueness in the following way:
-
-1. Read the input and sort it.
-2. Remove consecutive duplicate entries from the sorted elements, like the `uniq` command.
-
-choose instead applies uniqueness upfront:
-
-1. For every element in the input, check if it's been seen before.
-2. If it hasn't yet been seen, add it to the output.
-3. Sort the output.
-
-This allows choose to be fast for inputs that have many duplicates.
-
-### Sorting
-
-gnu sort does an [external sort](https://en.wikipedia.org/wiki/External_sorting); it writes sorted chunks to temporary files which are merged later. This makes it great at sorting large files, where the size is comparable to available memory.
-
-In contrast, choose reads the input into memory before sorting. This means it's not suited for sorting large files, unless the memory usage is bounded due to truncation (`--out/--tail`, see `--is-bounded`), or if the input is expected to contain many duplicates (upfront uniqueness, via `-u`). An external sort would not allow for either of those features.
-
 # Matching
 
 Rather than specifying how tokens are terminated, the tokens themselves can be matched for. A match and each match group form a token. This is like `grep -o`.
@@ -226,6 +161,69 @@ echo -e "this\n\0is\na\ntest" | choose -r --sed 'is\n\0is' --replace something
 ```
 
 sed can't make a substitution if the target contains the delimiter (a newline character); the input is split into lines before substitution occurs, so the delimiter never makes it to the substitution logic. The way this is avoided is to use `sed -z`, which changes the delimiter from newline to null. But in this case, the target includes null too! So it can't process the input properly. One quick way of fixing this is to use `tr` to change the input before it gets to sed (by changing null to a different character), but this can lose information and lead to ambiguous cases (if the delimiter is changed to something found naturally in the input).
+
+# Sorting and Uniqueness
+
+choose does an internal sort. This means it can run out of memory when working with large inputs. This is in contrast to gnu sort, which instead does an [external sort](https://en.wikipedia.org/wiki/External_sorting); it writes sorted chunks to temporary files which are merged later. An internal sort makes sense for choose, since selection dialogs aren't meant to be very large (and in most cases the output from choose can be piped to gnu sort anyway).
+
+Here is an example which sorts the input and leaves only unique entries:
+
+```bash
+echo -n "this is is test test "\
+  | choose " " -us
+```
+
+<pre>
+is
+test
+this
+</pre>
+
+Sorting and uniqueness take a comparison operator, each. The comparison can be done:
+
+- lexicographically (the default alphabetical order)
+- numerically (numbers like 1, 10, 11., -3.2, but NOT +3, positive leading sign is not allowed)
+- general numerically (supports scientific notation)
+
+For example, this sorts based on numeric value:
+
+```bash
+echo -e "10\n11\n5\n3" | choose -sn
+```
+
+<pre>
+3
+5
+10
+11
+</pre>
+
+A field can be specified, indicating which part of a token should be used when applying sorting and uniqueness.
+
+```bash
+echo "1,gamma,1
+3,alpha,3
+2,beta,2"\
+  | choose -s --field '^[^,]*+.\K[^,]*+'
+```
+
+<pre>
+3,alpha,3
+2,beta,2
+1,gamma,1
+</pre>
+
+## Implementation Notes
+
+Sorting is implemented to effectively leverage truncation. For example:
+
+```bash
+cat very_large_file | choose --sort --out=5
+```
+
+That command only stores the lowest 5 entries throughout its lifetime; the memory usage remains bounded appropriately, no matter the size of the input. The equivalent: `sort | head -n5` does not do this and will be slower for large inputs. For clarity on when this occurs, see `--is-bounded`.
+
+Uniqueness is applied upfront; unique tokens are remembered and compared against as new tokens arrive from the input. For contrast, GNU sort checks for consecutive unique elements (like the `uniq` command) just before the output.
 
 # ch_hist
 
