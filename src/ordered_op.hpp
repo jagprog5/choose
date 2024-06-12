@@ -124,20 +124,29 @@ struct IndexOp {
   Align align;
 
  private:
-  // bytes needed (without null char) for ascii base 10 representation of uint
-  static constexpr size_t space_required(size_t value) { return value == 0 ? 1 : (size_t(std::log10(value)) + 1); }
+  // just in case floating point math accumulates errors.
+  // this is being paranoid, since it's used to allocate a size on the stack.
+  // also this give 0 output for 0 input
+  static size_t log10_manual(size_t n) {
+    size_t log = 0;
+    while (n >= 10) {
+      n /= 10;
+      log++;
+    }
+    return log;
+  }
 
  public:
   // out_index is the number of tokens that have already been written to the output
   // places the ascii base 10 representation onto the beginning or end of a vector
   void apply(std::vector<char>& v) {
-    size_t extension = IndexOp::space_required(index);
+    size_t extension = log10_manual(index) + 1;
     extension += 1; // +1 for space
     if (this->align == IndexOp::BEFORE) {
       char temp[extension];
       // populate temp
-      sprintf(temp, "%zu", this->index);
-      // overwrite the null written by sprintf
+      snprintf(temp, extension, "%zu", this->index);
+      // overwrite the null written by snprintf
       *(temp + (ptrdiff_t)(extension - 1)) = ' ';
 
       v.insert(v.cbegin(), temp, temp + extension);
@@ -148,9 +157,9 @@ struct IndexOp {
       size_t without_last = this->index / 10;
       // index when divided by 10 must take one fewer byte
       if (without_last != 0) { // aka greater than 9
-        sprintf(ptr, "%zu", without_last);
+        snprintf(ptr, extension - 1, "%zu", without_last);
       }
-      // overwrite the null written by sprintf
+      // overwrite the null written by snprintf
       // NOLINTNEXTLINE narrowing to char is ok for index in range [0-9]
       *v.rbegin() = (char)(this->index - without_last * 10) + '0';
     }

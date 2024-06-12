@@ -318,7 +318,9 @@ again:
       return;
     }
 
-    int selection_text_space = selections.empty() || !args.selection_order ? 0 : int(std::log10(selections.size())) + 1;
+    // in the context in which this is used (UI positioning),
+    // std::log10 can have weird rounding errors - won't be disastrous
+    int selection_text_space = selections.empty() || !args.selection_order ? 0 : int(std::log10(selections.size()));
 
     for (int y = 0; y < selection_rows; ++y) {
       // =============================== draw line =============================
@@ -364,7 +366,6 @@ again:
           ch[1] = L'\0';
 
           const char* escape_sequence = 0; // draw non printing ascii via escape sequence
-          bool char_is_invalid = false;    // decode error is represented by ?
 
           size_t num_bytes = std::mbrtowc(&ch[0], pos, end - pos, &ps);
           if (num_bytes == 0) {
@@ -373,18 +374,17 @@ again:
           } else if (num_bytes == (size_t)-1) {
             // this sets errno, but we can keep going
             num_bytes = 1;
-            char_is_invalid = true;
+            escape_sequence = "?";
+            memset(&ps, 0, sizeof(ps)); // make not unspecified
           } else if (num_bytes == (size_t)-2) {
             // the remaining bytes in the token do not complete a character
             num_bytes = end - pos; // go to the end
-            char_is_invalid = true;
+            escape_sequence = "?]";
           }
 
           pos += num_bytes;
 
-          if (char_is_invalid) {
-            escape_sequence = "?";
-          } else {
+          if (!escape_sequence) {
             escape_sequence = choose::str::get_escape_sequence(ch[0]);
           }
 

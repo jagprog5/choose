@@ -1,5 +1,19 @@
 #!/bin/sh
 set -e
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "==================================================="
+  echo "This script may have erroneously been run as root."
+  echo "It is not neccessary."
+  echo "==================================================="
+  read -p "Continue (y/n)? " RESPONSE
+
+  # Check if the user input is not "y"
+  if [ "$RESPONSE" != "y" ]; then
+    exit 0
+  fi
+fi
+
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 cd -- "$SCRIPT_DIR/../build"
 cmake ..

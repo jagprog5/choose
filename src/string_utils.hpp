@@ -304,12 +304,15 @@ struct QueuedOutput {
 // block until n bytes have been made available in the file, or EOF
 size_t get_bytes(FILE* f, size_t n, char* out) {
   size_t read_ret = fread(out, sizeof(char), n, f);
-  if (unlikely(read_ret == 0)) {
+  if (unlikely(read_ret != n)) {
     if (feof(f)) {
       return read_ret;
     } else if (ferror(f)) {
       const char* err_string = strerror(errno);
       throw std::runtime_error(err_string);
+    } else {
+      // never occur
+      throw std::runtime_error("unknown read error");
     }
   }
   return read_ret;
