@@ -449,9 +449,9 @@ again:
 int main(int argc, char* const* argv) {
   choose::Arguments args = choose::handle_args(argc, argv);
   setlocale(LC_ALL, args.locale);
-  std::vector<choose::Token> tokens;
+  choose::CreateTokensResult tokens_result;
   try {
-    tokens = choose::create_tokens(args);
+    tokens_result = choose::create_tokens(args);
   } catch (const choose::termination_request&) {
     return EXIT_SUCCESS;
   }
@@ -470,8 +470,8 @@ int main(int argc, char* const* argv) {
   choose::nc::screen screen;
 
   UIState state{
-      std::move(args),   //
-      std::move(tokens), //
+      std::move(args),                 //
+      std::move(tokens_result.tokens), //
       BatchOutputStream(state.args),
   };
 
@@ -492,7 +492,12 @@ int main(int argc, char* const* argv) {
     init_pair(UIState::PAIR_SELECTED, COLOR_GREEN, -1);
 
     state.scroll_position = 0;
-    state.selection_position = state.args.end ? (int)state.tokens.size() - 1 : 0;
+    if (tokens_result.initial_selection_position.has_value()) {
+      // priority
+      state.selection_position = *tokens_result.initial_selection_position;
+    } else {
+      state.selection_position = state.args.end ? (int)state.tokens.size() - 1 : 0;
+    }
     state.tenacious_single_select_indicator = 0;
 
     state.loop();
@@ -507,5 +512,5 @@ int main(int argc, char* const* argv) {
     }
     return EXIT_FAILURE;
   }
-  return sigint_occurred ? 128 + 2 : EXIT_SUCCESS;
+  return sigint_occurred ? 128 + SIGINT : EXIT_SUCCESS;
 }

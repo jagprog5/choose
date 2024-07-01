@@ -210,13 +210,18 @@ bool general_numeric_comparison(const Token& lhs, const Token& rhs) { //
 
 } // namespace
 
+struct CreateTokensResult {
+  std::vector<Token> tokens;
+  std::optional<int> initial_selection_position = {};
+};
+
 // reads from args.input
 // if args.tui:
 //      returns the tokens
 // else
 //      writes to args.output, then throws a termination_request exception,
 //      which the caller should handle (exit unless unit test)
-std::vector<Token> create_tokens(choose::Arguments& args) {
+CreateTokensResult create_tokens(choose::Arguments& args) {
   const bool single_byte_delimiter = args.in_byte_delimiter.has_value();
   const bool is_utf = args.primary ? regex::options(args.primary) & PCRE2_UTF : false;
   const bool is_invalid_utf = args.primary ? regex::options(args.primary) & PCRE2_MATCH_INVALID_UTF : false;
@@ -249,7 +254,10 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
   uint32_t match_options = PCRE2_PARTIAL_HARD;
 
   TokenOutputStream direct_output(args); //  if is_direct_output, this is used
-  std::vector<Token> output;             // !tokens_not_stored, this is used
+
+  // fields for CreateTokensResult
+  std::optional<int> initial_selection_position = {}; // !tokens_not_stored, these two are used
+  std::vector<Token> output;
 
   if (args.out_end == 0) {
     // edge case on logic. it adds a token, then checks if the out limit has been hit
@@ -369,6 +377,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       bool t_is_set = false;
       Token t;
 
+      bool token_is_selected = false; // for --tui-select
+
       if (!fragment.empty()) {
         if (fragment.size() + (end - begin) > args.buf_size_frag) {
           args.drop_warning();
@@ -448,6 +458,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
         return true;
       };
 
+      bool ret = false; // return value
+
       for (OrderedOp& op : args.ordered_ops) {
         if (RmOrFilterOp* rf_op = std::get_if<RmOrFilterOp>(&op)) {
           if (rf_op->removes(begin, end)) {
@@ -464,11 +476,14 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
             default:
               break;
           }
+        } else if (TuiSelectOp* tui_select_op = std::get_if<TuiSelectOp>(&op)) {
+          if (tui_select_op->matches(begin, end)) {
+            // set the cursor to here, only if it makes it through all following ops
+            token_is_selected = true;
+          }
         } else {
           if (tokens_not_stored && &op == &*args.ordered_ops.rbegin()) {
             if (ReplaceOp* rep_op = std::get_if<ReplaceOp>(&op)) {
-              // placing this on the stack instead had no noticable difference
-              // in performance. perhaps elided
               std::vector<char> out;
               rep_op->apply(out, subject, subject + subject_size, primary_data, args.primary);
               direct_output.write_output(&*out.cbegin(), &*out.cend());
@@ -516,7 +531,8 @@ std::vector<Token> create_tokens(choose::Arguments& args) {
       if (is_direct_output) {
         if (!tokens_not_stored) {
           if (!check_unique_then_append()) {
-            return false;
+            ret = false;
+            goto end;
           }
         }
         direct_output.write_output(begin, end);
@@ -530,17 +546,26 @@ after_direct_apply:
           direct_output.finish_output();
           throw termination_request();
         }
-        return false;
+        ret = false;
+        goto end;
       } else {
         check_unique_then_append(); // result ignored
         // handle the case mentioned in check_unique_then_append
         if (mem_is_bounded && !sort && !tail) {
           if (output.size() == *args.out_end) {
-            return true;
+            ret = true;
+            goto end;
           }
         }
-        return false;
+        ret = false;
+        goto end;
       }
+
+end:
+      if (token_is_selected) {
+        initial_selection_position = (int)output.size() - 1;
+      }
+      return ret;
     };
 
     while (1) {
@@ -875,7 +900,7 @@ skip_all:
     throw termination_request();
   }
 
-  return output;
+  return CreateTokensResult{output, initial_selection_position};
 }
 
 } // namespace choose

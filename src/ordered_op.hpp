@@ -6,6 +6,18 @@
 
 namespace choose {
 
+struct TuiSelectOp {
+  regex::code target;
+  regex::match_data match_data;
+
+  TuiSelectOp(regex::code&& target) : target(std::move(target)), match_data(regex::create_match_data(this->target)) {}
+
+  bool matches(const char* begin, const char* end) const {
+    int rc = regex::match(this->target, begin, end - begin, this->match_data, "tui selection target");
+    return rc > 0;
+  }
+};
+
 struct RmOrFilterOp {
   enum Type { REMOVE, FILTER };
   Type type;
@@ -183,9 +195,13 @@ struct IndexOp {
   }
 };
 
-using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, InLimitOp, IndexOp>;
+using OrderedOp = std::variant<RmOrFilterOp, SubOp, ReplaceOp, InLimitOp, IndexOp, TuiSelectOp>;
 
 namespace uncompiled {
+
+struct UncompiledTuiSelectOp {
+  const char* target;
+};
 
 struct UncompiledRmOrFilterOp {
   RmOrFilterOp::Type type;
@@ -204,7 +220,12 @@ using UncompiledIndexOp = IndexOp;
 // uncompiled ops are exclusively used in the args. They hold information as all the
 // args are parsed. once the args are fully known, they are converted to
 // there compiled counterparts.
-using UncompiledOrderedOp = std::variant<UncompiledRmOrFilterOp, UncompiledSubOp, UncompiledReplaceOp, UncompiledInLimitOp, UncompiledIndexOp>;
+using UncompiledOrderedOp = std::variant<UncompiledRmOrFilterOp, //
+                                         UncompiledSubOp,
+                                         UncompiledReplaceOp,
+                                         UncompiledInLimitOp,
+                                         UncompiledIndexOp,
+                                         UncompiledTuiSelectOp>;
 
 OrderedOp compile(UncompiledOrderedOp op, uint32_t options) {
   if (UncompiledRmOrFilterOp* rf_op = std::get_if<UncompiledRmOrFilterOp>(&op)) {
@@ -216,6 +237,8 @@ OrderedOp compile(UncompiledOrderedOp op, uint32_t options) {
     return *o;
   } else if (UncompiledInLimitOp* o = std::get_if<UncompiledInLimitOp>(&op)) {
     return *o;
+  } else if (UncompiledTuiSelectOp* o = std::get_if<UncompiledTuiSelectOp>(&op)) {
+    return TuiSelectOp(regex::compile(o->target, options, "tui select"));
   } else {
     return std::get<UncompiledIndexOp>(op);
   }
