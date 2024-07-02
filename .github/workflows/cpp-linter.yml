@@ -31,6 +31,8 @@ jobs:
             -readability-magic-numbers,\
             -readability-uppercase-literal-suffix,\
             -readability-function-cognitive-complexity,\
+            -readability-identifier-length,\
+            -bugprone-easily-swappable-parameters,\
             -cppcoreguidelines-avoid-magic-numbers,\
             -cppcoreguidelines-macro-usage,\
             -cppcoreguidelines-pro-bounds-pointer-arithmetic,\

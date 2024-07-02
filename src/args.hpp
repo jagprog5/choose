@@ -282,6 +282,10 @@ void print_help_message() {
 #ifndef PCRE2_SUBSTITUTE_LITERAL
       "                WARNING PCRE2 version old: replacement is never literal\n"
 #endif
+      "        --tui-select <target>\n"
+      "                place the tui cursor at the last matched token. inherits the\n"
+      "                same match options as the positional argument. has a higher\n"
+      "                priority than --end. implies --tui\n"
       "options:\n"
       "        --auto-completion-strings\n"
       "        -b, --batch-delimiter <delimiter, default: <output-delimiter>>\n"
@@ -318,7 +322,7 @@ void print_help_message() {
       "        --delimit-on-empty\n"
       "                even if the output would be empty, place a batch delimiter\n"
       "        -e, --end\n"
-      "                begin cursor and prompt at the bottom of the tui\n"
+      "                begin cursor and prompt at the bottom of the tui. implies --tui\n"
       "        --flush\n"
       "                makes the input unbuffered, and the output is flushed after each\n"
       "                token is written. this is useful for long running inputs with -u\n"
@@ -517,6 +521,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         {"prompt", required_argument, NULL, 'p'},
         {"sub", required_argument, NULL, 0},
         {"substitute", required_argument, NULL, 0},
+        {"tui-select", required_argument, NULL, 0},
         {"filter", required_argument, NULL, 'f'},
         {"field", required_argument, NULL, 0},
         {"remove", required_argument, NULL, 0},
@@ -582,13 +587,13 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
       case '?':
         arg_has_errors = true;
 #ifndef CHOOSE_FUZZING_APPLIED
-        printf("Unknown option: %c\n", optopt);
+        printf("Unknown option: %s\n", argv[optind - 1]);
 #endif
         break;
       case ':':
         arg_has_errors = true;
 #ifndef CHOOSE_FUZZING_APPLIED
-        printf("Mising arg for: %c\n", optopt);
+        printf("Missing arg for: %s\n", argv[optind - 1]);
 #endif
         break;
       default:
@@ -721,6 +726,9 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
               ++optind;
               uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledSubOp{argv[optind - 2], argv[optind - 1]});
             }
+          } else if (strcmp("tui-select", name) == 0) {
+            uncompiled_output.ordered_ops.push_back(uncompiled::UncompiledTuiSelectOp{optarg});
+            ret.tui = true;
           } else if (strcmp("load-factor", name) == 0) {
             char* end_ptr; // NOLINT
             ret.unique_load_factor = strtof(optarg, &end_ptr);
@@ -849,6 +857,7 @@ Arguments handle_args(int argc, char* const* argv, FILE* input = NULL, FILE* out
         break;
       case 'e':
         ret.end = true;
+        ret.tui = true;
         break;
       case 'g':
         ret.sort_type = general_numeric;

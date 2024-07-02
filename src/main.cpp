@@ -449,9 +449,9 @@ again:
 int main(int argc, char* const* argv) {
   choose::Arguments args = choose::handle_args(argc, argv);
   setlocale(LC_ALL, args.locale);
-  std::vector<choose::Token> tokens;
+  choose::CreateTokensResult tokens_result;
   try {
-    tokens = choose::create_tokens(args);
+    tokens_result = choose::create_tokens(args);
   } catch (const choose::termination_request&) {
     return EXIT_SUCCESS;
   }
@@ -470,8 +470,8 @@ int main(int argc, char* const* argv) {
   choose::nc::screen screen;
 
   UIState state{
-      std::move(args),   //
-      std::move(tokens), //
+      std::move(args),                 //
+      std::move(tokens_result.tokens), //
       BatchOutputStream(state.args),
   };
 
@@ -483,18 +483,30 @@ int main(int argc, char* const* argv) {
     choose::nc::noecho();
     curs_set(0); // invisible cursor
 
-    // I don't handle ERR for anything color or attribute related since
-    // the application still works, even on failure (just without color)
-    // I also don't check ERR for ncurses printing, since if that stuff
-    // is not working, it will be very apparent to the user
+    // ERR isn't handled for anything color or attribute related since the
+    // application still works, even on failure (just without color) similar
+    // thinking for ncurses printing, in that case it will be very apparent to
+    // the user
     start_color();
     use_default_colors();
     init_pair(UIState::PAIR_SELECTED, COLOR_GREEN, -1);
 
     state.scroll_position = 0;
-    state.selection_position = state.args.end ? (int)state.tokens.size() - 1 : 0;
+    if (tokens_result.initial_selected_token.has_value()) {
+      // best to do this association at the end, as the indices are moved
+      // around by sorting and uniqueness
+      for (int i = 0; i < (int)state.tokens.size(); ++i) {
+        if (std::equal(state.tokens[i].buffer.cbegin(), state.tokens[i].buffer.cend(), //
+            tokens_result.initial_selected_token->buffer.cbegin(), tokens_result.initial_selected_token->buffer.cend())) {
+          state.selection_position = i;
+          break;
+        }
+      }
+    } else {
+      // --tui-select has a higher priority than --end
+      state.selection_position = state.args.end ? (int)state.tokens.size() - 1 : 0;
+    }
     state.tenacious_single_select_indicator = 0;
-
     state.loop();
   } catch (...) {
     // a note on ncurses:
@@ -507,5 +519,5 @@ int main(int argc, char* const* argv) {
     }
     return EXIT_FAILURE;
   }
-  return sigint_occurred ? 128 + 2 : EXIT_SUCCESS;
+  return sigint_occurred ? 128 + SIGINT : EXIT_SUCCESS;
 }

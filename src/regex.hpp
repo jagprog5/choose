@@ -302,7 +302,7 @@ template <typename T>
 bool get_match_and_groups(const char* subject, int rc, const match_data& match_data, T handler, const char* identification) {
   PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data.get());
   for (int i = 0; i < rc; ++i) {
-    auto m = Match{subject + ovector[2 * i], subject + ovector[2 * i + 1]};
+    auto m = Match{subject + ovector[2 * i], subject + ovector[2 * i + 1]}; // NOLINT
     m.ensure_sane(identification);
     if (handler(m)) {
       return true;
