@@ -29,7 +29,7 @@ ch_hist() {
       IFS= read -r -d ''
       cat
     } | grep -zi -- "$*" |
-    choose -r "\x00" -uet --delimit-not-at-end --flip -p "Select a line to edit then run.")
+    choose -r "\x00" -ue --delimit-not-at-end --flip -p "Select a line to edit then run.")
   
   if [ -z "$LINE" ]; then
     echo "empty line"
@@ -52,4 +52,11 @@ ch_hist() {
 
   # run on current shell
   source -- "$TEMPFILE"
+}
+
+ch_branch() {
+  local branch="$(git branch | grep -i -- "$*" | choose -re --tui-select '^\*' --sub '^[ *] ' '' --sort-reverse --delimit-not-at-end -p 'swap branch')"
+  if [ -n "$branch" ]; then
+    git checkout "$branch"
+  fi
 }
