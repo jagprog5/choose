@@ -381,8 +381,8 @@ struct choose_output {
         }
       }
       return std::equal(first.tokens.begin(), first.tokens.end(), second.tokens.begin(), second.tokens.end(), [](const choose::Token& lhs, const choose::Token& rhs) -> bool { //
-               return lhs.buffer == rhs.buffer;
-             });
+        return lhs.buffer == rhs.buffer;
+      });
     }
   }
 

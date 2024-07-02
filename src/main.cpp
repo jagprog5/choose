@@ -497,7 +497,7 @@ int main(int argc, char* const* argv) {
       // around by sorting and uniqueness
       for (int i = 0; i < (int)state.tokens.size(); ++i) {
         if (std::equal(state.tokens[i].buffer.cbegin(), state.tokens[i].buffer.cend(), //
-            tokens_result.initial_selected_token->buffer.cbegin(), tokens_result.initial_selected_token->buffer.cend())) {
+                       tokens_result.initial_selected_token->buffer.cbegin(), tokens_result.initial_selected_token->buffer.cend())) {
           state.selection_position = i;
           break;
         }
