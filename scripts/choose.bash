@@ -55,7 +55,7 @@ ch_hist() {
 }
 
 ch_branch() {
-  local branch="$(git branch | grep -i -- "$*" | choose -re --tui-select '^\*' --sub '^[ *] ' '' --sort-reverse --delimit-not-at-end -p 'git switch')"
+  local branch="$(git branch | grep -i -- "$*" | choose -re --tui-select '^\*' --sub '^[ *] ' '' --sort-reverse --delimit-not-at-end -p 'swap branch')"
   if [ -n "$branch" ]; then
     git checkout "$branch"
   fi

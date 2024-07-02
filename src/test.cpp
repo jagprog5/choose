@@ -372,8 +372,15 @@ struct choose_output {
     } else {
       const choose::CreateTokensResult& first = std::get<choose::CreateTokensResult>(o);
       const choose::CreateTokensResult& second = std::get<choose::CreateTokensResult>(other.o);
-      return first.initial_selected_token->buffer == second.initial_selected_token->buffer &&                                                                                                  //
-             std::equal(first.tokens.begin(), first.tokens.end(), second.tokens.begin(), second.tokens.end(), [](const choose::Token& lhs, const choose::Token& rhs) -> bool { //
+      if (first.initial_selected_token.has_value() != second.initial_selected_token.has_value()) {
+        return false;
+      }
+      if (first.initial_selected_token.has_value()) {
+        if (first.initial_selected_token->buffer != second.initial_selected_token->buffer) {
+          return false;
+        }
+      }
+      return std::equal(first.tokens.begin(), first.tokens.end(), second.tokens.begin(), second.tokens.end(), [](const choose::Token& lhs, const choose::Token& rhs) -> bool { //
                return lhs.buffer == rhs.buffer;
              });
     }
