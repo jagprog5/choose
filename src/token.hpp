@@ -686,9 +686,10 @@ skip_read: // do another iteration but don't read in any more bytes
 
           // account for lookbehind bytes to retain prior to the match
           const char* new_subject_begin_cp = new_subject_begin;
-          new_subject_begin -= args.max_lookbehind;
-          if (new_subject_begin < subject) {
+          if (new_subject_begin - subject < args.max_lookbehind) {
             new_subject_begin = subject;
+          } else {
+            new_subject_begin -= args.max_lookbehind;
           }
           if (is_utf) {
             // don't separate multibyte at begin of subject
